@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, Lancamento, Parcela, fmtR, fmtData } from '../services/api'
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' | 'gestora' }> = {
@@ -106,8 +106,8 @@ function LoginScreen({onLogin}:{onLogin:(nome:string,role:'lancadora'|'gestora')
     <div style={{minHeight:'100vh',background:'#F2F6F8',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'DM Sans',sans-serif"}}>
       <div style={{background:'#fff',borderRadius:16,padding:'2.5rem 2rem',width:360,boxShadow:'0 8px 40px rgba(0,151,168,.15)',display:'flex',flexDirection:'column',alignItems:'center',gap:20}}>
         <div style={{textAlign:'center'}}>
-          <div style={{width:56,height:56,borderRadius:14,background:'#0097A8',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:26}}>📋</div>
-          <h2 style={{fontSize:18,fontWeight:700,color:'#1A2B38',margin:0}}>Conciliação Financeira</h2>
+          <img src="/logo.jpg" alt="Servis" style={{height:90,objectFit:'contain',marginBottom:12}} onError={e=>(e.currentTarget.style.display='none')}/>
+          <h2 style={{fontSize:18,fontWeight:700,color:'#1A2B38',margin:0}}>Servis - Conciliação Financeira</h2>
           <p style={{fontSize:12,color:'#7A919E',marginTop:4}}>Acesso interno</p>
         </div>
         <div style={{width:'100%',display:'flex',flexDirection:'column',gap:12}}>
@@ -128,6 +128,8 @@ export default function Home() {
   const [search,setSearch]=useState(''); const [modal,setModal]=useState(false); const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false); const [acao,setAcao]=useState(''); const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null)
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
+  const [arquivo,setArquivo]=useState<File|null>(null)
+  const fileRef=useRef<HTMLInputElement>(null)
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
@@ -143,14 +145,18 @@ export default function Home() {
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
-  const openNovo=()=>{setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10)});setParcelas([]);setDetalhe(null);setModal(true)}
+  const openNovo=()=>{setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10)});setParcelas([]);setArquivo(null);setDetalhe(null);setModal(true)}
   const openDetalhe=async(id:string)=>{const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)}
 
   const handleSave=async()=>{
     if(!form.titulo||!form.valor_total||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
     setSaving(true)
-    try {await api.criar({...form,valor_total:parseFloat(form.valor_total),criado_por:user,parcelas});setModal(false);showToast('Lançamento salvo!');load()}
-    catch {showToast('Erro ao salvar',false)}
+    try {
+      let arquivo_url = undefined
+      if(arquivo) arquivo_url = await api.uploadPDF(arquivo)
+      await api.criar({...form,valor_total:parseFloat(form.valor_total),criado_por:user,arquivo_url,parcelas})
+      setModal(false);showToast('Lançamento salvo!');load()
+    } catch {showToast('Erro ao salvar',false)}
     finally {setSaving(false)}
   }
 
@@ -192,8 +198,8 @@ export default function Home() {
   return (
     <div style={s.page}>
       <header style={s.topbar}>
-        <div style={{fontSize:22}}>📋</div>
-        <span style={{fontWeight:700,fontSize:15,color:'#0097A8'}}>Conciliação Financeira</span>
+        <img src="/logo.jpg" alt="Servis" style={{height:40,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
+        <span style={{fontWeight:700,fontSize:15,color:'#0097A8'}}>Servis - Conciliação Financeira</span>
         <div style={{flex:1}}/>
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#7A919E'}}>
           <span>👤 {user}</span>
@@ -234,12 +240,12 @@ export default function Home() {
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead style={{position:'sticky',top:0,zIndex:2}}>
                 <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                  {th('Título')}{th('Categoria')}{th('Data')}{th('Valor total')}{th('Pago por')}{th('Tipo')}{th('Parcelas')}{th('Entrega')}{th('Lançado por')}
+                  {th('Título')}{th('Categoria')}{th('Data')}{th('Valor total')}{th('Pago por')}{th('Tipo')}{th('Parcelas')}{th('NF')}{th('Entrega')}{th('Lançado por')}
                 </tr>
               </thead>
               <tbody>
-                {loading?<tr><td colSpan={9} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                :filtered.length===0?<tr><td colSpan={9} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
+                {loading?<tr><td colSpan={10} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                :filtered.length===0?<tr><td colSpan={10} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
                 :filtered.map(l=>{
                   const parc=l.parcelas||[];const pagas=parc.filter(p=>p.pago).length
                   const st=ST[l.status_entrega];const tp=ST[l.tipo_pagamento]
@@ -254,6 +260,9 @@ export default function Home() {
                       <td style={{padding:'8px 11px'}}><Badge label={l.tipo_pagamento==='avista'?'À vista':'Parcelado'} bg={tp.bg} color={tp.color}/></td>
                       <td style={{padding:'8px 11px',textAlign:'center'}}>
                         {parc.length>0?<span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 7px',fontWeight:600}}>{pagas}/{parc.length}</span>:<span style={{color:'#7A919E'}}>—</span>}
+                      </td>
+                      <td style={{padding:'8px 11px',textAlign:'center'}}>
+                        {l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📄</a>:<span style={{color:'#DDE5EA'}}>—</span>}
                       </td>
                       <td style={{padding:'8px 11px'}}><Badge label={l.status_entrega==='entregue'?'✓ Entregue':'⏳ Pendente'} bg={st.bg} color={st.color}/></td>
                       <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
@@ -270,8 +279,8 @@ export default function Home() {
       </main>
 
       <footer style={s.footer}>
-        <span style={{fontSize:13,fontWeight:700,color:'#0097A8'}}>📋 Conciliação Financeira</span>
-        <p style={{fontSize:11,color:'#7A919E'}}>Sistema interno · Financeiro</p>
+        <img src="/logo.jpg" alt="Servis" style={{height:28,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
+        <p style={{fontSize:11,color:'#7A919E'}}>Servis Empreendimentos · Conciliação Financeira</p>
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
@@ -293,6 +302,13 @@ export default function Home() {
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
                 </div>
+
+                {detalhe.arquivo_url&&(
+                  <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer"
+                    style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',marginBottom:16,textDecoration:'none',fontWeight:600}}>
+                    📄 Ver nota fiscal (PDF)
+                  </a>
+                )}
 
                 {detalhe.tipo_pagamento==='parcelado'&&(detalhe.parcelas||[]).length>0&&(
                   <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden',marginBottom:16}}>
@@ -346,6 +362,13 @@ export default function Home() {
                     <option value="parcelado">Parcelado (por medição)</option>
                   </select>
                 </FF>
+                <div style={{gridColumn:'1/-1'}}>
+                  <label style={s.lb}>Nota fiscal (PDF) — opcional</label>
+                  <input ref={fileRef} type="file" accept="application/pdf,image/*"
+                    onChange={e=>setArquivo(e.target.files?.[0]||null)}
+                    style={{...s.fi,padding:'6px 10px',cursor:'pointer'}}/>
+                  {arquivo&&<p style={{fontSize:11,color:'#0097A8',marginTop:4}}>📄 {arquivo.name}</p>}
+                </div>
                 {form.tipo_pagamento==='parcelado'&&<ParcelasEditor parcelas={parcelas} onChange={setParcelas}/>}
               </div>
             )}
