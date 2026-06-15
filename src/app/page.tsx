@@ -10,6 +10,9 @@ const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' 
   'clau':   { senha: 'clau123',   nome: 'Clau',   role: 'gestora'   },
 }
 
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY!
+
 const s = {
   page:    { minHeight:'100vh', display:'flex', flexDirection:'column' as const, fontFamily:"'DM Sans',sans-serif", background:'#F2F6F8', color:'#1A2B38' },
   topbar:  { background:'#fff', borderBottom:'3px solid #0097A8', padding:'.7rem 1.5rem', display:'flex', alignItems:'center', gap:'1rem', position:'sticky' as const, top:0, zIndex:40, boxShadow:'0 2px 10px rgba(0,151,168,.1)' },
@@ -42,11 +45,12 @@ const ST: Record<string, {bg:string;color:string}> = {
   parcelado: {bg:'#F4EEF9',color:'#8E44AD'},
 }
 
-function fmtValor(v: string) {
-  const num = v.replace(/\D/g,'')
-  if (!num) return ''
-  const n = (parseInt(num) / 100).toFixed(2)
-  return parseFloat(n).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+async function sbPatch(table: string, query: string, body: any) {
+  await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
+    method: 'PATCH',
+    headers: { apikey:SUPA_KEY, Authorization:`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
+    body: JSON.stringify(body),
+  })
 }
 
 function KPI({l,v,sv,c}:{l:string;v:string|number;sv?:string;c:string}) {
@@ -145,7 +149,10 @@ export default function Home() {
   const load=useCallback(async()=>{
     setLoading(true)
     try {
-      const [lista,categorias]=await Promise.all([api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat,recorrente:fRec}),api.categorias()])
+      const [lista,categorias]=await Promise.all([
+        api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat,recorrente:fRec}),
+        api.categorias()
+      ])
       setData(lista);setCats(categorias)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
@@ -157,15 +164,18 @@ export default function Home() {
     setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10),pago:false,recorrente:false})
     setParcelas([]);setArquivo(null);setRawValor('');setDetalhe(null);setModal(true)
   }
-  const openDetalhe=async(id:string)=>{const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)}
+
+  const openDetalhe=async(id:string)=>{
+    const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)
+  }
 
   const handleSave=async()=>{
     if(!form.titulo||!rawValor||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
     setSaving(true)
     try {
-      let arquivo_url = undefined
-      if(arquivo) arquivo_url = await api.uploadPDF(arquivo)
-      const valor_total = parseFloat(rawValor.replace(/\D/g,'')) / 100
+      let arquivo_url=undefined
+      if(arquivo) arquivo_url=await api.uploadPDF(arquivo)
+      const valor_total=parseFloat(rawValor.replace(/\D/g,''))/100
       await api.criar({...form,valor_total,criado_por:user,arquivo_url,parcelas})
       setModal(false);showToast('Lançamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
@@ -193,6 +203,18 @@ export default function Home() {
     finally {setAcao('')}
   }
 
+  const togglePagoDetalhe=async(pago:boolean)=>{
+    if(!detalhe) return
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{pago,data_pagamento:pago?new Date().toISOString().slice(0,10):null})
+    const d=await api.buscar(detalhe.id);setDetalhe(d);showToast(pago?'Marcado como pago!':'Pagamento removido!')
+  }
+
+  const atualizarDataPagamento=async(data_pagamento:string)=>{
+    if(!detalhe) return
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{data_pagamento})
+    const d=await api.buscar(detalhe.id);setDetalhe(d);showToast('Data atualizada!')
+  }
+
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true)}}/>
 
   const filtered=data.filter(l=>{
@@ -204,7 +226,7 @@ export default function Home() {
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalEntregue=data.filter(l=>l.status_entrega==='entregue').length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
-  const totalPago=data.filter(l=>l.pago).length
+  const totalPagos=data.filter(l=>l.pago).length
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -229,7 +251,7 @@ export default function Home() {
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
           <KPI l="Total de lançamentos" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
           <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos registros" c="#E67E22"/>
-          <KPI l="Pagos" v={totalPago} sv="lançamentos quitados" c="#27AE60"/>
+          <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
           <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#E74C3C"/>
         </div>
 
@@ -324,12 +346,32 @@ export default function Home() {
                     ['Pago por',detalhe.pago_por],
                     ['Tipo',detalhe.tipo_pagamento==='avista'?'À vista':'Parcelado (por medição)'],
                     ['Lançado por',detalhe.criado_por],
-                    ['Pagamento',detalhe.pago?`✓ Pago em ${detalhe.data_pagamento?fmtData(detalhe.data_pagamento):'—'}`:'Não pago'],
                     ['Entrega',detalhe.status_entrega==='entregue'?`✓ Entregue em ${detalhe.data_entrega?fmtData(detalhe.data_entrega):'—'}`:'⏳ Pendente'],
                     ['Recorrente',detalhe.recorrente?`🔄 Mensal — dia ${detalhe.dia_vencimento||'—'}`:'Não'],
                   ].map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
+                </div>
+
+                {/* PAGAMENTO EDITÁVEL */}
+                <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16,background:detalhe.pago?'#F0FFF4':'#fff'}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>Pagamento</p>
+                  <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap' as const}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <input type="checkbox" id="det-pago" checked={detalhe.pago||false}
+                        onChange={e=>togglePagoDetalhe(e.target.checked)}
+                        style={{width:18,height:18,cursor:'pointer'}}/>
+                      <label htmlFor="det-pago" style={{fontSize:13,fontWeight:600,color:detalhe.pago?'#166534':'#1A2B38',cursor:'pointer'}}>
+                        {detalhe.pago?'✓ Pago':'Marcar como pago'}
+                      </label>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <label style={{fontSize:12,color:'#7A919E',fontWeight:600}}>Data:</label>
+                      <input type="date" value={detalhe.data_pagamento||''}
+                        onChange={e=>atualizarDataPagamento(e.target.value)}
+                        style={{...s.fi,width:'auto',fontSize:12}}/>
+                    </div>
+                  </div>
                 </div>
 
                 {detalhe.arquivo_url&&(
@@ -382,7 +424,7 @@ export default function Home() {
                     onChange={e=>{
                       const digits=e.target.value.replace(/\D/g,'')
                       setRawValor(digits?(parseInt(digits)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
-                      set('valor_total', digits ? parseFloat(digits)/100 : 0)
+                      set('valor_total',digits?parseFloat(digits)/100:0)
                     }}/>
                 </FF>
 
@@ -404,24 +446,22 @@ export default function Home() {
                   </select>
                 </FF>
 
-                {/* Pago e Data de pagamento */}
                 <div style={{display:'flex',alignItems:'center',gap:12,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,border:'1.5px solid #86EFAC'}}>
                   <input type="checkbox" id="pago" checked={form.pago||false} onChange={e=>set('pago',e.target.checked)} style={{width:16,height:16,cursor:'pointer'}}/>
                   <label htmlFor="pago" style={{fontSize:13,fontWeight:600,color:'#166534',cursor:'pointer'}}>Já foi pago</label>
                 </div>
 
                 <FF lb="Data de pagamento">
-                  <input type="date" style={{...s.fi,background:form.pago?'#fff':'#f9fafb',opacity:form.pago?1:0.5}} value={form.data_pagamento||''} disabled={!form.pago} onChange={e=>set('data_pagamento',e.target.value)}/>
+                  <input type="date" style={{...s.fi,opacity:form.pago?1:0.5}} value={form.data_pagamento||''} disabled={!form.pago} onChange={e=>set('data_pagamento',e.target.value)}/>
                 </FF>
 
-                {/* Recorrente */}
                 <div style={{display:'flex',alignItems:'center',gap:12,padding:'8px 12px',background:'#F4EEF9',borderRadius:8,border:'1.5px solid #D8B4FE'}}>
                   <input type="checkbox" id="rec" checked={form.recorrente||false} onChange={e=>set('recorrente',e.target.checked)} style={{width:16,height:16,cursor:'pointer'}}/>
                   <label htmlFor="rec" style={{fontSize:13,fontWeight:600,color:'#6B21A8',cursor:'pointer'}}>🔄 Conta mensal (recorrente)</label>
                 </div>
 
                 <FF lb="Dia de vencimento mensal">
-                  <input type="number" min={1} max={31} style={{...s.fi,background:form.recorrente?'#fff':'#f9fafb',opacity:form.recorrente?1:0.5}} value={form.dia_vencimento||''} disabled={!form.recorrente} placeholder="Ex: 10" onChange={e=>set('dia_vencimento',parseInt(e.target.value)||null)}/>
+                  <input type="number" min={1} max={31} style={{...s.fi,opacity:form.recorrente?1:0.5}} value={form.dia_vencimento||''} disabled={!form.recorrente} placeholder="Ex: 10" onChange={e=>set('dia_vencimento',parseInt(e.target.value)||null)}/>
                 </FF>
 
                 <FF lb="Nota fiscal (PDF) — opcional" full>
