@@ -42,6 +42,13 @@ const ST: Record<string, {bg:string;color:string}> = {
   parcelado: {bg:'#F4EEF9',color:'#8E44AD'},
 }
 
+function fmtValor(v: string) {
+  const num = v.replace(/\D/g,'')
+  if (!num) return ''
+  const n = (parseInt(num) / 100).toFixed(2)
+  return parseFloat(n).toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
+}
+
 function KPI({l,v,sv,c}:{l:string;v:string|number;sv?:string;c:string}) {
   return (
     <div style={s.kpi}>
@@ -57,8 +64,8 @@ function Badge({label,bg,color}:{label:string;bg:string;color:string}) {
   return <span style={{...s.badge,background:bg,color}}>{label}</span>
 }
 
-function FF({lb:label,children}:{lb:string;children:React.ReactNode}) {
-  return <div><label style={s.lb}>{label}</label>{children}</div>
+function FF({lb:label,children,full}:{lb:string;children:React.ReactNode;full?:boolean}) {
+  return <div style={full?{gridColumn:'1/-1'}:{}}><label style={s.lb}>{label}</label>{children}</div>
 }
 
 function ParcelasEditor({parcelas,onChange}:{parcelas:Parcela[];onChange:(p:Parcela[])=>void}) {
@@ -124,11 +131,12 @@ function LoginScreen({onLogin}:{onLogin:(nome:string,role:'lancadora'|'gestora')
 export default function Home() {
   const [logado,setLogado]=useState(false); const [user,setUser]=useState(''); const [role,setRole]=useState<'lancadora'|'gestora'>('lancadora')
   const [data,setData]=useState<Lancamento[]>([]); const [cats,setCats]=useState<any[]>([])
-  const [loading,setLoading]=useState(true); const [fStatus,setFStatus]=useState(''); const [fTipo,setFTipo]=useState(''); const [fCat,setFCat]=useState('')
+  const [loading,setLoading]=useState(true); const [fStatus,setFStatus]=useState(''); const [fTipo,setFTipo]=useState(''); const [fCat,setFCat]=useState(''); const [fRec,setFRec]=useState('')
   const [search,setSearch]=useState(''); const [modal,setModal]=useState(false); const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false); const [acao,setAcao]=useState(''); const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null)
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
   const [arquivo,setArquivo]=useState<File|null>(null)
+  const [rawValor,setRawValor]=useState('')
   const fileRef=useRef<HTMLInputElement>(null)
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000)}
@@ -137,24 +145,28 @@ export default function Home() {
   const load=useCallback(async()=>{
     setLoading(true)
     try {
-      const [lista,categorias]=await Promise.all([api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat}),api.categorias()])
+      const [lista,categorias]=await Promise.all([api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat,recorrente:fRec}),api.categorias()])
       setData(lista);setCats(categorias)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
-  },[fStatus,fTipo,fCat])
+  },[fStatus,fTipo,fCat,fRec])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
-  const openNovo=()=>{setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10)});setParcelas([]);setArquivo(null);setDetalhe(null);setModal(true)}
+  const openNovo=()=>{
+    setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10),pago:false,recorrente:false})
+    setParcelas([]);setArquivo(null);setRawValor('');setDetalhe(null);setModal(true)
+  }
   const openDetalhe=async(id:string)=>{const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)}
 
   const handleSave=async()=>{
-    if(!form.titulo||!form.valor_total||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
+    if(!form.titulo||!rawValor||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
     setSaving(true)
     try {
       let arquivo_url = undefined
       if(arquivo) arquivo_url = await api.uploadPDF(arquivo)
-      await api.criar({...form,valor_total:parseFloat(form.valor_total),criado_por:user,arquivo_url,parcelas})
+      const valor_total = parseFloat(rawValor.replace(/\D/g,'')) / 100
+      await api.criar({...form,valor_total,criado_por:user,arquivo_url,parcelas})
       setModal(false);showToast('Lançamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
     finally {setSaving(false)}
@@ -192,7 +204,7 @@ export default function Home() {
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalEntregue=data.filter(l=>l.status_entrega==='entregue').length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
-  const totalPago=data.reduce((s,l)=>s+(l.parcelas||[]).filter(p=>p.pago).reduce((a,p)=>a+p.valor,0),0)
+  const totalPago=data.filter(l=>l.pago).length
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -217,14 +229,19 @@ export default function Home() {
         <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
           <KPI l="Total de lançamentos" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
           <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos registros" c="#E67E22"/>
+          <KPI l="Pagos" v={totalPago} sv="lançamentos quitados" c="#27AE60"/>
           <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#E74C3C"/>
-          <KPI l="Já entregues" v={totalEntregue} sv={`${fmtR(totalPago)} pagos`} c="#27AE60"/>
         </div>
 
         <div style={s.card}>
           <div style={s.toolbar}>
             <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
             <input style={{...s.inp,width:180}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="true">Mensais</option>
+              <option value="false">Avulsos</option>
+            </select>
             <select style={s.inp} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
               <option value="">Todas as entregas</option><option value="pendente">Pendente</option><option value="entregue">Entregue</option>
             </select>
@@ -240,24 +257,28 @@ export default function Home() {
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead style={{position:'sticky',top:0,zIndex:2}}>
                 <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                  {th('Título')}{th('Categoria')}{th('Data')}{th('Valor total')}{th('Pago por')}{th('Tipo')}{th('Parcelas')}{th('NF')}{th('Entrega')}{th('Lançado por')}
+                  {th('Título')}{th('Categoria')}{th('Data')}{th('Valor')}{th('Pago por')}{th('Tipo')}{th('Pago')}{th('Dt. Pagamento')}{th('Parcelas')}{th('NF')}{th('Entrega')}{th('Mensal')}{th('Lançado por')}
                 </tr>
               </thead>
               <tbody>
-                {loading?<tr><td colSpan={10} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                :filtered.length===0?<tr><td colSpan={10} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
+                {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
                 :filtered.map(l=>{
                   const parc=l.parcelas||[];const pagas=parc.filter(p=>p.pago).length
                   const st=ST[l.status_entrega];const tp=ST[l.tipo_pagamento]
                   return (
                     <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
                       onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                      <td style={{padding:'8px 11px',fontWeight:500,maxWidth:200,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                      <td style={{padding:'8px 11px',fontWeight:500,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
                       <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.categoria_nome||'—'}</td>
                       <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
                       <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
                       <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.pago_por}</td>
                       <td style={{padding:'8px 11px'}}><Badge label={l.tipo_pagamento==='avista'?'À vista':'Parcelado'} bg={tp.bg} color={tp.color}/></td>
+                      <td style={{padding:'8px 11px',textAlign:'center'}}>
+                        {l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}
+                      </td>
+                      <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap',fontSize:11}}>{l.data_pagamento?fmtData(l.data_pagamento):'—'}</td>
                       <td style={{padding:'8px 11px',textAlign:'center'}}>
                         {parc.length>0?<span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 7px',fontWeight:600}}>{pagas}/{parc.length}</span>:<span style={{color:'#7A919E'}}>—</span>}
                       </td>
@@ -265,6 +286,7 @@ export default function Home() {
                         {l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📄</a>:<span style={{color:'#DDE5EA'}}>—</span>}
                       </td>
                       <td style={{padding:'8px 11px'}}><Badge label={l.status_entrega==='entregue'?'✓ Entregue':'⏳ Pendente'} bg={st.bg} color={st.color}/></td>
+                      <td style={{padding:'8px 11px',textAlign:'center'}}>{l.recorrente?<span style={{color:'#8E44AD',fontWeight:700}}>🔄</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                       <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
                     </tr>
                   )
@@ -295,9 +317,16 @@ export default function Home() {
             {detalhe?(
               <div style={{padding:'1.25rem 1.5rem'}}>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:20}}>
-                  {[['Valor total',fmtR(detalhe.valor_total)],['Data',fmtData(detalhe.data)],['Categoria',detalhe.categoria_nome||'—'],['Pago por',detalhe.pago_por],
-                    ['Tipo',detalhe.tipo_pagamento==='avista'?'À vista':'Parcelado (por medição)'],['Lançado por',detalhe.criado_por],
+                  {[
+                    ['Valor total',fmtR(detalhe.valor_total)],
+                    ['Data',fmtData(detalhe.data)],
+                    ['Categoria',detalhe.categoria_nome||'—'],
+                    ['Pago por',detalhe.pago_por],
+                    ['Tipo',detalhe.tipo_pagamento==='avista'?'À vista':'Parcelado (por medição)'],
+                    ['Lançado por',detalhe.criado_por],
+                    ['Pagamento',detalhe.pago?`✓ Pago em ${detalhe.data_pagamento?fmtData(detalhe.data_pagamento):'—'}`:'Não pago'],
                     ['Entrega',detalhe.status_entrega==='entregue'?`✓ Entregue em ${detalhe.data_entrega?fmtData(detalhe.data_entrega):'—'}`:'⏳ Pendente'],
+                    ['Recorrente',detalhe.recorrente?`🔄 Mensal — dia ${detalhe.dia_vencimento||'—'}`:'Não'],
                   ].map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
@@ -347,28 +376,61 @@ export default function Home() {
             ):(
               <div style={s.fg}>
                 <FF lb="Título *"><input style={s.fi} value={form.titulo||''} onChange={e=>set('titulo',e.target.value)} placeholder="Ex: NF Manutenção Elétrica"/></FF>
-                <FF lb="Valor total (R$) *"><input type="number" step="0.01" style={s.fi} value={form.valor_total||''} onChange={e=>set('valor_total',e.target.value)} placeholder="0,00"/></FF>
+
+                <FF lb="Valor total *">
+                  <input style={s.fi} value={rawValor} placeholder="R$ 0,00"
+                    onChange={e=>{
+                      const digits=e.target.value.replace(/\D/g,'')
+                      setRawValor(digits?(parseInt(digits)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                      set('valor_total', digits ? parseFloat(digits)/100 : 0)
+                    }}/>
+                </FF>
+
                 <FF lb="Data *"><input type="date" style={s.fi} value={form.data||''} onChange={e=>set('data',e.target.value)}/></FF>
+
                 <FF lb="Categoria *">
                   <select style={s.fi} value={form.categoria_id||''} onChange={e=>set('categoria_id',e.target.value)}>
                     <option value="">Selecione...</option>
                     {cats.map((c:any)=><option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </FF>
+
                 <FF lb="Pago por *"><input style={s.fi} value={form.pago_por||''} onChange={e=>set('pago_por',e.target.value)} placeholder="Ex: Empresa X"/></FF>
+
                 <FF lb="Tipo de pagamento *">
                   <select style={s.fi} value={form.tipo_pagamento||'avista'} onChange={e=>set('tipo_pagamento',e.target.value)}>
                     <option value="avista">À vista</option>
                     <option value="parcelado">Parcelado (por medição)</option>
                   </select>
                 </FF>
-                <div style={{gridColumn:'1/-1'}}>
-                  <label style={s.lb}>Nota fiscal (PDF) — opcional</label>
+
+                {/* Pago e Data de pagamento */}
+                <div style={{display:'flex',alignItems:'center',gap:12,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,border:'1.5px solid #86EFAC'}}>
+                  <input type="checkbox" id="pago" checked={form.pago||false} onChange={e=>set('pago',e.target.checked)} style={{width:16,height:16,cursor:'pointer'}}/>
+                  <label htmlFor="pago" style={{fontSize:13,fontWeight:600,color:'#166534',cursor:'pointer'}}>Já foi pago</label>
+                </div>
+
+                <FF lb="Data de pagamento">
+                  <input type="date" style={{...s.fi,background:form.pago?'#fff':'#f9fafb',opacity:form.pago?1:0.5}} value={form.data_pagamento||''} disabled={!form.pago} onChange={e=>set('data_pagamento',e.target.value)}/>
+                </FF>
+
+                {/* Recorrente */}
+                <div style={{display:'flex',alignItems:'center',gap:12,padding:'8px 12px',background:'#F4EEF9',borderRadius:8,border:'1.5px solid #D8B4FE'}}>
+                  <input type="checkbox" id="rec" checked={form.recorrente||false} onChange={e=>set('recorrente',e.target.checked)} style={{width:16,height:16,cursor:'pointer'}}/>
+                  <label htmlFor="rec" style={{fontSize:13,fontWeight:600,color:'#6B21A8',cursor:'pointer'}}>🔄 Conta mensal (recorrente)</label>
+                </div>
+
+                <FF lb="Dia de vencimento mensal">
+                  <input type="number" min={1} max={31} style={{...s.fi,background:form.recorrente?'#fff':'#f9fafb',opacity:form.recorrente?1:0.5}} value={form.dia_vencimento||''} disabled={!form.recorrente} placeholder="Ex: 10" onChange={e=>set('dia_vencimento',parseInt(e.target.value)||null)}/>
+                </FF>
+
+                <FF lb="Nota fiscal (PDF) — opcional" full>
                   <input ref={fileRef} type="file" accept="application/pdf,image/*"
                     onChange={e=>setArquivo(e.target.files?.[0]||null)}
                     style={{...s.fi,padding:'6px 10px',cursor:'pointer'}}/>
                   {arquivo&&<p style={{fontSize:11,color:'#0097A8',marginTop:4}}>📄 {arquivo.name}</p>}
-                </div>
+                </FF>
+
                 {form.tipo_pagamento==='parcelado'&&<ParcelasEditor parcelas={parcelas} onChange={setParcelas}/>}
               </div>
             )}

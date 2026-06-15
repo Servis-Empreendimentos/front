@@ -31,6 +31,10 @@ export type Lancamento = {
   criado_por: string
   criado_em: string
   arquivo_url?: string
+  pago: boolean
+  data_pagamento?: string | null
+  recorrente: boolean
+  dia_vencimento?: number | null
   parcelas?: Parcela[]
 }
 
@@ -43,11 +47,12 @@ export const api = {
     return res.json()
   },
 
-  listar: async (f: { status_entrega?: string; tipo_pagamento?: string; categoria_id?: string } = {}) => {
+  listar: async (f: { status_entrega?: string; tipo_pagamento?: string; categoria_id?: string; recorrente?: string } = {}) => {
     let query = `?order=criado_em.desc&select=*,categorias(nome)`
     if (f.status_entrega) query += `&status_entrega=eq.${f.status_entrega}`
     if (f.tipo_pagamento) query += `&tipo_pagamento=eq.${f.tipo_pagamento}`
     if (f.categoria_id)   query += `&categoria_id=eq.${f.categoria_id}`
+    if (f.recorrente)     query += `&recorrente=eq.${f.recorrente}`
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos${query}`, { headers })
     const data = await res.json()
     const lista = (data || []).map((l: any) => ({ ...l, categoria_nome: l.categorias?.nome }))
