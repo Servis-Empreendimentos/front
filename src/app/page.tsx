@@ -12,6 +12,7 @@ const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' 
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY!
+const AI_KEY   = process.env.NEXT_PUBLIC_ANTHROPIC_KEY!
 
 const s = {
   page:    { minHeight:'100vh', display:'flex', flexDirection:'column' as const, fontFamily:"'DM Sans',sans-serif", background:'#F2F6F8', color:'#1A2B38' },
@@ -51,6 +52,58 @@ async function sbPatch(table: string, query: string, body: any) {
     headers: { apikey:SUPA_KEY, Authorization:`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
     body: JSON.stringify(body),
   })
+}
+
+async function lerNFcomIA(file: File): Promise<any> {
+  const base64 = await new Promise<string>((res, rej) => {
+    const r = new FileReader()
+    r.onload = () => res((r.result as string).split(',')[1])
+    r.onerror = () => rej(new Error('Erro ao ler arquivo'))
+    r.readAsDataURL(file)
+  })
+
+  const isPDF = file.type === 'application/pdf'
+  const mediaType = isPDF ? 'application/pdf' : file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': AI_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5',
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: isPDF ? 'document' : 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64 }
+          },
+          {
+            type: 'text',
+            text: `Extraia os dados desta nota fiscal e retorne APENAS um JSON válido, sem texto adicional, sem markdown:
+{
+  "titulo": "nome do fornecedor ou descrição do serviço",
+  "valor_total": 0.00,
+  "data": "YYYY-MM-DD",
+  "pago_por": "nome do tomador/comprador do serviço"
+}
+Se não encontrar algum campo, deixe em branco ou zero.`
+          }
+        ]
+      }]
+    })
+  })
+
+  const data = await response.json()
+  const text = data.content?.[0]?.text || ''
+  const match = text.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error('Não foi possível extrair os dados')
+  return JSON.parse(match[0])
 }
 
 function KPI({l,v,sv,c}:{l:string;v:string|number;sv?:string;c:string}) {
@@ -141,7 +194,9 @@ export default function Home() {
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
   const [arquivo,setArquivo]=useState<File|null>(null)
   const [rawValor,setRawValor]=useState('')
+  const [loadingIA,setLoadingIA]=useState(false)
   const fileRef=useRef<HTMLInputElement>(null)
+  const nfRef=useRef<HTMLInputElement>(null)
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
@@ -169,14 +224,33 @@ export default function Home() {
     const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)
   }
 
+  const handleImportarNF=async(file: File)=>{
+    setLoadingIA(true)
+    setArquivo(file)
+    try {
+      const dados=await lerNFcomIA(file)
+      if(dados.titulo) set('titulo',dados.titulo)
+      if(dados.pago_por) set('pago_por',dados.pago_por)
+      if(dados.data) set('data',dados.data)
+      if(dados.valor_total&&dados.valor_total>0) {
+        set('valor_total',dados.valor_total)
+        setRawValor((dados.valor_total as number).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
+      }
+      showToast('✅ Dados extraídos com sucesso!')
+    } catch {
+      showToast('⚠️ Não foi possível extrair os dados. Preencha manualmente.',false)
+    } finally {
+      setLoadingIA(false)
+    }
+  }
+
   const handleSave=async()=>{
-    if(!form.titulo||!rawValor||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
+    if(!form.titulo||!form.valor_total||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
     setSaving(true)
     try {
       let arquivo_url=undefined
       if(arquivo) arquivo_url=await api.uploadPDF(arquivo)
-      const valor_total=parseFloat(rawValor.replace(/\D/g,''))/100
-      await api.criar({...form,valor_total,criado_por:user,arquivo_url,parcelas})
+      await api.criar({...form,criado_por:user,arquivo_url,parcelas})
       setModal(false);showToast('Lançamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
     finally {setSaving(false)}
@@ -353,7 +427,6 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* PAGAMENTO EDITÁVEL */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16,background:detalhe.pago?'#F0FFF4':'#fff'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>Pagamento</p>
                   <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap' as const}}>
@@ -417,6 +490,20 @@ export default function Home() {
               </div>
             ):(
               <div style={s.fg}>
+
+                {/* IMPORTAR NF COM IA */}
+                <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8',marginBottom:4}}>
+                  <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar NF com IA</p>
+                  <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF ou imagem da nota fiscal e a IA preenche os dados automaticamente.</p>
+                  <input ref={nfRef} type="file" accept="application/pdf,image/*" style={{display:'none'}}
+                    onChange={e=>{ const f=e.target.files?.[0]; if(f) handleImportarNF(f) }}/>
+                  <button onClick={()=>nfRef.current?.click()} disabled={loadingIA}
+                    style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
+                    {loadingIA?'🔄 Lendo NF com IA...':'📄 Selecionar nota fiscal'}
+                  </button>
+                  {arquivo&&!loadingIA&&<p style={{fontSize:11,color:'#0097A8',marginTop:8,fontWeight:600}}>✅ {arquivo.name}</p>}
+                </div>
+
                 <FF lb="Título *"><input style={s.fi} value={form.titulo||''} onChange={e=>set('titulo',e.target.value)} placeholder="Ex: NF Manutenção Elétrica"/></FF>
 
                 <FF lb="Valor total *">
@@ -464,20 +551,13 @@ export default function Home() {
                   <input type="number" min={1} max={31} style={{...s.fi,opacity:form.recorrente?1:0.5}} value={form.dia_vencimento||''} disabled={!form.recorrente} placeholder="Ex: 10" onChange={e=>set('dia_vencimento',parseInt(e.target.value)||null)}/>
                 </FF>
 
-                <FF lb="Nota fiscal (PDF) — opcional" full>
-                  <input ref={fileRef} type="file" accept="application/pdf,image/*"
-                    onChange={e=>setArquivo(e.target.files?.[0]||null)}
-                    style={{...s.fi,padding:'6px 10px',cursor:'pointer'}}/>
-                  {arquivo&&<p style={{fontSize:11,color:'#0097A8',marginTop:4}}>📄 {arquivo.name}</p>}
-                </FF>
-
                 {form.tipo_pagamento==='parcelado'&&<ParcelasEditor parcelas={parcelas} onChange={setParcelas}/>}
               </div>
             )}
 
             <div style={s.mfoot}>
               <button onClick={()=>setModal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
-              {!detalhe&&<button onClick={handleSave} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
+              {!detalhe&&<button onClick={handleSave} disabled={saving||loadingIA} style={{...s.btnTeal,opacity:(saving||loadingIA)?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
             </div>
           </div>
         </div>
