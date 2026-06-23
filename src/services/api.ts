@@ -38,6 +38,17 @@ export type Lancamento = {
   parcelas?: Parcela[]
 }
 
+export type ContaMensal = {
+  id: string
+  titulo: string
+  categoria_id: string
+  categoria_nome?: string
+  pago_por: string
+  dia_vencimento: number
+  ativo: boolean
+  criado_em: string
+}
+
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
 
@@ -125,5 +136,54 @@ export const api = {
       headers: { ...headers, Prefer: 'return=minimal' },
       body: JSON.stringify({ pago: false, data_pagamento: null }),
     })
+  },
+
+  // CONTAS MENSAIS
+  listarContasMensais: async () => {
+    const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais?order=titulo.asc&select=*,categorias(nome)`, { headers })
+    const data = await res.json()
+    return (data || []).map((c: any) => ({ ...c, categoria_nome: c.categorias?.nome }))
+  },
+
+  criarContaMensal: async (payload: any) => {
+    const { categoria_nome, ...body } = payload
+    const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    return data[0]
+  },
+
+  toggleContaMensal: async (id: string, ativo: boolean) => {
+    await fetch(`${BASE_URL}/rest/v1/contas_mensais?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify({ ativo }),
+    })
+  },
+
+  gerarLancamentoMensal: async (conta: ContaMensal, criado_por: string) => {
+    const hoje = new Date()
+    const data = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(conta.dia_vencimento).padStart(2,'0')}`
+    const res = await fetch(`${BASE_URL}/rest/v1/lancamentos`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({
+        titulo: conta.titulo,
+        valor_total: 0,
+        data,
+        categoria_id: conta.categoria_id,
+        pago_por: conta.pago_por,
+        tipo_pagamento: 'avista',
+        recorrente: true,
+        dia_vencimento: conta.dia_vencimento,
+        criado_por,
+        pago: false,
+      }),
+    })
+    const data2 = await res.json()
+    return data2[0]
   },
 }
