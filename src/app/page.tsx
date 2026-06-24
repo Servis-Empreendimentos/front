@@ -177,6 +177,7 @@ export default function Home() {
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
   const [arquivo,setArquivo]=useState<File|null>(null); const [rawValor,setRawValor]=useState(''); const [loadingIA,setLoadingIA]=useState(false)
   const nfRef=useRef<HTMLInputElement>(null)
+  const nfDetRef=useRef<HTMLInputElement>(null)
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
@@ -219,6 +220,17 @@ export default function Home() {
       }
       showToast('✅ Dados extraídos com sucesso!')
     } catch {showToast('⚠️ Não foi possível extrair. Preencha manualmente.',false)}
+    finally {setLoadingIA(false)}
+  }
+
+  const handleAnexarNF=async(file:File)=>{
+    if(!detalhe) return
+    setLoadingIA(true)
+    try {
+      const url=await api.uploadPDF(file)
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{arquivo_url:url})
+      const d=await api.buscar(detalhe.id);setDetalhe(d);showToast('Nota fiscal anexada!')
+    } catch {showToast('Erro ao enviar',false)}
     finally {setLoadingIA(false)}
   }
 
@@ -309,7 +321,6 @@ export default function Home() {
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
-  const totalEntregue=data.filter(l=>l.status_entrega==='entregue').length
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -470,7 +481,6 @@ export default function Home() {
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
-      {/* MODAL LANÇAMENTO */}
       {modal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -493,6 +503,7 @@ export default function Home() {
                   ))}
                 </div>
 
+                {/* PAGAMENTO */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16,background:detalhe.pago?'#F0FFF4':'#fff'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>Pagamento</p>
                   <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap' as const}}>
@@ -507,12 +518,31 @@ export default function Home() {
                   </div>
                 </div>
 
-                {detalhe.arquivo_url&&(
-                  <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer"
-                    style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',marginBottom:16,textDecoration:'none',fontWeight:600}}>
-                    📄 Ver nota fiscal (PDF)
-                  </a>
-                )}
+                {/* NOTA FISCAL */}
+                <div style={{marginBottom:16}}>
+                  <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}}
+                    onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
+                  {detalhe.arquivo_url?(
+                    <div style={{display:'flex',alignItems:'center',gap:12}}>
+                      <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer"
+                        style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>
+                        📄 Ver nota fiscal (PDF)
+                      </a>
+                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA}
+                        style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>
+                        {loadingIA?'Enviando...':'Substituir'}
+                      </button>
+                    </div>
+                  ):(
+                    <div style={{display:'flex',alignItems:'center',gap:12}}>
+                      <span style={{fontSize:12,color:'#7A919E'}}>Sem nota fiscal anexada</span>
+                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA}
+                        style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingIA?0.6:1}}>
+                        {loadingIA?'Enviando...':'📄 Anexar nota fiscal'}
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {detalhe.tipo_pagamento==='parcelado'&&(detalhe.parcelas||[]).length>0&&(
                   <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden',marginBottom:16}}>
@@ -608,7 +638,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL NOVA CONTA MENSAL */}
       {modalMensal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
           <div style={{...s.modal,width:480}}>
@@ -637,7 +666,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL GERAR LANÇAMENTO DO MÊS */}
       {modalGerar&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalGerar(null)}>
           <div style={{...s.modal,width:420}}>
