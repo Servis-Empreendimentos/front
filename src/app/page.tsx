@@ -24,7 +24,7 @@ const s = {
   btnTeal: { display:'flex', alignItems:'center', gap:8, background:'#0097A8', color:'#fff', border:'none', padding:'.5rem 1rem', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' },
   btnOut:  { display:'flex', alignItems:'center', gap:6, background:'transparent', color:'#1A2B38', border:'1.5px solid #DDE5EA', padding:'.4rem .8rem', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' },
   btnGrn:  { display:'flex', alignItems:'center', gap:6, background:'#27AE60', color:'#fff', border:'none', padding:'.5rem 1rem', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' },
-  btnPurp: { display:'flex', alignItems:'center', gap:6, background:'#8E44AD', color:'#fff', border:'none', padding:'.5rem 1rem', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' },
+  btnRed:  { display:'flex', alignItems:'center', gap:6, background:'transparent', color:'#E74C3C', border:'1.5px solid #FDECEA', padding:'.4rem .8rem', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' },
   kpi:     { background:'#fff', border:'1px solid #DDE5EA', borderRadius:10, padding:'1rem', position:'relative' as const, overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,.04)' },
   card:    { background:'#fff', border:'1px solid #DDE5EA', borderRadius:10, overflow:'hidden', boxShadow:'0 1px 3px rgba(0,0,0,.04)', marginBottom:'1.25rem' },
   toolbar: { display:'flex', alignItems:'center', gap:8, padding:'.8rem 1.1rem', borderBottom:'1px solid #DDE5EA', background:'#FAFCFD', flexWrap:'wrap' as const },
@@ -277,6 +277,15 @@ export default function Home() {
     finally {setAcao('')}
   }
 
+  const handleExcluir=async(id:string)=>{
+    if(!confirm('Tem certeza que deseja excluir este lançamento?')) return
+    await fetch(`${SUPA_URL}/rest/v1/lancamentos?id=eq.${id}`,{
+      method:'DELETE',
+      headers:{apikey:SUPA_KEY,Authorization:`Bearer ${SUPA_KEY}`},
+    })
+    setModal(false);showToast('Lançamento excluído!');load()
+  }
+
   const togglePagoDetalhe=async(pago:boolean)=>{
     if(!detalhe) return
     await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{pago,data_pagamento:pago?new Date().toISOString().slice(0,10):null})
@@ -325,7 +334,6 @@ export default function Home() {
 
       <main style={s.main}>
 
-        {/* ABA CONTAS MENSAIS */}
         {aba==='mensais'&&(
           <div>
             <div style={s.row}>
@@ -375,7 +383,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* ABA LANÇAMENTOS */}
         {aba==='lancamentos'&&(
           <div>
             <div style={s.row}>
@@ -536,7 +543,7 @@ export default function Home() {
                 )}
 
                 {detalhe.status_entrega==='pendente'&&(
-                  <button onClick={()=>handleEntrega(detalhe.id)} disabled={!!acao} style={{...s.btnGrn,width:'100%',justifyContent:'center',opacity:!!acao?0.6:1}}>
+                  <button onClick={()=>handleEntrega(detalhe.id)} disabled={!!acao} style={{...s.btnGrn,width:'100%',justifyContent:'center',opacity:!!acao?0.6:1,marginBottom:8}}>
                     {acao===detalhe.id?'Confirmando...':'✓ Confirmar entrega'}
                   </button>
                 )}
@@ -590,6 +597,11 @@ export default function Home() {
 
             <div style={s.mfoot}>
               <button onClick={()=>setModal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
+              {detalhe&&role==='gestora'&&(
+                <button onClick={()=>handleExcluir(detalhe.id)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}>
+                  🗑 Excluir
+                </button>
+              )}
               {!detalhe&&<button onClick={handleSave} disabled={saving||loadingIA} style={{...s.btnTeal,opacity:(saving||loadingIA)?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
             </div>
           </div>
