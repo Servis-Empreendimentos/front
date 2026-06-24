@@ -86,7 +86,8 @@ export const api = {
   },
 
   uploadPDF: async (file: File): Promise<string> => {
-    const nome = `${Date.now()}_${file.name}`
+    const ext  = file.name.split('.').pop() || 'pdf'
+    const nome = `${Date.now()}.${ext}`
     await fetch(`${BASE_URL}/storage/v1/object/notas-fiscais/${nome}`, {
       method: 'POST',
       headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
@@ -138,7 +139,6 @@ export const api = {
     })
   },
 
-  // CONTAS MENSAIS
   listarContasMensais: async () => {
     const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais?order=titulo.asc&select=*,categorias(nome)`, { headers })
     const data = await res.json()
