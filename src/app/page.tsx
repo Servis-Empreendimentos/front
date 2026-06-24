@@ -4,7 +4,7 @@ import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData } from '../service
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' | 'gestora' }> = {
   'anne':   { senha: 'anne123',   nome: 'Anne',   role: 'lancadora' },
-  'mayara': { senha: 'mayara123', nome: 'Mayara', role: 'lancadora' },
+  'ana': { senha: 'ana123', nome: 'Ana', role: 'lancadora' },
   'edna':   { senha: 'edna123',   nome: 'Edna',   role: 'lancadora' },
   'erick':  { senha: 'erick123',  nome: 'Erick',  role: 'lancadora' },
   'clau':   { senha: 'clau123',   nome: 'Clau',   role: 'gestora'   },
