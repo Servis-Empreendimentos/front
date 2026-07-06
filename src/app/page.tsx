@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData } from '../services/api'
+import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData, PIPELINE } from '../services/api'
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' | 'gestora' }> = {
   'anne':   { senha: 'anne123',   nome: 'Anne',   role: 'lancadora' },
-  'ana': { senha: 'ana123', nome: 'Ana', role: 'lancadora' },
+  'mayara': { senha: 'mayara123', nome: 'Mayara', role: 'lancadora' },
   'edna':   { senha: 'edna123',   nome: 'Edna',   role: 'lancadora' },
   'erick':  { senha: 'erick123',  nome: 'Erick',  role: 'lancadora' },
   'clau':   { senha: 'clau123',   nome: 'Clau',   role: 'gestora'   },
@@ -31,7 +31,7 @@ const s = {
   badge:   { display:'inline-flex', alignItems:'center', padding:'2px 9px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' as const },
   inp:     { border:'1.5px solid #DDE5EA', borderRadius:7, padding:'5px 10px', fontSize:12, fontFamily:'inherit', outline:'none', background:'#fff', color:'#1A2B38' },
   overlay: { position:'fixed' as const, inset:0, background:'rgba(0,0,0,.4)', zIndex:50, display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:40 },
-  modal:   { background:'#fff', borderRadius:14, width:700, maxWidth:'95vw', maxHeight:'92vh', overflowY:'auto' as const, boxShadow:'0 20px 60px rgba(0,0,0,.2)' },
+  modal:   { background:'#fff', borderRadius:14, width:740, maxWidth:'95vw', maxHeight:'92vh', overflowY:'auto' as const, boxShadow:'0 20px 60px rgba(0,0,0,.2)' },
   mhdr:    { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem 1.5rem', borderBottom:'1px solid #DDE5EA', position:'sticky' as const, top:0, background:'#fff', zIndex:1 },
   mfoot:   { display:'flex', gap:8, justifyContent:'flex-end', padding:'1rem 1.5rem', borderTop:'1px solid #DDE5EA', background:'#FAFCFD', position:'sticky' as const, bottom:0 },
   fg:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 14px', padding:'1.25rem 1.5rem' },
@@ -45,6 +45,16 @@ const ST: Record<string, {bg:string;color:string}> = {
   entregue:  {bg:'#EAF7EE',color:'#27AE60'},
   avista:    {bg:'#EAF3FD',color:'#2980B9'},
   parcelado: {bg:'#F4EEF9',color:'#8E44AD'},
+}
+
+const PIPE_COLORS: Record<string, string> = {
+  orcamento_aprovado:  '#7A919E',
+  em_tratativa:        '#E67E22',
+  orcamento_fechado:   '#2980B9',
+  pagamento_realizado: '#27AE60',
+  entrega_programada:  '#8E44AD',
+  mercadoria_recebida: '#0097A8',
+  nf_recebida:         '#1A2B38',
 }
 
 async function sbPatch(table: string, query: string, body: any) {
@@ -102,6 +112,44 @@ function Badge({label,bg,color}:{label:string;bg:string;color:string}) {
 
 function FF({lb:label,children,full}:{lb:string;children:React.ReactNode;full?:boolean}) {
   return <div style={full?{gridColumn:'1/-1'}:{}}><label style={s.lb}>{label}</label>{children}</div>
+}
+
+function PipelineStepper({ atual, onChange }: { atual: string; onChange: (id: string) => void }) {
+  const idx = PIPELINE.findIndex(p => p.id === atual)
+  return (
+    <div style={{ overflowX:'auto', paddingBottom:4 }}>
+      <div style={{ display:'flex', alignItems:'center', minWidth: 600, marginBottom:16 }}>
+        {PIPELINE.map((step, i) => {
+          const done    = i < idx
+          const current = i === idx
+          const cor     = PIPE_COLORS[step.id]
+          return (
+            <div key={step.id} style={{ display:'flex', alignItems:'center', flex:1 }}>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, flex:'0 0 auto' }}>
+                <button onClick={() => onChange(step.id)}
+                  style={{
+                    width: 36, height: 36, borderRadius: '50%', border: 'none', cursor:'pointer',
+                    background: done ? '#27AE60' : current ? cor : '#DDE5EA',
+                    color: done || current ? '#fff' : '#7A919E',
+                    fontSize: 16, display:'flex', alignItems:'center', justifyContent:'center',
+                    boxShadow: current ? `0 0 0 3px ${cor}33` : 'none',
+                    transition:'all .2s',
+                  }}>
+                  {done ? '✓' : step.icon}
+                </button>
+                <span style={{ fontSize:9, fontWeight:600, color: current ? cor : done ? '#27AE60' : '#7A919E', textAlign:'center', maxWidth:70, lineHeight:1.2 }}>
+                  {step.label}
+                </span>
+              </div>
+              {i < PIPELINE.length - 1 && (
+                <div style={{ flex:1, height:2, background: i < idx ? '#27AE60' : '#DDE5EA', margin:'0 4px', marginBottom:20 }}/>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function ParcelasEditor({parcelas,onChange}:{parcelas:Parcela[];onChange:(p:Parcela[])=>void}) {
@@ -169,13 +217,15 @@ export default function Home() {
   const [aba,setAba]=useState<'lancamentos'|'mensais'>('lancamentos')
   const [data,setData]=useState<Lancamento[]>([]); const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
-  const [loading,setLoading]=useState(true); const [fStatus,setFStatus]=useState(''); const [fTipo,setFTipo]=useState(''); const [fCat,setFCat]=useState(''); const [fRec,setFRec]=useState('')
+  const [loading,setLoading]=useState(true)
+  const [fStatus,setFStatus]=useState(''); const [fTipo,setFTipo]=useState(''); const [fCat,setFCat]=useState(''); const [fRec,setFRec]=useState(''); const [fPipe,setFPipe]=useState('')
   const [search,setSearch]=useState(''); const [modal,setModal]=useState(false); const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [modalMensal,setModalMensal]=useState(false); const [formMensal,setFormMensal]=useState<any>({})
   const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null); const [valorGerar,setValorGerar]=useState('')
   const [saving,setSaving]=useState(false); const [acao,setAcao]=useState(''); const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null)
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
   const [arquivo,setArquivo]=useState<File|null>(null); const [rawValor,setRawValor]=useState(''); const [loadingIA,setLoadingIA]=useState(false)
+  const [modalEntregaProg,setModalEntregaProg]=useState(false); const [diasEntrega,setDiasEntrega]=useState('')
   const nfRef=useRef<HTMLInputElement>(null)
   const nfDetRef=useRef<HTMLInputElement>(null)
 
@@ -187,19 +237,19 @@ export default function Home() {
     setLoading(true)
     try {
       const [lista,categorias,mensais]=await Promise.all([
-        api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat,recorrente:fRec}),
+        api.listar({status_entrega:fStatus,tipo_pagamento:fTipo,categoria_id:fCat,recorrente:fRec,status_processo:fPipe}),
         api.categorias(),
         api.listarContasMensais(),
       ])
       setData(lista);setCats(categorias);setContasMensais(mensais)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
-  },[fStatus,fTipo,fCat,fRec])
+  },[fStatus,fTipo,fCat,fRec,fPipe])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
   const openNovo=()=>{
-    setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10),pago:false,recorrente:false})
+    setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado'})
     setParcelas([]);setArquivo(null);setRawValor('');setDetalhe(null);setModal(true)
   }
 
@@ -268,6 +318,32 @@ export default function Home() {
     finally {setSaving(false)}
   }
 
+  const handlePipelineChange=async(novoStatus:string)=>{
+    if(!detalhe) return
+    // Se for entrega programada, pede os dias
+    if(novoStatus==='entrega_programada') {
+      setModalEntregaProg(true)
+      return
+    }
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
+    const d=await api.buscar(detalhe.id);setDetalhe(d)
+    const step=PIPELINE.find(p=>p.id===novoStatus)
+    showToast(`${step?.icon} ${step?.label}`)
+    load()
+  }
+
+  const handleConfirmarEntregaProg=async()=>{
+    if(!detalhe||!diasEntrega) return
+    const hoje=new Date()
+    hoje.setDate(hoje.getDate()+parseInt(diasEntrega))
+    const data_entrega_programada=hoje.toISOString().slice(0,10)
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'entrega_programada',dias_entrega:parseInt(diasEntrega),data_entrega_programada})
+    const d=await api.buscar(detalhe.id);setDetalhe(d)
+    setModalEntregaProg(false);setDiasEntrega('')
+    showToast(`📅 Entrega programada para ${fmtData(data_entrega_programada)}`)
+    load()
+  }
+
   const handleEntrega=async(id:string)=>{
     setAcao(id)
     try {await api.confirmarEntrega(id);showToast('Entrega confirmada!');setModal(false);load()}
@@ -291,10 +367,7 @@ export default function Home() {
 
   const handleExcluir=async(id:string)=>{
     if(!confirm('Tem certeza que deseja excluir este lançamento?')) return
-    await fetch(`${SUPA_URL}/rest/v1/lancamentos?id=eq.${id}`,{
-      method:'DELETE',
-      headers:{apikey:SUPA_KEY,Authorization:`Bearer ${SUPA_KEY}`},
-    })
+    await fetch(`${SUPA_URL}/rest/v1/lancamentos?id=eq.${id}`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:`Bearer ${SUPA_KEY}`}})
     setModal(false);showToast('Lançamento excluído!');load()
   }
 
@@ -359,31 +432,18 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {contasMensais.length===0&&(
-                    <tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhuma conta mensal cadastrada</td></tr>
-                  )}
+                  {contasMensais.length===0&&<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhuma conta mensal cadastrada</td></tr>}
                   {contasMensais.map(c=>(
                     <tr key={c.id} style={{borderBottom:'1px solid #DDE5EA'}}>
                       <td style={{padding:'10px 11px',fontWeight:600}}>{c.titulo}</td>
                       <td style={{padding:'10px 11px',color:'#7A919E',fontSize:11}}>{c.categoria_nome||'—'}</td>
                       <td style={{padding:'10px 11px',color:'#7A919E'}}>{c.pago_por}</td>
-                      <td style={{padding:'10px 11px',textAlign:'center'}}>
-                        <span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 8px',fontWeight:600}}>dia {c.dia_vencimento}</span>
-                      </td>
-                      <td style={{padding:'10px 11px'}}>
-                        <Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#27AE60':'#6B8090'}/>
-                      </td>
+                      <td style={{padding:'10px 11px',textAlign:'center'}}><span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 8px',fontWeight:600}}>dia {c.dia_vencimento}</span></td>
+                      <td style={{padding:'10px 11px'}}><Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#27AE60':'#6B8090'}/></td>
                       <td style={{padding:'10px 11px'}}>
                         <div style={{display:'flex',gap:8}}>
-                          {role==='lancadora'&&c.ativo&&(
-                            <button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>
-                              ＋ Lançar este mês
-                            </button>
-                          )}
-                          <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)}
-                            style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#E74C3C':'#27AE60'}}>
-                            {c.ativo?'Desativar':'Ativar'}
-                          </button>
+                          {role==='lancadora'&&c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>＋ Lançar este mês</button>}
+                          <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)} style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#E74C3C':'#27AE60'}}>{c.ativo?'Desativar':'Ativar'}</button>
                         </div>
                       </td>
                     </tr>
@@ -411,12 +471,13 @@ export default function Home() {
             <div style={s.card}>
               <div style={s.toolbar}>
                 <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
-                <input style={{...s.inp,width:180}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
+                  <option value="">Todas as etapas</option>
+                  {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
+                </select>
                 <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
                   <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
-                </select>
-                <select style={s.inp} value={fStatus} onChange={e=>setFStatus(e.target.value)}>
-                  <option value="">Todas as entregas</option><option value="pendente">Pendente</option><option value="entregue">Entregue</option>
                 </select>
                 <select style={s.inp} value={fTipo} onChange={e=>setFTipo(e.target.value)}>
                   <option value="">Todos os tipos</option><option value="avista">À vista</option><option value="parcelado">Parcelado</option>
@@ -430,19 +491,24 @@ export default function Home() {
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead style={{position:'sticky',top:0,zIndex:2}}>
                     <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Título')}{th('Categoria')}{th('Data')}{th('Valor')}{th('Pago por')}{th('Tipo')}{th('Pago')}{th('Dt. Pagamento')}{th('Parcelas')}{th('NF')}{th('Entrega')}{th('Mensal')}{th('Lançado por')}
+                      {th('Título')}{th('Etapa')}{th('Categoria')}{th('Data')}{th('Valor')}{th('Pago por')}{th('Tipo')}{th('Pago')}{th('Dt. Pagamento')}{th('NF')}{th('Mensal')}{th('Lançado por')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
+                    {loading?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :filtered.length===0?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
                     :filtered.map(l=>{
                       const parc=l.parcelas||[];const pagas=parc.filter(p=>p.pago).length
-                      const st=ST[l.status_entrega];const tp=ST[l.tipo_pagamento]
+                      const tp=ST[l.tipo_pagamento]
+                      const step=PIPELINE.find(p=>p.id===l.status_processo)
+                      const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'8px 11px',fontWeight:500,maxWidth:160,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                          <td style={{padding:'8px 11px',fontWeight:500,maxWidth:140,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                          <td style={{padding:'8px 11px'}}>
+                            <span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span>
+                          </td>
                           <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.categoria_nome||'—'}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
@@ -453,12 +519,8 @@ export default function Home() {
                           </td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap',fontSize:11}}>{l.data_pagamento?fmtData(l.data_pagamento):'—'}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>
-                            {parc.length>0?<span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 7px',fontWeight:600}}>{pagas}/{parc.length}</span>:<span style={{color:'#7A919E'}}>—</span>}
-                          </td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>
                             {l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📄</a>:<span style={{color:'#DDE5EA'}}>—</span>}
                           </td>
-                          <td style={{padding:'8px 11px'}}><Badge label={l.status_entrega==='entregue'?'✓ Entregue':'⏳ Pendente'} bg={st.bg} color={st.color}/></td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.recorrente?<span style={{color:'#8E44AD',fontWeight:700}}>🔄</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
                         </tr>
@@ -481,6 +543,7 @@ export default function Home() {
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
+      {/* MODAL LANÇAMENTO */}
       {modal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -491,13 +554,22 @@ export default function Home() {
 
             {detalhe?(
               <div style={{padding:'1.25rem 1.5rem'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:20}}>
+
+                {/* PIPELINE */}
+                <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
+
+                {/* Entrega programada info */}
+                {detalhe.status_processo==='entrega_programada'&&detalhe.data_entrega_programada&&(
+                  <div style={{background:'#F4EEF9',border:'1.5px solid #D8B4FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
+                    <p style={{fontSize:12,fontWeight:600,color:'#6B21A8',margin:0}}>📅 Entrega programada para {fmtData(detalhe.data_entrega_programada)} ({detalhe.dias_entrega} dias)</p>
+                  </div>
+                )}
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {[
                     ['Valor total',fmtR(detalhe.valor_total)],['Data',fmtData(detalhe.data)],
                     ['Categoria',detalhe.categoria_nome||'—'],['Pago por',detalhe.pago_por],
                     ['Tipo',detalhe.tipo_pagamento==='avista'?'À vista':'Parcelado'],['Lançado por',detalhe.criado_por],
-                    ['Entrega',detalhe.status_entrega==='entregue'?`✓ Entregue em ${detalhe.data_entrega?fmtData(detalhe.data_entrega):'—'}`:'⏳ Pendente'],
-                    ['Recorrente',detalhe.recorrente?`🔄 Mensal — dia ${detalhe.dia_vencimento||'—'}`:'Não'],
                   ].map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
@@ -520,26 +592,16 @@ export default function Home() {
 
                 {/* NOTA FISCAL */}
                 <div style={{marginBottom:16}}>
-                  <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}}
-                    onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
+                  <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
                   {detalhe.arquivo_url?(
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
-                      <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer"
-                        style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>
-                        📄 Ver nota fiscal (PDF)
-                      </a>
-                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA}
-                        style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>
-                        {loadingIA?'Enviando...':'Substituir'}
-                      </button>
+                      <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>📄 Ver nota fiscal (PDF)</a>
+                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>{loadingIA?'Enviando...':'Substituir'}</button>
                     </div>
                   ):(
                     <div style={{display:'flex',alignItems:'center',gap:12}}>
                       <span style={{fontSize:12,color:'#7A919E'}}>Sem nota fiscal anexada</span>
-                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA}
-                        style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingIA?0.6:1}}>
-                        {loadingIA?'Enviando...':'📄 Anexar nota fiscal'}
-                      </button>
+                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingIA?0.6:1}}>{loadingIA?'Enviando...':'📄 Anexar nota fiscal'}</button>
                     </div>
                   )}
                 </div>
@@ -570,12 +632,6 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
-                )}
-
-                {detalhe.status_entrega==='pendente'&&(
-                  <button onClick={()=>handleEntrega(detalhe.id)} disabled={!!acao} style={{...s.btnGrn,width:'100%',justifyContent:'center',opacity:!!acao?0.6:1,marginBottom:8}}>
-                    {acao===detalhe.id?'Confirmando...':'✓ Confirmar entrega'}
-                  </button>
                 )}
               </div>
             ):(
@@ -628,9 +684,7 @@ export default function Home() {
             <div style={s.mfoot}>
               <button onClick={()=>setModal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
               {detalhe&&role==='gestora'&&(
-                <button onClick={()=>handleExcluir(detalhe.id)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}>
-                  🗑 Excluir
-                </button>
+                <button onClick={()=>handleExcluir(detalhe.id)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}>🗑 Excluir</button>
               )}
               {!detalhe&&<button onClick={handleSave} disabled={saving||loadingIA} style={{...s.btnTeal,opacity:(saving||loadingIA)?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
             </div>
@@ -638,6 +692,33 @@ export default function Home() {
         </div>
       )}
 
+      {/* MODAL ENTREGA PROGRAMADA */}
+      {modalEntregaProg&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalEntregaProg(false)}>
+          <div style={{...s.modal,width:380}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>📅 Entrega programada</h3>
+              <button onClick={()=>setModalEntregaProg(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
+            </div>
+            <div style={{padding:'1.5rem'}}>
+              <p style={{fontSize:13,color:'#7A919E',marginBottom:16}}>Em quantos dias a entrega está programada?</p>
+              <label style={s.lb}>Número de dias *</label>
+              <input type="number" min={1} style={s.fi} value={diasEntrega} placeholder="Ex: 30" onChange={e=>setDiasEntrega(e.target.value)}/>
+              {diasEntrega&&(
+                <p style={{fontSize:12,color:'#8E44AD',marginTop:8,fontWeight:600}}>
+                  📅 Previsão: {fmtData((() => { const d=new Date(); d.setDate(d.getDate()+parseInt(diasEntrega)); return d.toISOString().slice(0,10) })())}
+                </p>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalEntregaProg(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleConfirmarEntregaProg} disabled={!diasEntrega} style={{...s.btnTeal,opacity:!diasEntrega?0.6:1}}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVA CONTA MENSAL */}
       {modalMensal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
           <div style={{...s.modal,width:480}}>
@@ -666,6 +747,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* MODAL GERAR LANÇAMENTO DO MÊS */}
       {modalGerar&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalGerar(null)}>
           <div style={{...s.modal,width:420}}>

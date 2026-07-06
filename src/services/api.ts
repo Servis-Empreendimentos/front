@@ -35,6 +35,9 @@ export type Lancamento = {
   data_pagamento?: string | null
   recorrente: boolean
   dia_vencimento?: number | null
+  status_processo: string
+  dias_entrega?: number | null
+  data_entrega_programada?: string | null
   parcelas?: Parcela[]
 }
 
@@ -49,6 +52,16 @@ export type ContaMensal = {
   criado_em: string
 }
 
+export const PIPELINE = [
+  { id: 'orcamento_aprovado',    label: 'Orçamento aprovado',      icon: '📋' },
+  { id: 'em_tratativa',          label: 'Em tratativa',             icon: '🤝' },
+  { id: 'orcamento_fechado',     label: 'Orçamento fechado',        icon: '✅' },
+  { id: 'pagamento_realizado',   label: 'Pagamento realizado',      icon: '💰' },
+  { id: 'entrega_programada',    label: 'Entrega programada',       icon: '📅' },
+  { id: 'mercadoria_recebida',   label: 'Mercadoria recebida',      icon: '📦' },
+  { id: 'nf_recebida',           label: 'NF recebida',              icon: '🧾' },
+]
+
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
 
@@ -58,12 +71,13 @@ export const api = {
     return res.json()
   },
 
-  listar: async (f: { status_entrega?: string; tipo_pagamento?: string; categoria_id?: string; recorrente?: string } = {}) => {
+  listar: async (f: { status_entrega?: string; tipo_pagamento?: string; categoria_id?: string; recorrente?: string; status_processo?: string } = {}) => {
     let query = `?order=criado_em.desc&select=*,categorias(nome)`
-    if (f.status_entrega) query += `&status_entrega=eq.${f.status_entrega}`
-    if (f.tipo_pagamento) query += `&tipo_pagamento=eq.${f.tipo_pagamento}`
-    if (f.categoria_id)   query += `&categoria_id=eq.${f.categoria_id}`
-    if (f.recorrente)     query += `&recorrente=eq.${f.recorrente}`
+    if (f.status_entrega)  query += `&status_entrega=eq.${f.status_entrega}`
+    if (f.tipo_pagamento)  query += `&tipo_pagamento=eq.${f.tipo_pagamento}`
+    if (f.categoria_id)    query += `&categoria_id=eq.${f.categoria_id}`
+    if (f.recorrente)      query += `&recorrente=eq.${f.recorrente}`
+    if (f.status_processo) query += `&status_processo=eq.${f.status_processo}`
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos${query}`, { headers })
     const data = await res.json()
     const lista = (data || []).map((l: any) => ({ ...l, categoria_nome: l.categorias?.nome }))
@@ -181,6 +195,7 @@ export const api = {
         dia_vencimento: conta.dia_vencimento,
         criado_por,
         pago: false,
+        status_processo: 'orcamento_aprovado',
       }),
     })
     const data2 = await res.json()
