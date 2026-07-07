@@ -118,7 +118,7 @@ function PipelineStepper({ atual, onChange }: { atual: string; onChange: (id: st
   const idx = PIPELINE.findIndex(p => p.id === atual)
   return (
     <div style={{ overflowX:'auto', paddingBottom:4 }}>
-      <div style={{ display:'flex', alignItems:'center', minWidth: 600, marginBottom:16 }}>
+      <div style={{ display:'flex', alignItems:'center', minWidth:600, marginBottom:16 }}>
         {PIPELINE.map((step, i) => {
           const done    = i < idx
           const current = i === idx
@@ -128,10 +128,10 @@ function PipelineStepper({ atual, onChange }: { atual: string; onChange: (id: st
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:4, flex:'0 0 auto' }}>
                 <button onClick={() => onChange(step.id)}
                   style={{
-                    width: 36, height: 36, borderRadius: '50%', border: 'none', cursor:'pointer',
+                    width:36, height:36, borderRadius:'50%', border:'none', cursor:'pointer',
                     background: done ? '#27AE60' : current ? cor : '#DDE5EA',
-                    color: done || current ? '#fff' : '#7A919E',
-                    fontSize: 16, display:'flex', alignItems:'center', justifyContent:'center',
+                    color: done||current ? '#fff' : '#7A919E',
+                    fontSize:16, display:'flex', alignItems:'center', justifyContent:'center',
                     boxShadow: current ? `0 0 0 3px ${cor}33` : 'none',
                     transition:'all .2s',
                   }}>
@@ -141,7 +141,7 @@ function PipelineStepper({ atual, onChange }: { atual: string; onChange: (id: st
                   {step.label}
                 </span>
               </div>
-              {i < PIPELINE.length - 1 && (
+              {i < PIPELINE.length-1 && (
                 <div style={{ flex:1, height:2, background: i < idx ? '#27AE60' : '#DDE5EA', margin:'0 4px', marginBottom:20 }}/>
               )}
             </div>
@@ -320,11 +320,7 @@ export default function Home() {
 
   const handlePipelineChange=async(novoStatus:string)=>{
     if(!detalhe) return
-    // Se for entrega programada, pede os dias
-    if(novoStatus==='entrega_programada') {
-      setModalEntregaProg(true)
-      return
-    }
+    if(novoStatus==='entrega_programada') { setModalEntregaProg(true); return }
     await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
     const d=await api.buscar(detalhe.id);setDetalhe(d)
     const step=PIPELINE.find(p=>p.id===novoStatus)
@@ -334,8 +330,7 @@ export default function Home() {
 
   const handleConfirmarEntregaProg=async()=>{
     if(!detalhe||!diasEntrega) return
-    const hoje=new Date()
-    hoje.setDate(hoje.getDate()+parseInt(diasEntrega))
+    const hoje=new Date(); hoje.setDate(hoje.getDate()+parseInt(diasEntrega))
     const data_entrega_programada=hoje.toISOString().slice(0,10)
     await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'entrega_programada',dias_entrega:parseInt(diasEntrega),data_entrega_programada})
     const d=await api.buscar(detalhe.id);setDetalhe(d)
@@ -422,7 +417,7 @@ export default function Home() {
           <div>
             <div style={s.row}>
               <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos</p></div>
-              {role==='lancadora'&&<button onClick={()=>setModalMensal(true)} style={s.btnTeal}>＋ Nova conta mensal</button>}
+              <button onClick={()=>setModalMensal(true)} style={s.btnTeal}>＋ Nova conta mensal</button>
             </div>
             <div style={s.card}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -442,7 +437,7 @@ export default function Home() {
                       <td style={{padding:'10px 11px'}}><Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#27AE60':'#6B8090'}/></td>
                       <td style={{padding:'10px 11px'}}>
                         <div style={{display:'flex',gap:8}}>
-                          {role==='lancadora'&&c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>＋ Lançar este mês</button>}
+                          {c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>＋ Lançar este mês</button>}
                           <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)} style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#E74C3C':'#27AE60'}}>{c.ativo?'Desativar':'Ativar'}</button>
                         </div>
                       </td>
@@ -458,7 +453,7 @@ export default function Home() {
           <div>
             <div style={s.row}>
               <div><h1 style={s.h1}>Lançamentos — Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
-              {role==='lancadora'&&<button onClick={openNovo} style={s.btnTeal}>＋ Novo lançamento</button>}
+              <button onClick={openNovo} style={s.btnTeal}>＋ Novo lançamento</button>
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
@@ -543,7 +538,6 @@ export default function Home() {
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
-      {/* MODAL LANÇAMENTO */}
       {modal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -554,11 +548,8 @@ export default function Home() {
 
             {detalhe?(
               <div style={{padding:'1.25rem 1.5rem'}}>
-
-                {/* PIPELINE */}
                 <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
 
-                {/* Entrega programada info */}
                 {detalhe.status_processo==='entrega_programada'&&detalhe.data_entrega_programada&&(
                   <div style={{background:'#F4EEF9',border:'1.5px solid #D8B4FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                     <p style={{fontSize:12,fontWeight:600,color:'#6B21A8',margin:0}}>📅 Entrega programada para {fmtData(detalhe.data_entrega_programada)} ({detalhe.dias_entrega} dias)</p>
@@ -575,7 +566,6 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* PAGAMENTO */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16,background:detalhe.pago?'#F0FFF4':'#fff'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>Pagamento</p>
                   <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap' as const}}>
@@ -590,7 +580,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* NOTA FISCAL */}
                 <div style={{marginBottom:16}}>
                   <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
                   {detalhe.arquivo_url?(
@@ -692,7 +681,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL ENTREGA PROGRAMADA */}
       {modalEntregaProg&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalEntregaProg(false)}>
           <div style={{...s.modal,width:380}}>
@@ -718,7 +706,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL NOVA CONTA MENSAL */}
       {modalMensal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
           <div style={{...s.modal,width:480}}>
@@ -747,7 +734,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL GERAR LANÇAMENTO DO MÊS */}
       {modalGerar&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalGerar(null)}>
           <div style={{...s.modal,width:420}}>
