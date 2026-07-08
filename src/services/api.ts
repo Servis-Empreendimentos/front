@@ -20,7 +20,11 @@ export type Parcela = {
 export type Lancamento = {
   id: string
   titulo: string
+  cnpj?: string | null
   valor_total: number
+  valor_original?: number | null
+  tem_desconto?: boolean
+  valor_desconto?: number | null
   data: string
   categoria_id: string
   categoria_nome?: string
@@ -62,8 +66,18 @@ export const PIPELINE = [
   { id: 'nf_recebida',           label: 'NF recebida',              icon: '🧾' },
 ]
 
+export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
+
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
+export const fmtCNPJ = (v: string) => {
+  const d = v.replace(/\D/g,'').slice(0,14)
+  if (d.length <= 2) return d
+  if (d.length <= 5) return `${d.slice(0,2)}.${d.slice(2)}`
+  if (d.length <= 8) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5)}`
+  if (d.length <= 12) return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8)}`
+  return `${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`
+}
 
 export const api = {
   categorias: async () => {
@@ -187,6 +201,7 @@ export const api = {
       body: JSON.stringify({
         titulo: conta.titulo,
         valor_total: 0,
+        valor_original: 0,
         data,
         categoria_id: conta.categoria_id,
         pago_por: conta.pago_por,

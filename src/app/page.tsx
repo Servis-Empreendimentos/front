@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData, PIPELINE } from '../services/api'
+import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM } from '../services/api'
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' | 'gestora' }> = {
   'anne':   { senha: 'anne123',   nome: 'Anne',   role: 'lancadora' },
@@ -36,6 +36,7 @@ const s = {
   mfoot:   { display:'flex', gap:8, justifyContent:'flex-end', padding:'1rem 1.5rem', borderTop:'1px solid #DDE5EA', background:'#FAFCFD', position:'sticky' as const, bottom:0 },
   fg:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 14px', padding:'1.25rem 1.5rem' },
   fi:      { width:'100%', border:'1.5px solid #DDE5EA', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:'inherit', color:'#1A2B38', outline:'none', boxSizing:'border-box' as const },
+  fiLock:  { width:'100%', border:'1.5px solid #DDE5EA', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:'inherit', color:'#7A919E', outline:'none', boxSizing:'border-box' as const, background:'#F9FAFB', cursor:'not-allowed' as const },
   lb:      { display:'block', fontSize:10, fontWeight:600, color:'#7A919E', textTransform:'uppercase' as const, letterSpacing:'.05em', marginBottom:4 },
   footer:  { background:'#fff', borderTop:'1px solid #DDE5EA', padding:'.65rem 1.5rem', display:'flex', justifyContent:'space-between', alignItems:'center' },
 }
@@ -55,6 +56,12 @@ const PIPE_COLORS: Record<string, string> = {
   entrega_programada:  '#8E44AD',
   mercadoria_recebida: '#0097A8',
   nf_recebida:         '#1A2B38',
+}
+
+function isLocked(status: string) {
+  const idx = PIPELINE.findIndex(p => p.id === status)
+  const lockIdx = PIPELINE.findIndex(p => p.id === PIPELINE_LOCKED_FROM)
+  return idx >= lockIdx
 }
 
 async function sbPatch(table: string, query: string, body: any) {
@@ -83,7 +90,7 @@ async function lerNFcomIA(file: File): Promise<any> {
       messages: [{ role:'user', content: [
         { type: isPDF?'document':'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
         { type:'text', text:`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido, sem texto adicional, sem markdown:
-{"titulo":"nome do fornecedor ou descrição do serviço","valor_total":0.00,"data":"YYYY-MM-DD","pago_por":"nome do tomador/comprador"}
+{"titulo":"nome do fornecedor ou descrição do serviço","valor_total":0.00,"data":"YYYY-MM-DD","cnpj":"somente números"}
 Se não encontrar algum campo, deixe em branco ou zero.` }
       ]}]
     })
@@ -226,6 +233,7 @@ export default function Home() {
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
   const [arquivo,setArquivo]=useState<File|null>(null); const [rawValor,setRawValor]=useState(''); const [loadingIA,setLoadingIA]=useState(false)
   const [modalEntregaProg,setModalEntregaProg]=useState(false); const [diasEntrega,setDiasEntrega]=useState('')
+  const [rawDesconto,setRawDesconto]=useState('')
   const nfRef=useRef<HTMLInputElement>(null)
   const nfDetRef=useRef<HTMLInputElement>(null)
 
@@ -249,8 +257,17 @@ export default function Home() {
   useEffect(()=>{if(logado)load()},[load,logado])
 
   const openNovo=()=>{
-    setForm({tipo_pagamento:'avista',data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado'})
-    setParcelas([]);setArquivo(null);setRawValor('');setDetalhe(null);setModal(true)
+    setForm({
+      tipo_pagamento:'avista',
+      data:new Date().toISOString().slice(0,10),
+      pago:false,
+      recorrente:false,
+      status_processo:'orcamento_aprovado',
+      pago_por:'Servis Empreendimentos',
+      tem_desconto:false,
+      valor_desconto:0,
+    })
+    setParcelas([]);setArquivo(null);setRawValor('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
   const openDetalhe=async(id:string)=>{
@@ -262,10 +279,11 @@ export default function Home() {
     try {
       const dados=await lerNFcomIA(file)
       if(dados.titulo) set('titulo',dados.titulo)
-      if(dados.pago_por) set('pago_por',dados.pago_por)
+      if(dados.cnpj) set('cnpj',dados.cnpj)
       if(dados.data) set('data',dados.data)
       if(dados.valor_total&&dados.valor_total>0) {
         set('valor_total',dados.valor_total)
+        set('valor_original',dados.valor_total)
         setRawValor((dados.valor_total as number).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
       }
       showToast('✅ Dados extraídos com sucesso!')
@@ -285,15 +303,35 @@ export default function Home() {
   }
 
   const handleSave=async()=>{
-    if(!form.titulo||!form.valor_total||!form.data||!form.categoria_id||!form.pago_por) return showToast('Preencha todos os campos obrigatórios',false)
+    if(!form.titulo||!form.valor_total||!form.data||!form.categoria_id) return showToast('Preencha todos os campos obrigatórios',false)
     setSaving(true)
     try {
       let arquivo_url=undefined
       if(arquivo) arquivo_url=await api.uploadPDF(arquivo)
-      await api.criar({...form,criado_por:user,arquivo_url,parcelas})
+      await api.criar({
+        ...form,
+        valor_original: form.valor_total,
+        criado_por: user,
+        arquivo_url,
+        parcelas,
+      })
       setModal(false);showToast('Lançamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
     finally {setSaving(false)}
+  }
+
+  const handleSalvarDesconto=async()=>{
+    if(!detalhe) return
+    const valor_desconto = parseFloat(rawDesconto.replace(/\D/g,''))/100 || 0
+    const valor_total = (detalhe.valor_original||detalhe.valor_total) - valor_desconto
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
+      tem_desconto: valor_desconto > 0,
+      valor_desconto,
+      valor_total,
+    })
+    const d=await api.buscar(detalhe.id);setDetalhe(d)
+    setRawDesconto('')
+    showToast('Desconto aplicado!')
   }
 
   const handleSaveMensal=async()=>{
@@ -312,7 +350,7 @@ export default function Home() {
     try {
       const lanc=await api.gerarLancamentoMensal(modalGerar,user)
       const valor=parseFloat(valorGerar.replace(/\D/g,''))/100
-      await sbPatch('lancamentos',`?id=eq.${lanc.id}`,{valor_total:valor})
+      await sbPatch('lancamentos',`?id=eq.${lanc.id}`,{valor_total:valor,valor_original:valor})
       setModalGerar(null);setValorGerar('');showToast('Lançamento gerado!');setAba('lancamentos');load()
     } catch {showToast('Erro ao gerar',false)}
     finally {setSaving(false)}
@@ -383,7 +421,7 @@ export default function Home() {
   const filtered=data.filter(l=>{
     if(!search) return true
     const q=search.toLowerCase()
-    return [l.titulo,l.pago_por,l.criado_por,l.categoria_nome].some(f=>f?.toLowerCase().includes(q))
+    return [l.titulo,l.pago_por,l.criado_por,l.categoria_nome,l.cnpj].some(f=>f?.toLowerCase().includes(q))
   })
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
@@ -486,37 +524,34 @@ export default function Home() {
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead style={{position:'sticky',top:0,zIndex:2}}>
                     <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Título')}{th('Etapa')}{th('Categoria')}{th('Data')}{th('Valor')}{th('Pago por')}{th('Tipo')}{th('Pago')}{th('Dt. Pagamento')}{th('NF')}{th('Mensal')}{th('Lançado por')}
+                      {th('Empresa')}{th('CNPJ')}{th('Etapa')}{th('Categoria')}{th('Data')}{th('Orçamento')}{th('Desconto')}{th('Valor Final')}{th('Pago')}{th('NF')}{th('Lançado por')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
+                    {loading?<tr><td colSpan={11} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :filtered.length===0?<tr><td colSpan={11} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
                     :filtered.map(l=>{
-                      const parc=l.parcelas||[];const pagas=parc.filter(p=>p.pago).length
-                      const tp=ST[l.tipo_pagamento]
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'8px 11px',fontWeight:500,maxWidth:140,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                          <td style={{padding:'8px 11px'}}>
-                            <span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span>
-                          </td>
+                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11,whiteSpace:'nowrap'}}>{l.cnpj?fmtCNPJ(l.cnpj):'—'}</td>
+                          <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
                           <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.categoria_nome||'—'}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
+                          <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_original?fmtR(l.valor_original):'—'}</td>
+                          <td style={{padding:'8px 11px',textAlign:'center'}}>
+                            {l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}
+                          </td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.pago_por}</td>
-                          <td style={{padding:'8px 11px'}}><Badge label={l.tipo_pagamento==='avista'?'À vista':'Parcelado'} bg={tp.bg} color={tp.color}/></td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>
                             {l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}
                           </td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap',fontSize:11}}>{l.data_pagamento?fmtData(l.data_pagamento):'—'}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>
                             {l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📄</a>:<span style={{color:'#DDE5EA'}}>—</span>}
                           </td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.recorrente?<span style={{color:'#8E44AD',fontWeight:700}}>🔄</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
                         </tr>
                       )
@@ -550,22 +585,80 @@ export default function Home() {
               <div style={{padding:'1.25rem 1.5rem'}}>
                 <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
 
+                {/* AVISO DE BLOQUEIO */}
+                {isLocked(detalhe.status_processo)&&(
+                  <div style={{background:'#FEF5EB',border:'1.5px solid #FDE68A',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
+                    <p style={{fontSize:12,fontWeight:600,color:'#92400E',margin:0}}>🔒 Orçamento fechado — valores não podem ser alterados</p>
+                  </div>
+                )}
+
                 {detalhe.status_processo==='entrega_programada'&&detalhe.data_entrega_programada&&(
                   <div style={{background:'#F4EEF9',border:'1.5px solid #D8B4FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                     <p style={{fontSize:12,fontWeight:600,color:'#6B21A8',margin:0}}>📅 Entrega programada para {fmtData(detalhe.data_entrega_programada)} ({detalhe.dias_entrega} dias)</p>
                   </div>
                 )}
 
+                {/* DADOS */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {[
-                    ['Valor total',fmtR(detalhe.valor_total)],['Data',fmtData(detalhe.data)],
-                    ['Categoria',detalhe.categoria_nome||'—'],['Pago por',detalhe.pago_por],
-                    ['Tipo',detalhe.tipo_pagamento==='avista'?'À vista':'Parcelado'],['Lançado por',detalhe.criado_por],
+                    ['Empresa',detalhe.titulo],
+                    ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
+                    ['Categoria',detalhe.categoria_nome||'—'],
+                    ['Pago por',detalhe.pago_por],
+                    ['Lançado por',detalhe.criado_por],
+                    ['Data',fmtData(detalhe.data)],
                   ].map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
                 </div>
 
+                {/* VALORES */}
+                <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+                    <div>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Orçamento original</p>
+                      <p style={{fontSize:16,fontWeight:700,color:'#1A2B38'}}>{fmtR(detalhe.valor_original||detalhe.valor_total)}</p>
+                    </div>
+                    <div>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Desconto</p>
+                      <p style={{fontSize:16,fontWeight:700,color:detalhe.tem_desconto?'#E67E22':'#DDE5EA'}}>
+                        {detalhe.tem_desconto&&detalhe.valor_desconto?`- ${fmtR(detalhe.valor_desconto)}`:'Sem desconto'}
+                      </p>
+                    </div>
+                    <div>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor final</p>
+                      <p style={{fontSize:16,fontWeight:700,color:'#27AE60'}}>{fmtR(detalhe.valor_total)}</p>
+                    </div>
+                  </div>
+
+                  {/* DESCONTO — só disponível em tratativa e não bloqueado */}
+                  {detalhe.status_processo==='em_tratativa'&&!isLocked(detalhe.status_processo)&&(
+                    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #DDE5EA'}}>
+                      <p style={{fontSize:11,fontWeight:600,color:'#E67E22',marginBottom:8}}>🤝 Em tratativa — aplicar desconto</p>
+                      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                        <input style={{...s.fi,flex:1}} value={rawDesconto} placeholder="R$ 0,00"
+                          onChange={e=>{
+                            const digits=e.target.value.replace(/\D/g,'')
+                            setRawDesconto(digits?(parseInt(digits)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                          }}/>
+                        <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>
+                          Aplicar desconto
+                        </button>
+                        {detalhe.tem_desconto&&(
+                          <button onClick={async()=>{
+                            await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
+                            const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!')
+                          }} style={{...s.btnOut,color:'#E74C3C',borderColor:'#FDECEA',whiteSpace:'nowrap' as const}}>
+                            Remover
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* PAGAMENTO */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16,background:detalhe.pago?'#F0FFF4':'#fff'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>Pagamento</p>
                   <div style={{display:'flex',alignItems:'center',gap:16,flexWrap:'wrap' as const}}>
@@ -580,6 +673,7 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* NOTA FISCAL */}
                 <div style={{marginBottom:16}}>
                   <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
                   {detalhe.arquivo_url?(
@@ -624,6 +718,7 @@ export default function Home() {
                 )}
               </div>
             ):(
+              /* FORMULÁRIO NOVO LANÇAMENTO — simplificado */
               <div style={s.fg}>
                 <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
                   <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar NF com IA</p>
@@ -635,38 +730,38 @@ export default function Home() {
                   {arquivo&&!loadingIA&&<p style={{fontSize:11,color:'#0097A8',marginTop:8,fontWeight:600}}>✅ {arquivo.name}</p>}
                 </div>
 
-                <FF lb="Título *"><input style={s.fi} value={form.titulo||''} onChange={e=>set('titulo',e.target.value)} placeholder="Ex: NF Manutenção Elétrica"/></FF>
-                <FF lb="Valor total *">
+                <FF lb="Nome da empresa *" full>
+                  <input style={s.fi} value={form.titulo||''} onChange={e=>set('titulo',e.target.value)} placeholder="Ex: Maff Engenharia e Construções"/>
+                </FF>
+
+                <FF lb="CNPJ">
+                  <input style={s.fi} value={form.cnpj?fmtCNPJ(form.cnpj):''} placeholder="00.000.000/0000-00" maxLength={18}
+                    onChange={e=>set('cnpj',e.target.value.replace(/\D/g,''))}/>
+                </FF>
+
+                <FF lb="Valor do orçamento *">
                   <input style={s.fi} value={rawValor} placeholder="R$ 0,00" onChange={e=>{
                     const digits=e.target.value.replace(/\D/g,'')
                     setRawValor(digits?(parseInt(digits)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                     set('valor_total',digits?parseFloat(digits)/100:0)
+                    set('valor_original',digits?parseFloat(digits)/100:0)
                   }}/>
                 </FF>
-                <FF lb="Data *"><input type="date" style={s.fi} value={form.data||''} onChange={e=>set('data',e.target.value)}/></FF>
+
+                <FF lb="Data *">
+                  <input type="date" style={s.fi} value={form.data||''} onChange={e=>set('data',e.target.value)}/>
+                </FF>
+
                 <FF lb="Categoria *">
                   <select style={s.fi} value={form.categoria_id||''} onChange={e=>set('categoria_id',e.target.value)}>
                     <option value="">Selecione...</option>
                     {cats.map((c:any)=><option key={c.id} value={c.id}>{c.nome}</option>)}
                   </select>
                 </FF>
-                <FF lb="Pago por *"><input style={s.fi} value={form.pago_por||''} onChange={e=>set('pago_por',e.target.value)} placeholder="Ex: Empresa X"/></FF>
-                <FF lb="Tipo de pagamento *">
-                  <select style={s.fi} value={form.tipo_pagamento||'avista'} onChange={e=>set('tipo_pagamento',e.target.value)}>
-                    <option value="avista">À vista</option>
-                    <option value="parcelado">Parcelado (por medição)</option>
-                  </select>
-                </FF>
 
-                <div style={{display:'flex',alignItems:'center',gap:12,padding:'8px 12px',background:'#F0FFF4',borderRadius:8,border:'1.5px solid #86EFAC'}}>
-                  <input type="checkbox" id="pago" checked={form.pago||false} onChange={e=>set('pago',e.target.checked)} style={{width:16,height:16,cursor:'pointer'}}/>
-                  <label htmlFor="pago" style={{fontSize:13,fontWeight:600,color:'#166534',cursor:'pointer'}}>Já foi pago</label>
-                </div>
-                <FF lb="Data de pagamento">
-                  <input type="date" style={{...s.fi,opacity:form.pago?1:0.5}} value={form.data_pagamento||''} disabled={!form.pago} onChange={e=>set('data_pagamento',e.target.value)}/>
+                <FF lb="Pago por">
+                  <input style={s.fi} value={form.pago_por||''} onChange={e=>set('pago_por',e.target.value)}/>
                 </FF>
-
-                {form.tipo_pagamento==='parcelado'&&<ParcelasEditor parcelas={parcelas} onChange={setParcelas}/>}
               </div>
             )}
 
