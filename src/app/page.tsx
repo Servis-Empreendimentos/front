@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, Parcela, ContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM } from '../services/api'
+import { api, Lancamento, Parcela, ContaMensal, Fornecedor, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora' | 'gestora' }> = {
   'anne':   { senha: 'anne123',   nome: 'Anne',   role: 'lancadora' },
@@ -36,7 +36,6 @@ const s = {
   mfoot:   { display:'flex', gap:8, justifyContent:'flex-end', padding:'1rem 1.5rem', borderTop:'1px solid #DDE5EA', background:'#FAFCFD', position:'sticky' as const, bottom:0 },
   fg:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 14px', padding:'1.25rem 1.5rem' },
   fi:      { width:'100%', border:'1.5px solid #DDE5EA', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:'inherit', color:'#1A2B38', outline:'none', boxSizing:'border-box' as const },
-  fiLock:  { width:'100%', border:'1.5px solid #DDE5EA', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:'inherit', color:'#7A919E', outline:'none', boxSizing:'border-box' as const, background:'#F9FAFB', cursor:'not-allowed' as const },
   lb:      { display:'block', fontSize:10, fontWeight:600, color:'#7A919E', textTransform:'uppercase' as const, letterSpacing:'.05em', marginBottom:4 },
   footer:  { background:'#fff', borderTop:'1px solid #DDE5EA', padding:'.65rem 1.5rem', display:'flex', justifyContent:'space-between', alignItems:'center' },
 }
@@ -58,11 +57,9 @@ const PIPE_COLORS: Record<string, string> = {
   nf_recebida:         '#1A2B38',
 }
 
-function isLocked(status: string) {
-  const idx = PIPELINE.findIndex(p => p.id === status)
-  const lockIdx = PIPELINE.findIndex(p => p.id === PIPELINE_LOCKED_FROM)
-  return idx >= lockIdx
-}
+function pipeIdx(status: string) { return PIPELINE.findIndex(p => p.id === status) }
+function isLocked(status: string) { return pipeIdx(status) >= pipeIdx(PIPELINE_LOCKED_FROM) }
+function canAttachNF(status: string) { return pipeIdx(status) >= pipeIdx(PIPELINE_NF_FROM) }
 
 async function sbPatch(table: string, query: string, body: any) {
   await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
@@ -119,6 +116,46 @@ function Badge({label,bg,color}:{label:string;bg:string;color:string}) {
 
 function FF({lb:label,children,full}:{lb:string;children:React.ReactNode;full?:boolean}) {
   return <div style={full?{gridColumn:'1/-1'}:{}}><label style={s.lb}>{label}</label>{children}</div>
+}
+
+function FornecedorInput({ value, cnpj, onChange }: {
+  value: string
+  cnpj: string
+  onChange: (nome: string, cnpj: string) => void
+}) {
+  const [sugestoes, setSugestoes] = useState<Fornecedor[]>([])
+  const [aberto, setAberto] = useState(false)
+  const timer = useRef<any>(null)
+
+  const buscar = (termo: string) => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(async () => {
+      const res = await api.buscarFornecedores(termo)
+      setSugestoes(res)
+      setAberto(res.length > 0)
+    }, 300)
+  }
+
+  return (
+    <div style={{position:'relative' as const}}>
+      <input style={{...s.fi}} value={value} placeholder="Digite o nome da empresa..."
+        onChange={e=>{ onChange(e.target.value, cnpj); buscar(e.target.value) }}
+        onBlur={()=>setTimeout(()=>setAberto(false),200)}/>
+      {aberto&&(
+        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1.5px solid #DDE5EA',borderRadius:8,zIndex:100,boxShadow:'0 4px 16px rgba(0,0,0,.1)',maxHeight:200,overflowY:'auto'}}>
+          {sugestoes.map(f=>(
+            <div key={f.id} onClick={()=>{ onChange(f.nome, f.cnpj||''); setAberto(false) }}
+              style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid #F2F6F8'}}
+              onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')}
+              onMouseLeave={e=>(e.currentTarget.style.background='')}>
+              <p style={{margin:0,fontSize:13,fontWeight:600}}>{f.nome}</p>
+              {f.cnpj&&<p style={{margin:0,fontSize:11,color:'#7A919E'}}>{fmtCNPJ(f.cnpj)}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function PipelineStepper({ atual, onChange }: { atual: string; onChange: (id: string) => void }) {
@@ -266,6 +303,8 @@ export default function Home() {
       pago_por:'Servis Empreendimentos',
       tem_desconto:false,
       valor_desconto:0,
+      titulo:'',
+      cnpj:'',
     })
     setParcelas([]);setArquivo(null);setRawValor('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
@@ -308,13 +347,9 @@ export default function Home() {
     try {
       let arquivo_url=undefined
       if(arquivo) arquivo_url=await api.uploadPDF(arquivo)
-      await api.criar({
-        ...form,
-        valor_original: form.valor_total,
-        criado_por: user,
-        arquivo_url,
-        parcelas,
-      })
+      await api.criar({ ...form, valor_original:form.valor_total, criado_por:user, arquivo_url, parcelas })
+      // salva fornecedor
+      if(form.titulo) await api.salvarFornecedor(form.titulo, form.cnpj||undefined)
       setModal(false);showToast('Lançamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
     finally {setSaving(false)}
@@ -322,16 +357,10 @@ export default function Home() {
 
   const handleSalvarDesconto=async()=>{
     if(!detalhe) return
-    const valor_desconto = parseFloat(rawDesconto.replace(/\D/g,''))/100 || 0
-    const valor_total = (detalhe.valor_original||detalhe.valor_total) - valor_desconto
-    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
-      tem_desconto: valor_desconto > 0,
-      valor_desconto,
-      valor_total,
-    })
-    const d=await api.buscar(detalhe.id);setDetalhe(d)
-    setRawDesconto('')
-    showToast('Desconto aplicado!')
+    const valor_desconto=parseFloat(rawDesconto.replace(/\D/g,''))/100||0
+    const valor_total=(detalhe.valor_original||detalhe.valor_total)-valor_desconto
+    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
+    const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto aplicado!')
   }
 
   const handleSaveMensal=async()=>{
@@ -358,7 +387,7 @@ export default function Home() {
 
   const handlePipelineChange=async(novoStatus:string)=>{
     if(!detalhe) return
-    if(novoStatus==='entrega_programada') { setModalEntregaProg(true); return }
+    if(novoStatus==='entrega_programada'){setModalEntregaProg(true);return}
     await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
     const d=await api.buscar(detalhe.id);setDetalhe(d)
     const step=PIPELINE.find(p=>p.id===novoStatus)
@@ -375,13 +404,6 @@ export default function Home() {
     setModalEntregaProg(false);setDiasEntrega('')
     showToast(`📅 Entrega programada para ${fmtData(data_entrega_programada)}`)
     load()
-  }
-
-  const handleEntrega=async(id:string)=>{
-    setAcao(id)
-    try {await api.confirmarEntrega(id);showToast('Entrega confirmada!');setModal(false);load()}
-    catch {showToast('Erro',false)}
-    finally {setAcao('')}
   }
 
   const handlePagar=async(parcelaId:string,lancId:string)=>{
@@ -585,7 +607,6 @@ export default function Home() {
               <div style={{padding:'1.25rem 1.5rem'}}>
                 <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
 
-                {/* AVISO DE BLOQUEIO */}
                 {isLocked(detalhe.status_processo)&&(
                   <div style={{background:'#FEF5EB',border:'1.5px solid #FDE68A',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                     <p style={{fontSize:12,fontWeight:600,color:'#92400E',margin:0}}>🔒 Orçamento fechado — valores não podem ser alterados</p>
@@ -598,7 +619,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* DADOS */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {[
                     ['Empresa',detalhe.titulo],
@@ -632,7 +652,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* DESCONTO — só disponível em tratativa e não bloqueado */}
                   {detalhe.status_processo==='em_tratativa'&&!isLocked(detalhe.status_processo)&&(
                     <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #DDE5EA'}}>
                       <p style={{fontSize:11,fontWeight:600,color:'#E67E22',marginBottom:8}}>🤝 Em tratativa — aplicar desconto</p>
@@ -642,16 +661,12 @@ export default function Home() {
                             const digits=e.target.value.replace(/\D/g,'')
                             setRawDesconto(digits?(parseInt(digits)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                           }}/>
-                        <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>
-                          Aplicar desconto
-                        </button>
+                        <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>Aplicar</button>
                         {detalhe.tem_desconto&&(
                           <button onClick={async()=>{
                             await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
                             const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!')
-                          }} style={{...s.btnOut,color:'#E74C3C',borderColor:'#FDECEA',whiteSpace:'nowrap' as const}}>
-                            Remover
-                          </button>
+                          }} style={{...s.btnOut,color:'#E74C3C',borderColor:'#FDECEA',whiteSpace:'nowrap' as const}}>Remover</button>
                         )}
                       </div>
                     </div>
@@ -673,21 +688,29 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* NOTA FISCAL */}
-                <div style={{marginBottom:16}}>
-                  <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
-                  {detalhe.arquivo_url?(
-                    <div style={{display:'flex',alignItems:'center',gap:12}}>
-                      <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>📄 Ver nota fiscal (PDF)</a>
-                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>{loadingIA?'Enviando...':'Substituir'}</button>
-                    </div>
-                  ):(
-                    <div style={{display:'flex',alignItems:'center',gap:12}}>
-                      <span style={{fontSize:12,color:'#7A919E'}}>Sem nota fiscal anexada</span>
-                      <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingIA?0.6:1}}>{loadingIA?'Enviando...':'📄 Anexar nota fiscal'}</button>
-                    </div>
-                  )}
-                </div>
+                {/* NOTA FISCAL — só após mercadoria recebida */}
+                {canAttachNF(detalhe.status_processo)&&(
+                  <div style={{marginBottom:16}}>
+                    <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
+                    {detalhe.arquivo_url?(
+                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>📄 Ver nota fiscal (PDF)</a>
+                        <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>{loadingIA?'Enviando...':'Substituir'}</button>
+                      </div>
+                    ):(
+                      <div style={{display:'flex',alignItems:'center',gap:12}}>
+                        <span style={{fontSize:12,color:'#7A919E'}}>Sem nota fiscal anexada</span>
+                        <button onClick={()=>nfDetRef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingIA?0.6:1}}>{loadingIA?'Enviando...':'📄 Anexar nota fiscal'}</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!canAttachNF(detalhe.status_processo)&&(
+                  <div style={{marginBottom:16,padding:'10px 14px',background:'#F2F6F8',borderRadius:8,border:'1.5px solid #DDE5EA'}}>
+                    <p style={{fontSize:12,color:'#7A919E',margin:0}}>📦 Nota fiscal disponível após <strong>Mercadoria recebida</strong></p>
+                  </div>
+                )}
 
                 {detalhe.tipo_pagamento==='parcelado'&&(detalhe.parcelas||[]).length>0&&(
                   <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden',marginBottom:16}}>
@@ -718,7 +741,6 @@ export default function Home() {
                 )}
               </div>
             ):(
-              /* FORMULÁRIO NOVO LANÇAMENTO — simplificado */
               <div style={s.fg}>
                 <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
                   <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar NF com IA</p>
@@ -731,7 +753,11 @@ export default function Home() {
                 </div>
 
                 <FF lb="Nome da empresa *" full>
-                  <input style={s.fi} value={form.titulo||''} onChange={e=>set('titulo',e.target.value)} placeholder="Ex: Maff Engenharia e Construções"/>
+                  <FornecedorInput
+                    value={form.titulo||''}
+                    cnpj={form.cnpj||''}
+                    onChange={(nome,cnpj)=>{ set('titulo',nome); set('cnpj',cnpj) }}
+                  />
                 </FF>
 
                 <FF lb="CNPJ">

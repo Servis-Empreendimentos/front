@@ -56,6 +56,12 @@ export type ContaMensal = {
   criado_em: string
 }
 
+export type Fornecedor = {
+  id: string
+  nome: string
+  cnpj?: string | null
+}
+
 export const PIPELINE = [
   { id: 'orcamento_aprovado',    label: 'Orçamento aprovado',      icon: '📋' },
   { id: 'em_tratativa',          label: 'Em tratativa',             icon: '🤝' },
@@ -67,6 +73,7 @@ export const PIPELINE = [
 ]
 
 export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
+export const PIPELINE_NF_FROM     = 'mercadoria_recebida'
 
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
@@ -165,6 +172,43 @@ export const api = {
       headers: { ...headers, Prefer: 'return=minimal' },
       body: JSON.stringify({ pago: false, data_pagamento: null }),
     })
+  },
+
+  // FORNECEDORES
+  buscarFornecedores: async (termo: string): Promise<Fornecedor[]> => {
+    if (!termo || termo.length < 2) return []
+    const res = await fetch(
+      `${BASE_URL}/rest/v1/fornecedores?or=(nome.ilike.*${termo}*,cnpj.ilike.*${termo}*)&order=nome.asc&limit=8`,
+      { headers }
+    )
+    return res.json()
+  },
+
+  salvarFornecedor: async (nome: string, cnpj?: string): Promise<Fornecedor> => {
+    // verifica se já existe
+    const res = await fetch(
+      `${BASE_URL}/rest/v1/fornecedores?nome=ilike.${encodeURIComponent(nome)}&limit=1`,
+      { headers }
+    )
+    const existentes = await res.json()
+    if (existentes?.length) {
+      // atualiza cnpj se não tinha
+      if (cnpj && !existentes[0].cnpj) {
+        await fetch(`${BASE_URL}/rest/v1/fornecedores?id=eq.${existentes[0].id}`, {
+          method: 'PATCH',
+          headers: { ...headers, Prefer: 'return=minimal' },
+          body: JSON.stringify({ cnpj }),
+        })
+      }
+      return existentes[0]
+    }
+    const res2 = await fetch(`${BASE_URL}/rest/v1/fornecedores`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ nome, cnpj: cnpj || null }),
+    })
+    const data = await res2.json()
+    return data[0]
   },
 
   listarContasMensais: async () => {
