@@ -62,7 +62,7 @@ async function sbPatch(table: string, query: string, body: any) {
   })
 }
 
-async function lerNFcomIA(file: File): Promise<any> {
+async function lerArquivoIA(file: File): Promise<any> {
   const base64 = await new Promise<string>((res, rej) => {
     const r = new FileReader()
     r.onload = () => res((r.result as string).split(',')[1])
@@ -78,7 +78,7 @@ async function lerNFcomIA(file: File): Promise<any> {
       model: 'claude-sonnet-4-5', max_tokens: 1000,
       messages: [{ role:'user', content: [
         { type: isPDF?'document':'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
-        { type:'text', text:`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido, sem texto adicional:
+        { type:'text', text:`Extraia os dados deste documento e retorne APENAS um JSON válido, sem texto adicional:
 {"titulo":"nome do fornecedor","valor_total":0.00,"data":"YYYY-MM-DD","cnpj":"somente números"}` }
       ]}]
     })
@@ -119,8 +119,7 @@ function AnexoBtn({ url, label, icon, onAnexar, onSubstituir, loading }: {
         style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:'#0097A8',textDecoration:'none',fontWeight:600}}>
         {icon} Ver {label}
       </a>
-      <button onClick={onSubstituir} disabled={loading}
-        style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>
+      <button onClick={onSubstituir} disabled={loading} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>
         {loading?'Enviando...':'Substituir'}
       </button>
     </div>
@@ -128,8 +127,7 @@ function AnexoBtn({ url, label, icon, onAnexar, onSubstituir, loading }: {
   return (
     <div style={{display:'flex',alignItems:'center',gap:12}}>
       <span style={{fontSize:12,color:'#7A919E'}}>Sem {label} anexada</span>
-      <button onClick={onAnexar} disabled={loading}
-        style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loading?0.6:1}}>
+      <button onClick={onAnexar} disabled={loading} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loading?0.6:1}}>
         {loading?'Enviando...':`${icon} Anexar ${label}`}
       </button>
     </div>
@@ -277,14 +275,11 @@ export default function Home() {
   const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null); const [valorGerar,setValorGerar]=useState('')
   const [saving,setSaving]=useState(false); const [acao,setAcao]=useState(''); const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null)
   const [form,setForm]=useState<any>({}); const [parcelas,setParcelas]=useState<Parcela[]>([])
-  const [rawValor,setRawValor]=useState(''); const [loadingIA,setLoadingIA]=useState(false)
-  const [loadingAnexo,setLoadingAnexo]=useState(false)
+  const [rawValor,setRawValor]=useState(''); const [loadingAnexo,setLoadingAnexo]=useState(false)
   const [modalEntregaProg,setModalEntregaProg]=useState(false); const [diasEntrega,setDiasEntrega]=useState('')
   const [rawDesconto,setRawDesconto]=useState('')
-  const nfRef=useRef<HTMLInputElement>(null)
-  const propostaRef=useRef<HTMLInputElement>(null)
-  const nfDetRef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
+  const nfDetRef=useRef<HTMLInputElement>(null)
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3000)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
@@ -312,22 +307,6 @@ export default function Home() {
 
   const openDetalhe=async(id:string)=>{
     const d=await api.buscar(id);setDetalhe(d);setParcelas(d.parcelas||[]);setModal(true)
-  }
-
-  const handleImportarNF=async(file:File)=>{
-    setLoadingIA(true)
-    try {
-      const dados=await lerNFcomIA(file)
-      if(dados.titulo) set('titulo',dados.titulo)
-      if(dados.cnpj) set('cnpj',dados.cnpj)
-      if(dados.data) set('data',dados.data)
-      if(dados.valor_total&&dados.valor_total>0) {
-        set('valor_total',dados.valor_total); set('valor_original',dados.valor_total)
-        setRawValor((dados.valor_total as number).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
-      }
-      showToast('✅ Dados extraídos com sucesso!')
-    } catch {showToast('⚠️ Não foi possível extrair. Preencha manualmente.',false)}
-    finally {setLoadingIA(false)}
   }
 
   const handleAnexarProposta=async(file:File)=>{
@@ -520,12 +499,12 @@ export default function Home() {
         {aba==='lancamentos'&&(
           <div>
             <div style={s.row}>
-              <div><h1 style={s.h1}>Lançamentos — Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
-              <button onClick={openNovo} style={s.btnTeal}>＋ Novo lançamento</button>
+              <div><h1 style={s.h1}>Lançamentos — Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
+              <button onClick={openNovo} style={s.btnTeal}>＋ Novo orçamento</button>
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
-              <KPI l="Total de lançamentos" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
+              <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
               <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos registros" c="#E67E22"/>
               <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
               <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#E74C3C"/>
@@ -559,7 +538,7 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {loading?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum lançamento encontrado</td></tr>
+                    :filtered.length===0?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum registro encontrado</td></tr>
                     :filtered.map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
@@ -593,7 +572,7 @@ export default function Home() {
                 </table>
               </div>
               <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
-                {filtered.length} lançamento{filtered.length!==1?'s':''} exibido{filtered.length!==1?'s':''} de {data.length} total
+                {filtered.length} registro{filtered.length!==1?'s':''} exibido{filtered.length!==1?'s':''} de {data.length} total
               </div>
             </div>
           </div>
@@ -610,7 +589,7 @@ export default function Home() {
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
             <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700}}>{detalhe?detalhe.titulo:'Novo Lançamento'}</h3>
+              <h3 style={{fontSize:15,fontWeight:700}}>{detalhe?detalhe.titulo:'Novo Orçamento'}</h3>
               <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
 
@@ -692,32 +671,28 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* PROPOSTA — disponível antes da mercadoria recebida */}
+                {/* PROPOSTA */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'12px 14px',marginBottom:12}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>📋 Proposta</p>
                   <input ref={propostaDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}}
                     onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarProposta(f)}}/>
-                  <AnexoBtn
-                    url={detalhe.proposta_url} label="proposta" icon="📋"
+                  <AnexoBtn url={detalhe.proposta_url} label="proposta" icon="📋"
                     onAnexar={()=>propostaDetRef.current?.click()}
                     onSubstituir={()=>propostaDetRef.current?.click()}
-                    loading={loadingAnexo}
-                  />
+                    loading={loadingAnexo}/>
                 </div>
 
-                {/* NF — só após mercadoria recebida */}
+                {/* NOTA FISCAL — só após mercadoria recebida */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'12px 14px',marginBottom:16,background:canAttachNF(detalhe.status_processo)?'#fff':'#F9FAFB'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>🧾 Nota Fiscal</p>
                   {canAttachNF(detalhe.status_processo)?(
                     <>
                       <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}}
                         onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNF(f)}}/>
-                      <AnexoBtn
-                        url={detalhe.arquivo_url} label="nota fiscal" icon="🧾"
+                      <AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="🧾"
                         onAnexar={()=>nfDetRef.current?.click()}
                         onSubstituir={()=>nfDetRef.current?.click()}
-                        loading={loadingAnexo}
-                      />
+                        loading={loadingAnexo}/>
                     </>
                   ):(
                     <p style={{fontSize:12,color:'#7A919E',margin:0}}>📦 Disponível após <strong>Mercadoria recebida</strong></p>
@@ -753,16 +728,8 @@ export default function Home() {
                 )}
               </div>
             ):(
+              /* FORMULÁRIO NOVO ORÇAMENTO */
               <div style={s.fg}>
-                <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
-                  <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar com IA</p>
-                  <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF da proposta ou NF e a IA preenche os dados automaticamente.</p>
-                  <input ref={nfRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportarNF(f)}}/>
-                  <button onClick={()=>nfRef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
-                    {loadingIA?'🔄 Lendo com IA...':'📄 Selecionar arquivo'}
-                  </button>
-                </div>
-
                 <FF lb="Nome da empresa *" full>
                   <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
                 </FF>
@@ -803,7 +770,7 @@ export default function Home() {
               {detalhe&&role==='gestora'&&(
                 <button onClick={()=>handleExcluir(detalhe.id)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}>🗑 Excluir</button>
               )}
-              {!detalhe&&<button onClick={handleSave} disabled={saving||loadingIA} style={{...s.btnTeal,opacity:(saving||loadingIA)?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
+              {!detalhe&&<button onClick={handleSave} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':'Salvar'}</button>}
             </div>
           </div>
         </div>
