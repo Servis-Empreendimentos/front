@@ -34,7 +34,8 @@ export type Lancamento = {
   data_entrega?: string
   criado_por: string
   criado_em: string
-  arquivo_url?: string
+  proposta_url?: string | null
+  arquivo_url?: string | null
   pago: boolean
   data_pagamento?: string | null
   recorrente: boolean
@@ -63,17 +64,17 @@ export type Fornecedor = {
 }
 
 export const PIPELINE = [
-  { id: 'orcamento_aprovado',    label: 'Orçamento aprovado',      icon: '📋' },
-  { id: 'em_tratativa',          label: 'Em tratativa',             icon: '🤝' },
-  { id: 'orcamento_fechado',     label: 'Orçamento fechado',        icon: '✅' },
-  { id: 'pagamento_realizado',   label: 'Pagamento realizado',      icon: '💰' },
-  { id: 'entrega_programada',    label: 'Entrega programada',       icon: '📅' },
-  { id: 'mercadoria_recebida',   label: 'Mercadoria recebida',      icon: '📦' },
-  { id: 'nf_recebida',           label: 'NF recebida',              icon: '🧾' },
+  { id: 'orcamento_aprovado',    label: 'Orçamento aprovado',  icon: '📋' },
+  { id: 'em_tratativa',          label: 'Em tratativa',         icon: '🤝' },
+  { id: 'orcamento_fechado',     label: 'Orçamento fechado',    icon: '✅' },
+  { id: 'pagamento_realizado',   label: 'Pagamento realizado',  icon: '💰' },
+  { id: 'entrega_programada',    label: 'Entrega programada',   icon: '📅' },
+  { id: 'mercadoria_recebida',   label: 'Mercadoria recebida',  icon: '📦' },
+  { id: 'nf_recebida',           label: 'NF recebida',          icon: '🧾' },
 ]
 
-export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
-export const PIPELINE_NF_FROM     = 'mercadoria_recebida'
+export const PIPELINE_LOCKED_FROM  = 'orcamento_fechado'
+export const PIPELINE_NF_FROM      = 'mercadoria_recebida'
 
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
@@ -120,7 +121,7 @@ export const api = {
     return { ...l, categoria_nome: l.categorias?.nome, parcelas: parcelas || [] }
   },
 
-  uploadPDF: async (file: File): Promise<string> => {
+  uploadArquivo: async (file: File): Promise<string> => {
     const ext  = file.name.split('.').pop() || 'pdf'
     const nome = `${Date.now()}.${ext}`
     await fetch(`${BASE_URL}/storage/v1/object/notas-fiscais/${nome}`, {
@@ -150,14 +151,6 @@ export const api = {
     return lanc
   },
 
-  confirmarEntrega: async (id: string) => {
-    await fetch(`${BASE_URL}/rest/v1/lancamentos?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { ...headers, Prefer: 'return=minimal' },
-      body: JSON.stringify({ status_entrega: 'entregue', data_entrega: new Date().toISOString().slice(0, 10) }),
-    })
-  },
-
   marcarPago: async (id: string) => {
     await fetch(`${BASE_URL}/rest/v1/parcelas?id=eq.${id}`, {
       method: 'PATCH',
@@ -174,7 +167,6 @@ export const api = {
     })
   },
 
-  // FORNECEDORES
   buscarFornecedores: async (termo: string): Promise<Fornecedor[]> => {
     if (!termo || termo.length < 2) return []
     const res = await fetch(
@@ -184,15 +176,13 @@ export const api = {
     return res.json()
   },
 
-  salvarFornecedor: async (nome: string, cnpj?: string): Promise<Fornecedor> => {
-    // verifica se já existe
+  salvarFornecedor: async (nome: string, cnpj?: string) => {
     const res = await fetch(
       `${BASE_URL}/rest/v1/fornecedores?nome=ilike.${encodeURIComponent(nome)}&limit=1`,
       { headers }
     )
     const existentes = await res.json()
     if (existentes?.length) {
-      // atualiza cnpj se não tinha
       if (cnpj && !existentes[0].cnpj) {
         await fetch(`${BASE_URL}/rest/v1/fornecedores?id=eq.${existentes[0].id}`, {
           method: 'PATCH',
@@ -243,18 +233,10 @@ export const api = {
       method: 'POST',
       headers: { ...headers, Prefer: 'return=representation' },
       body: JSON.stringify({
-        titulo: conta.titulo,
-        valor_total: 0,
-        valor_original: 0,
-        data,
-        categoria_id: conta.categoria_id,
-        pago_por: conta.pago_por,
-        tipo_pagamento: 'avista',
-        recorrente: true,
-        dia_vencimento: conta.dia_vencimento,
-        criado_por,
-        pago: false,
-        status_processo: 'orcamento_aprovado',
+        titulo: conta.titulo, valor_total: 0, valor_original: 0, data,
+        categoria_id: conta.categoria_id, pago_por: conta.pago_por,
+        tipo_pagamento: 'avista', recorrente: true, dia_vencimento: conta.dia_vencimento,
+        criado_por, pago: false, status_processo: 'orcamento_aprovado',
       }),
     })
     const data2 = await res.json()
