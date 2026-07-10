@@ -17,21 +17,35 @@ export type Parcela = {
   data_pagamento?: string | null
 }
 
+export type ItemLancamento = {
+  id?: string
+  lancamento_id?: string
+  tipo: 'orcamento' | 'nf'
+  nome: string
+  quantidade: number
+  valor_unitario?: number | null
+  valor_total?: number | null
+  entregue?: boolean
+  data_entrega?: string | null
+  criado_em?: string
+}
+
 export type Lancamento = {
   id: string
   titulo: string
   cnpj?: string | null
   valor_total: number
   valor_original?: number | null
+  valor_produtos?: number | null
+  valor_frete?: number | null
   tem_desconto?: boolean
   valor_desconto?: number | null
   data: string
-  categoria_id: string
-  categoria_nome?: string
-  pago_por: string
-  tipo_pagamento: 'avista' | 'parcelado'
+  pago_por?: string | null
+  tipo_pagamento?: 'avista' | 'parcelado'
+  forma_pagamento?: string | null
   status_entrega: 'pendente' | 'entregue'
-  data_entrega?: string
+  data_entrega?: string | null
   criado_por: string
   criado_em: string
   proposta_url?: string | null
@@ -43,13 +57,18 @@ export type Lancamento = {
   status_processo: string
   dias_entrega?: number | null
   data_entrega_programada?: string | null
+  entrega_tipo?: string | null
+  entrega_data2?: string | null
+  entrega_itens1?: string | null
+  entrega_itens2?: string | null
+  itens?: ItemLancamento[]
   parcelas?: Parcela[]
 }
 
 export type ContaMensal = {
   id: string
   titulo: string
-  categoria_id: string
+  categoria_id?: string
   categoria_nome?: string
   pago_por: string
   dia_vencimento: number
@@ -73,8 +92,8 @@ export const PIPELINE = [
   { id: 'nf_recebida',           label: 'NF recebida',          icon: '🧾' },
 ]
 
-export const PIPELINE_LOCKED_FROM  = 'orcamento_fechado'
-export const PIPELINE_NF_FROM      = 'mercadoria_recebida'
+export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
+export const PIPELINE_NF_FROM     = 'mercadoria_recebida'
 
 export const fmtR    = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
@@ -93,32 +112,36 @@ export const api = {
     return res.json()
   },
 
-  listar: async (f: { status_entrega?: string; tipo_pagamento?: string; categoria_id?: string; recorrente?: string; status_processo?: string } = {}) => {
-    let query = `?order=criado_em.desc&select=*,categorias(nome)`
-    if (f.status_entrega)  query += `&status_entrega=eq.${f.status_entrega}`
-    if (f.tipo_pagamento)  query += `&tipo_pagamento=eq.${f.tipo_pagamento}`
-    if (f.categoria_id)    query += `&categoria_id=eq.${f.categoria_id}`
-    if (f.recorrente)      query += `&recorrente=eq.${f.recorrente}`
+  listar: async (f: { status_processo?: string; recorrente?: string } = {}) => {
+    let query = `?order=criado_em.desc`
     if (f.status_processo) query += `&status_processo=eq.${f.status_processo}`
+    if (f.recorrente)      query += `&recorrente=eq.${f.recorrente}`
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos${query}`, { headers })
     const data = await res.json()
-    const lista = (data || []).map((l: any) => ({ ...l, categoria_nome: l.categorias?.nome }))
-    if (!lista.length) return []
-    const ids = lista.map((l: any) => l.id).join(',')
-    const res2 = await fetch(`${BASE_URL}/rest/v1/parcelas?lancamento_id=in.(${ids})&order=numero.asc`, { headers })
-    const parcelas = await res2.json()
-    const map: Record<string, any[]> = {}
-    for (const p of parcelas || []) { if (!map[p.lancamento_id]) map[p.lancamento_id] = []; map[p.lancamento_id].push(p) }
-    return lista.map((l: any) => ({ ...l, parcelas: map[l.id] || [] }))
+    if (!data?.length) return []
+    const ids = data.map((l: any) => l.id).join(',')
+    const [pr, ir] = await Promise.all([
+      fetch(`${BASE_URL}/rest/v1/parcelas?lancamento_id=in.(${ids})&order=numero.asc`, { headers }),
+      fetch(`${BASE_URL}/rest/v1/itens_lancamento?lancamento_id=in.(${ids})&order=criado_em.asc`, { headers }),
+    ])
+    const parcelas = await pr.json()
+    const itens    = await ir.json()
+    const pm: Record<string,any[]> = {}; const im: Record<string,any[]> = {}
+    for (const p of parcelas||[]) { if (!pm[p.lancamento_id]) pm[p.lancamento_id]=[]; pm[p.lancamento_id].push(p) }
+    for (const i of itens||[])    { if (!im[i.lancamento_id]) im[i.lancamento_id]=[]; im[i.lancamento_id].push(i) }
+    return data.map((l: any) => ({ ...l, parcelas: pm[l.id]||[], itens: im[l.id]||[] }))
   },
 
   buscar: async (id: string) => {
-    const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos?id=eq.${id}&select=*,categorias(nome)`, { headers })
-    const data = await res.json()
-    const l    = data[0]
-    const res2 = await fetch(`${BASE_URL}/rest/v1/parcelas?lancamento_id=eq.${id}&order=numero.asc`, { headers })
-    const parcelas = await res2.json()
-    return { ...l, categoria_nome: l.categorias?.nome, parcelas: parcelas || [] }
+    const [lr, pr, ir] = await Promise.all([
+      fetch(`${BASE_URL}/rest/v1/lancamentos?id=eq.${id}`, { headers }),
+      fetch(`${BASE_URL}/rest/v1/parcelas?lancamento_id=eq.${id}&order=numero.asc`, { headers }),
+      fetch(`${BASE_URL}/rest/v1/itens_lancamento?lancamento_id=eq.${id}&order=tipo.asc,criado_em.asc`, { headers }),
+    ])
+    const l       = (await lr.json())[0]
+    const parcelas = await pr.json()
+    const itens    = await ir.json()
+    return { ...l, parcelas: parcelas||[], itens: itens||[] }
   },
 
   uploadArquivo: async (file: File): Promise<string> => {
@@ -133,7 +156,8 @@ export const api = {
   },
 
   criar: async (payload: any) => {
-    const { parcelas, categoria_nome, ...body } = payload
+    const { parcelas, itens, ...body } = payload
+    body.pago_por = 'Servis Empreendimentos'
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos`, {
       method: 'POST',
       headers: { ...headers, Prefer: 'return=representation' },
@@ -141,6 +165,17 @@ export const api = {
     })
     const data = await res.json()
     const lanc = data[0]
+    if (itens?.length) {
+      await fetch(`${BASE_URL}/rest/v1/itens_lancamento`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify(itens.map((item: ItemLancamento) => ({
+          lancamento_id: lanc.id, tipo: 'orcamento',
+          nome: item.nome, quantidade: item.quantidade,
+          valor_unitario: item.valor_unitario||0, valor_total: item.valor_total||0,
+        }))),
+      })
+    }
     if (parcelas?.length) {
       await fetch(`${BASE_URL}/rest/v1/parcelas`, {
         method: 'POST',
@@ -151,11 +186,35 @@ export const api = {
     return lanc
   },
 
+  salvarItensNF: async (lancamento_id: string, itens: ItemLancamento[]) => {
+    await fetch(`${BASE_URL}/rest/v1/itens_lancamento?lancamento_id=eq.${lancamento_id}&tipo=eq.nf`, {
+      method: 'DELETE', headers,
+    })
+    if (!itens.length) return
+    await fetch(`${BASE_URL}/rest/v1/itens_lancamento`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify(itens.map(i => ({
+        lancamento_id, tipo: 'nf',
+        nome: i.nome, quantidade: i.quantidade,
+        valor_unitario: i.valor_unitario||0, valor_total: i.valor_total||0,
+      }))),
+    })
+  },
+
+  atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {
+    await fetch(`${BASE_URL}/rest/v1/itens_lancamento?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+    })
+  },
+
   marcarPago: async (id: string) => {
     await fetch(`${BASE_URL}/rest/v1/parcelas?id=eq.${id}`, {
       method: 'PATCH',
       headers: { ...headers, Prefer: 'return=minimal' },
-      body: JSON.stringify({ pago: true, data_pagamento: new Date().toISOString().slice(0, 10) }),
+      body: JSON.stringify({ pago: true, data_pagamento: new Date().toISOString().slice(0,10) }),
     })
   },
 
@@ -177,16 +236,12 @@ export const api = {
   },
 
   salvarFornecedor: async (nome: string, cnpj?: string) => {
-    const res = await fetch(
-      `${BASE_URL}/rest/v1/fornecedores?nome=ilike.${encodeURIComponent(nome)}&limit=1`,
-      { headers }
-    )
+    const res = await fetch(`${BASE_URL}/rest/v1/fornecedores?nome=ilike.${encodeURIComponent(nome)}&limit=1`, { headers })
     const existentes = await res.json()
     if (existentes?.length) {
       if (cnpj && !existentes[0].cnpj) {
         await fetch(`${BASE_URL}/rest/v1/fornecedores?id=eq.${existentes[0].id}`, {
-          method: 'PATCH',
-          headers: { ...headers, Prefer: 'return=minimal' },
+          method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' },
           body: JSON.stringify({ cnpj }),
         })
       }
@@ -195,7 +250,7 @@ export const api = {
     const res2 = await fetch(`${BASE_URL}/rest/v1/fornecedores`, {
       method: 'POST',
       headers: { ...headers, Prefer: 'return=representation' },
-      body: JSON.stringify({ nome, cnpj: cnpj || null }),
+      body: JSON.stringify({ nome, cnpj: cnpj||null }),
     })
     const data = await res2.json()
     return data[0]
@@ -204,14 +259,13 @@ export const api = {
   listarContasMensais: async () => {
     const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais?order=titulo.asc&select=*,categorias(nome)`, { headers })
     const data = await res.json()
-    return (data || []).map((c: any) => ({ ...c, categoria_nome: c.categorias?.nome }))
+    return (data||[]).map((c: any) => ({ ...c, categoria_nome: c.categorias?.nome }))
   },
 
   criarContaMensal: async (payload: any) => {
     const { categoria_nome, ...body } = payload
     const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais`, {
-      method: 'POST',
-      headers: { ...headers, Prefer: 'return=representation' },
+      method: 'POST', headers: { ...headers, Prefer: 'return=representation' },
       body: JSON.stringify(body),
     })
     const data = await res.json()
@@ -220,8 +274,7 @@ export const api = {
 
   toggleContaMensal: async (id: string, ativo: boolean) => {
     await fetch(`${BASE_URL}/rest/v1/contas_mensais?id=eq.${id}`, {
-      method: 'PATCH',
-      headers: { ...headers, Prefer: 'return=minimal' },
+      method: 'PATCH', headers: { ...headers, Prefer: 'return=minimal' },
       body: JSON.stringify({ ativo }),
     })
   },
@@ -230,13 +283,12 @@ export const api = {
     const hoje = new Date()
     const data = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(conta.dia_vencimento).padStart(2,'0')}`
     const res = await fetch(`${BASE_URL}/rest/v1/lancamentos`, {
-      method: 'POST',
-      headers: { ...headers, Prefer: 'return=representation' },
+      method: 'POST', headers: { ...headers, Prefer: 'return=representation' },
       body: JSON.stringify({
-        titulo: conta.titulo, valor_total: 0, valor_original: 0, data,
-        categoria_id: conta.categoria_id, pago_por: conta.pago_por,
-        tipo_pagamento: 'avista', recorrente: true, dia_vencimento: conta.dia_vencimento,
-        criado_por, pago: false, status_processo: 'orcamento_aprovado',
+        titulo: conta.titulo, valor_total: 0, valor_original: 0, valor_produtos: 0, valor_frete: 0,
+        data, pago_por: 'Servis Empreendimentos', tipo_pagamento: 'avista',
+        recorrente: true, dia_vencimento: conta.dia_vencimento, criado_por,
+        pago: false, status_processo: 'orcamento_aprovado',
       }),
     })
     const data2 = await res.json()
