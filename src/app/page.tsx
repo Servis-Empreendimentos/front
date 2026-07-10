@@ -46,9 +46,9 @@ const PIPE_COLORS: Record<string,string> = {
   pagamento_realizado:'#27AE60', entrega_programada:'#8E44AD', mercadoria_recebida:'#0097A8', nf_recebida:'#1A2B38',
 }
 
-function pipeIdx(s: string) { return PIPELINE.findIndex(p => p.id === s) }
-function isLocked(s: string) { return pipeIdx(s) >= pipeIdx(PIPELINE_LOCKED_FROM) }
-function canAttachNF(s: string) { return pipeIdx(s) >= pipeIdx(PIPELINE_NF_FROM) }
+function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
+function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
+function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
 
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
@@ -268,6 +268,7 @@ export default function Home() {
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
   const [aba,setAba]=useState<'lancamentos'|'mensais'>('lancamentos')
   const [data,setData]=useState<Lancamento[]>([])
+  const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
@@ -278,15 +279,12 @@ export default function Home() {
   const [saving,setSaving]=useState(false)
   const [acao,setAcao]=useState('')
   const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null)
-  // Novo orçamento
   const [form,setForm]=useState<any>({})
   const [itensOrcamento,setItensOrcamento]=useState<ItemLancamento[]>([])
   const [rawFrete,setRawFrete]=useState('')
   const [loadingIA,setLoadingIA]=useState(false)
   const [loadingAnexo,setLoadingAnexo]=useState(false)
-  // Desconto
   const [rawDesconto,setRawDesconto]=useState('')
-  // Entrega programada
   const [modalEntregaProg,setModalEntregaProg]=useState(false)
   const [entregaTipo,setEntregaTipo]=useState('corridos')
   const [diasEntrega,setDiasEntrega]=useState('')
@@ -294,18 +292,15 @@ export default function Home() {
   const [entregaData2State,setEntregaData2State]=useState('')
   const [entregaItens1,setEntregaItens1]=useState('')
   const [entregaItens2,setEntregaItens2]=useState('')
-  // Forma de pagamento
   const [modalFormaPgto,setModalFormaPgto]=useState(false)
   const [formaPgtoTipo,setFormaPgtoTipo]=useState('pix')
   const [formaPgtoParc,setFormaPgtoParc]=useState('')
   const [formaPgtoObs,setFormaPgtoObs]=useState('')
   const [formaPgtoData,setFormaPgtoData]=useState('')
-  // NF itens
   const [modalNFItens,setModalNFItens]=useState(false)
   const [itensNFEditor,setItensNFEditor]=useState<ItemLancamento[]>([])
   const [nfFileTemp,setNfFileTemp]=useState<File|null>(null)
   const [loadingIANF,setLoadingIANF]=useState(false)
-  // Contas mensais
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null)
@@ -322,11 +317,12 @@ export default function Home() {
   const load=useCallback(async()=>{
     setLoading(true)
     try {
-      const [lista,mensais]=await Promise.all([
+      const [lista,mensais,categorias]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec}),
         api.listarContasMensais(),
+        api.categorias(),
       ])
-      setData(lista);setContasMensais(mensais)
+      setData(lista);setContasMensais(mensais);setCats(categorias)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
   },[fPipe,fRec])
@@ -460,7 +456,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
     if(!detalhe||!formaPgtoData) return showToast('Informe a data do pagamento',false)
     setSaving(true)
     try {
-      let fp=formaPgtoTipo==='pix'?'PIX':formaPgtoTipo==='boleto'?'Boleto':formaPgtoTipo==='transferencia'?'Transferência':formaPgtoTipo==='cartao'?'Cartão':formaPgtoTipo==='parcelado'?`Parcelado${formaPgtoParc?` ${formaPgtoParc}x`:''}`:formaPgtoTipo
+      let fp=formaPgtoTipo==='pix'?'PIX':formaPgtoTipo==='boleto'?'Boleto':formaPgtoTipo==='transferencia'?'Transferência':formaPgtoTipo==='cartao'?'Cartão':formaPgtoTipo==='avista'?'À vista':formaPgtoTipo==='parcelado'?`Parcelado${formaPgtoParc?` ${formaPgtoParc}x`:''}`:formaPgtoTipo
       if(formaPgtoObs) fp+=` — ${formaPgtoObs}`
       await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
         status_processo:'pagamento_realizado', pago:true,
@@ -491,7 +487,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         entrega_itens2:entregaTipo==='parcial'?entregaItens2:null,
       })
       const d=await api.buscar(detalhe.id);setDetalhe(d)
-      setModalEntregaProg(false);showToast(`📅 Entrega programada!`);load()
+      setModalEntregaProg(false);showToast('📅 Entrega programada!');load()
     } finally {setSaving(false)}
   }
 
@@ -515,8 +511,20 @@ Liste TODOS os itens. Se não encontrar use zero.`)
     setModal(false);showToast('Excluído!');load()
   }
 
+  const handleMarcarItemEntregue=async(item:ItemLancamento,data_entrega:string)=>{
+    if(!detalhe) return
+    await api.atualizarItem(item.id!,{entregue:true,data_entrega})
+    const d=await api.buscar(detalhe.id)
+    const todos=d.itens?.filter((i:any)=>i.tipo==='orcamento')||[]
+    const todosEntregues=todos.every((i:any)=>i.entregue)
+    if(todosEntregues&&d.status_processo==='entrega_programada') {
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
+    }
+    const d2=await api.buscar(detalhe.id);setDetalhe(d2);showToast('Item confirmado!');load()
+  }
+
   const handleSaveMensal=async()=>{
-    if(!formMensal.titulo||!formMensal.categoria_id||!formMensal.pago_por||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
+    if(!formMensal.titulo||!formMensal.pago_por||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
     setSaving(true)
     try {
       await api.criarContaMensal({...formMensal,ativo:true})
@@ -537,20 +545,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
     finally {setSaving(false)}
   }
 
-  const handleMarcarItemEntregue=async(item:ItemLancamento,data_entrega:string)=>{
-    if(!detalhe) return
-    await api.atualizarItem(item.id!,{entregue:true,data_entrega})
-    // Se todos entregues, move para mercadoria_recebida
-    const d=await api.buscar(detalhe.id)
-    const todos=d.itens?.filter((i:any)=>i.tipo==='orcamento')||[]
-    const todosEntregues=todos.every((i:any)=>i.entregue)
-    if(todosEntregues&&d.status_processo==='entrega_programada') {
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
-    }
-    const d2=await api.buscar(detalhe.id);setDetalhe(d2);showToast('Item confirmado!')
-    load()
-  }
-
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true)}}/>
 
   const filtered=data.filter(l=>{
@@ -563,8 +557,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
-  const [cats,setCats]=useState<any[]>([])
-  useEffect(()=>{if(logado)api.categorias().then(setCats)},[logado])
 
   return (
     <div style={s.page}>
@@ -584,7 +576,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#7A919E'}}>
           <span>👤 {user}</span>
           <span style={{...s.badge,background:role==='gestora'?'#EAF7EE':role==='entregador'?'#FEF5EB':'#E0F5F7',color:role==='gestora'?'#27AE60':role==='entregador'?'#E67E22':'#0097A8'}}>
-            {role==='gestora'?'Gestora':role==='entregador'?'Entregador':'Lançadora'}
+            {role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'}
           </span>
           <button onClick={()=>setLogado(false)} style={{...s.btnOut,padding:'3px 10px',fontSize:11,color:'#E74C3C',borderColor:'#FDECEA'}}>Sair</button>
         </div>
@@ -592,11 +584,10 @@ Liste TODOS os itens. Se não encontrar use zero.`)
 
       <main style={s.main}>
 
-        {/* ENTREGADOR VIEW */}
         {role==='entregador'&&(
           <div>
             <div style={s.row}>
-              <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos</p></div>
+              <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos na obra</p></div>
             </div>
             <div style={s.card}>
               <div style={s.toolbar}>
@@ -607,11 +598,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 </select>
               </div>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead>
-                  <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                    {th('Empresa')}{th('Etapa')}{th('Data programada')}
-                  </tr>
-                </thead>
+                <thead><tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>{th('Empresa')}{th('Etapa')}{th('Data programada')}</tr></thead>
                 <tbody>
                   {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
                   :filtered.map(l=>{
@@ -632,7 +619,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
           </div>
         )}
 
-        {/* CONTAS MENSAIS */}
         {role!=='entregador'&&aba==='mensais'&&(
           <div>
             <div style={s.row}>
@@ -664,7 +650,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
           </div>
         )}
 
-        {/* LANÇAMENTOS */}
         {role!=='entregador'&&aba==='lancamentos'&&(
           <div>
             <div style={s.row}>
@@ -737,7 +722,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
-      {/* MODAL PRINCIPAL */}
+      {/* MODAL PRINCIPAL — DETALHE */}
       {modal&&detalhe&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -746,10 +731,9 @@ Liste TODOS os itens. Se não encontrar use zero.`)
               <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
 
-            {/* VIEW MATHEUS */}
             {role==='entregador'?(
               <div style={{padding:'1.25rem 1.5rem'}}>
-                {(() => {
+                {(()=>{
                   const step=PIPELINE.find(p=>p.id===detalhe.status_processo)
                   const cor=PIPE_COLORS[detalhe.status_processo]||'#7A919E'
                   const itensOrc=detalhe.itens?.filter(i=>i.tipo==='orcamento')||[]
@@ -757,20 +741,18 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                     <>
                       <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:16}}>
                         <span style={{...s.badge,background:`${cor}18`,color:cor,fontSize:12,padding:'4px 12px'}}>{step?.icon} {step?.label}</span>
-                        {detalhe.data_entrega_programada&&(
-                          <span style={{fontSize:12,color:'#8E44AD',fontWeight:600}}>📅 {fmtData(detalhe.data_entrega_programada)}</span>
-                        )}
+                        {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#8E44AD',fontWeight:600}}>📅 {fmtData(detalhe.data_entrega_programada)}</span>}
                       </div>
                       {detalhe.entrega_tipo==='parcial'&&(
                         <div style={{background:'#F4EEF9',border:'1.5px solid #D8B4FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                           <p style={{fontSize:12,fontWeight:600,color:'#6B21A8',margin:'0 0 6px'}}>📦 Entrega parcial</p>
-                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6B21A8',margin:'0 0 4px'}}>1ª entrega ({detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):'?'}): {detalhe.entrega_itens1}</p>}
-                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6B21A8',margin:0}}>2ª entrega ({detalhe.entrega_data2?fmtData(detalhe.entrega_data2):'?'}): {detalhe.entrega_itens2}</p>}
+                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6B21A8',margin:'0 0 4px'}}>1ª entrega: {detalhe.entrega_itens1}</p>}
+                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6B21A8',margin:0}}>2ª entrega: {detalhe.entrega_itens2}</p>}
                         </div>
                       )}
                       <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden'}}>
                         <div style={{background:'#FAFCFD',padding:'8px 12px',borderBottom:'1px solid #DDE5EA'}}>
-                          <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase'}}>Itens para entrega ({itensOrc.length})</span>
+                          <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase'}}>Itens para confirmar ({itensOrc.length})</span>
                         </div>
                         {itensOrc.length===0&&<p style={{padding:'12px',fontSize:12,color:'#7A919E',margin:0}}>Nenhum item cadastrado.</p>}
                         {itensOrc.map(item=>{
@@ -780,7 +762,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                               <div>
                                 <p style={{margin:0,fontSize:13,fontWeight:600}}>{item.nome}</p>
                                 <p style={{margin:'2px 0 0',fontSize:11,color:'#7A919E'}}>Quantidade: {item.quantidade}</p>
-                                {item.entregue&&item.data_entrega&&<p style={{margin:'2px 0 0',fontSize:11,color:'#27AE60'}}>✓ Entregue em {fmtData(item.data_entrega)}</p>}
+                                {item.entregue&&item.data_entrega&&<p style={{margin:'2px 0 0',fontSize:11,color:'#27AE60'}}>✓ Confirmado em {fmtData(item.data_entrega)}</p>}
                               </div>
                               {!item.entregue?(
                                 <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -791,7 +773,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                                   }} style={{...s.btnGrn,padding:'4px 10px',fontSize:11}}>Confirmar</button>
                                 </div>
                               ):(
-                                <span style={{fontSize:12,color:'#27AE60',fontWeight:700}}>✓ Entregue</span>
+                                <span style={{fontSize:12,color:'#27AE60',fontWeight:700}}>✓ Recebido</span>
                               )}
                             </div>
                           )
@@ -802,7 +784,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 })()}
               </div>
             ):(
-              /* VIEW NORMAL */
               <div style={{padding:'1.25rem 1.5rem'}}>
                 <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
 
@@ -829,13 +810,15 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   </div>
                 )}
 
-                {/* DADOS */}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
-                  {[
-                    ['Empresa',detalhe.titulo],['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
-                    ['Lançado por',detalhe.criado_por],['Data',fmtData(detalhe.data)],
+                  {([
+                    ['Empresa',detalhe.titulo],
+                    ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
+                    ['Lançado por',detalhe.criado_por],
+                    ['Data',fmtData(detalhe.data)],
                     ...(detalhe.forma_pagamento?[['Forma de pagamento',detalhe.forma_pagamento]]:[] as any),
-                  ].map(([k,v]:any)=>(
+                    ...(detalhe.data_pagamento?[['Data do pagamento',fmtData(detalhe.data_pagamento)]]:[] as any),
+                  ] as [string,string][]).map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
                 </div>
@@ -870,7 +853,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                         <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>Aplicar</button>
                         {detalhe.tem_desconto&&(
                           <button onClick={async()=>{
-                            await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:false,valor_desconto:0,valor_total:(detalhe.valor_original||detalhe.valor_total)})
+                            await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
                             const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!')
                           }} style={{...s.btnOut,color:'#E74C3C',borderColor:'#FDECEA',whiteSpace:'nowrap' as const}}>Remover</button>
                         )}
@@ -880,7 +863,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 </div>
 
                 {/* ITENS */}
-                {(() => {
+                {(()=>{
                   const itensOrc=detalhe.itens?.filter(i=>i.tipo==='orcamento')||[]
                   const itensNF=detalhe.itens?.filter(i=>i.tipo==='nf')||[]
                   if(itensOrc.length===0&&itensNF.length===0) return null
@@ -896,7 +879,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                             <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #DDE5EA',background:item.entregue?'#F0FFF4':'#fff'}}>
                               <p style={{margin:0,fontSize:12,fontWeight:600}}>{item.nome}</p>
                               <p style={{margin:'2px 0 0',fontSize:11,color:'#7A919E'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
-                              {item.entregue&&<span style={{fontSize:11,color:'#27AE60'}}>✓ Entregue {item.data_entrega?fmtData(item.data_entrega):''}</span>}
+                              {item.entregue&&<span style={{fontSize:11,color:'#27AE60'}}>✓ Recebido {item.data_entrega?fmtData(item.data_entrega):''}</span>}
                             </div>
                           ))}
                           <div style={{padding:'8px 12px',background:'#F9FAFB'}}>
@@ -990,7 +973,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
               <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
             <div style={s.fg}>
-              {/* IA IMPORT */}
               <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
                 <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar orçamento com IA</p>
                 <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, todos os itens e valor do frete automaticamente.</p>
@@ -1096,7 +1078,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   <option value="parcial">Entrega parcial (duas datas)</option>
                 </select>
               </div>
-
               {entregaTipo!=='parcial'?(
                 <div>
                   <label style={s.lb}>Número de dias *</label>
@@ -1156,7 +1137,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL CONTAS MENSAIS */}
+      {/* MODAL NOVA CONTA MENSAL */}
       {modalMensal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
           <div style={{...s.modal,width:480}}>
@@ -1166,13 +1147,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
             </div>
             <div style={s.fg}>
               <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
-              <FF lb="Categoria *">
-                <select style={s.fi} value={formMensal.categoria_id||''} onChange={e=>setM('categoria_id',e.target.value)}>
-                  <option value="">Selecione...</option>
-                  {cats.map((c:any)=><option key={c.id} value={c.id}>{c.nome}</option>)}
-                </select>
-              </FF>
-              <FF lb="Pago por *"><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis"/></FF>
+              <FF lb="Pago por *" full><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis Empreendimentos"/></FF>
               <FF lb="Dia de vencimento *" full>
                 <input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/>
               </FF>
