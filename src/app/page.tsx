@@ -550,10 +550,11 @@ Liste TODOS os itens. Se não encontrar use zero.`)
   const filtered=data.filter(l=>{
     if(!search) return true
     const q=search.toLowerCase()
-    return [l.titulo,l.cnpj,l.criado_por].some(f=>f?.toLowerCase().includes(q))
+    return [l.titulo,l.cnpj,l.criado_por,l.nf_numero].some(f=>f?.toLowerCase().includes(q))
   })
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
+  const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
@@ -656,11 +657,12 @@ Liste TODOS os itens. Se não encontrar use zero.`)
               <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
               <button onClick={openNovo} style={s.btnTeal}>＋ Novo orçamento</button>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
               <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
               <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos registros" c="#E67E22"/>
+              <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#E74C3C"/>
               <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
-              <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#E74C3C"/>
+              <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#8E44AD"/>
             </div>
             <div style={s.card}>
               <div style={s.toolbar}>
@@ -678,26 +680,32 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead style={{position:'sticky',top:0,zIndex:2}}>
                     <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Empresa')}{th('CNPJ')}{th('Etapa')}{th('Data')}{th('Produtos')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                      {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Produtos')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={12} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum registro</td></tr>
+                    {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum registro</td></tr>
                     :filtered.map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
+                      const temSaldo = l.saldo_devedor && l.saldo_devedor > 0
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.cnpj?fmtCNPJ(l.cnpj):'—'}</td>
+                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11,whiteSpace:'nowrap'}}>{l.nf_numero||'—'}</td>
                           <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
+                          <td style={{padding:'8px 11px',textAlign:'right'}}>
+                            {temSaldo
+                              ? <span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>
+                              : <span style={{color:'#DDE5EA'}}>—</span>}
+                          </td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📋</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>🧾</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
@@ -722,7 +730,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
       </footer>
 
-      {/* MODAL PRINCIPAL — DETALHE */}
       {modal&&detalhe&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -814,6 +821,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   {([
                     ['Empresa',detalhe.titulo],
                     ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
+                    ['NF Nº',detalhe.nf_numero||'—'],
                     ['Lançado por',detalhe.criado_por],
                     ['Data',fmtData(detalhe.data)],
                     ...(detalhe.forma_pagamento?[['Forma de pagamento',detalhe.forma_pagamento]]:[] as any),
@@ -826,7 +834,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 {/* VALORES */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
                     <div>
                       <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Produtos</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#1A2B38'}}>{fmtR(detalhe.valor_produtos||0)}</p>
@@ -842,6 +850,12 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                     <div>
                       <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Total final</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#27AE60'}}>{fmtR(detalhe.valor_total)}</p>
+                    </div>
+                    <div>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo devedor</p>
+                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#E74C3C':'#DDE5EA'}}>
+                        {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'—'}
+                      </p>
                     </div>
                   </div>
                   {detalhe.status_processo==='em_tratativa'&&!isLocked(detalhe.status_processo)&&(
@@ -964,7 +978,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL NOVO ORÇAMENTO */}
       {modal&&!detalhe&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
           <div style={s.modal}>
@@ -981,28 +994,22 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   {loadingIA?'🔄 Lendo orçamento...':'📄 Selecionar PDF do orçamento'}
                 </button>
               </div>
-
               <FF lb="Nome da empresa *" full>
                 <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
               </FF>
-
               <FF lb="CNPJ">
                 <input style={s.fi} value={form.cnpj?fmtCNPJ(form.cnpj):''} placeholder="00.000.000/0000-00" maxLength={18} onChange={e=>set('cnpj',e.target.value.replace(/\D/g,''))}/>
               </FF>
-
               <FF lb="Data *">
                 <input type="date" style={s.fi} value={form.data||''} onChange={e=>set('data',e.target.value)}/>
               </FF>
-
               <ItensEditor itens={itensOrcamento} onChange={setItensOrcamento}/>
-
               <FF lb="Valor do frete">
                 <input style={s.fi} value={rawFrete} placeholder="R$ 0,00" onChange={e=>{
                   const d=e.target.value.replace(/\D/g,'')
                   setRawFrete(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                 }}/>
               </FF>
-
               <div style={{background:'#F0F7F9',borderRadius:8,padding:'12px 14px',border:'1.5px solid #E0F5F7'}}>
                 <p style={{fontSize:10,fontWeight:600,color:'#7A919E',textTransform:'uppercase',marginBottom:4}}>Total do orçamento</p>
                 <p style={{fontSize:20,fontWeight:700,color:'#0097A8'}}>
@@ -1018,7 +1025,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL FORMA DE PAGAMENTO */}
       {modalFormaPgto&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFormaPgto(false)}>
           <div style={{...s.modal,width:440}}>
@@ -1061,7 +1067,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL ENTREGA PROGRAMADA */}
       {modalEntregaProg&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalEntregaProg(false)}>
           <div style={{...s.modal,width:480}}>
@@ -1117,7 +1122,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL ITENS NF */}
       {modalNFItens&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalNFItens(false)}>
           <div style={{...s.modal,width:700}}>
@@ -1137,7 +1141,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL NOVA CONTA MENSAL */}
       {modalMensal&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
           <div style={{...s.modal,width:480}}>
@@ -1160,7 +1163,6 @@ Liste TODOS os itens. Se não encontrar use zero.`)
         </div>
       )}
 
-      {/* MODAL GERAR MENSAL */}
       {modalGerar&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalGerar(null)}>
           <div style={{...s.modal,width:420}}>
