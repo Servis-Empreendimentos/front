@@ -201,7 +201,7 @@ function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i:ItemLa
       ))}
       {itens.length>0&&(
         <div style={{padding:'8px 12px',background:'#F9FAFB',display:'flex',justifyContent:'flex-end'}}>
-          <span style={{fontSize:13,fontWeight:700,color:'#27AE60'}}>Total produtos: {fmtR(total)}</span>
+          <span style={{fontSize:13,fontWeight:700,color:'#27AE60'}}>Total: {fmtR(total)}</span>
         </div>
       )}
     </div>
@@ -341,15 +341,8 @@ export default function Home() {
   const handleImportarOrcamento=async(file:File)=>{
     setLoadingIA(true)
     try {
-      const dados=await lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido, sem texto adicional:
-{
-  "titulo": "nome da empresa fornecedora",
-  "cnpj": "somente números sem formatação",
-  "data": "YYYY-MM-DD",
-  "valor_frete": 0.00,
-  "itens": [{"nome": "nome completo do produto", "quantidade": 1.0, "valor_unitario": 0.00}]
-}
-Liste TODOS os itens/produtos. Se não encontrar algum campo use string vazia ou zero.`)
+      const dados=await lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido:
+{"titulo":"nome da empresa","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00}]}`)
       if(dados.titulo) set('titulo',dados.titulo)
       if(dados.cnpj) set('cnpj',dados.cnpj)
       if(dados.data) set('data',dados.data)
@@ -362,7 +355,7 @@ Liste TODOS os itens/produtos. Se não encontrar algum campo use string vazia ou
           tipo:'orcamento' as const,
         })))
       }
-      showToast('✅ Orçamento importado com sucesso!')
+      showToast('✅ Orçamento importado!')
     } catch {showToast('⚠️ Não foi possível extrair. Preencha manualmente.',false)}
     finally {setLoadingIA(false)}
   }
@@ -375,10 +368,7 @@ Liste TODOS os itens/produtos. Se não encontrar algum campo use string vazia ou
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
       const vFrete=parseFloat(rawFrete.replace(/\D/g,''))/100||0
       const valor_total=valor_produtos+vFrete
-      await api.criar({
-        ...form, valor_produtos, valor_frete:vFrete,
-        valor_total, valor_original:valor_total, criado_por:user, itens:itensOrcamento,
-      })
+      await api.criar({...form,valor_produtos,valor_frete:vFrete,valor_total,valor_original:valor_total,criado_por:user,itens:itensOrcamento})
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
       setModal(false);showToast('Orçamento salvo!');load()
     } catch {showToast('Erro ao salvar',false)}
@@ -409,11 +399,7 @@ Liste TODOS os itens/produtos. Se não encontrar algum campo use string vazia ou
     setNfFileTemp(file);setLoadingIANF(true)
     try {
       const dados=await lerDocIA(file,`Extraia todos os itens desta nota fiscal e retorne APENAS um JSON válido:
-{
-  "valor_frete": 0.00,
-  "itens": [{"nome": "nome completo do produto", "quantidade": 1.0, "valor_unitario": 0.00}]
-}
-Liste TODOS os itens. Se não encontrar use zero.`)
+{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00}]}`)
       const itens=(dados.itens||[]).map((i:any)=>({
         nome:i.nome||'', quantidade:i.quantidade||1,
         valor_unitario:i.valor_unitario||0,
@@ -458,10 +444,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
     try {
       let fp=formaPgtoTipo==='pix'?'PIX':formaPgtoTipo==='boleto'?'Boleto':formaPgtoTipo==='transferencia'?'Transferência':formaPgtoTipo==='cartao'?'Cartão':formaPgtoTipo==='avista'?'À vista':formaPgtoTipo==='parcelado'?`Parcelado${formaPgtoParc?` ${formaPgtoParc}x`:''}`:formaPgtoTipo
       if(formaPgtoObs) fp+=` — ${formaPgtoObs}`
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
-        status_processo:'pagamento_realizado', pago:true,
-        data_pagamento:formaPgtoData, forma_pagamento:fp,
-      })
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalFormaPgto(false);showToast('💰 Pagamento registrado!');load()
     } finally {setSaving(false)}
@@ -659,7 +642,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
               <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
-              <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos registros" c="#E67E22"/>
+              <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#E67E22"/>
               <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#E74C3C"/>
               <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
               <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#8E44AD"/>
@@ -680,7 +663,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead style={{position:'sticky',top:0,zIndex:2}}>
                     <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Produtos')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                      {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                     </tr>
                   </thead>
                   <tbody>
@@ -689,23 +672,19 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                     :filtered.map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
-                      const temSaldo = l.saldo_devedor && l.saldo_devedor > 0
+                      const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11,whiteSpace:'nowrap'}}>{l.nf_numero||'—'}</td>
+                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.nf_numero||'—'}</td>
                           <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
+                          <td style={{padding:'8px 11px',color:'#1A2B38',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'8px 11px',textAlign:'right'}}>
-                            {temSaldo
-                              ? <span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>
-                              : <span style={{color:'#DDE5EA'}}>—</span>}
-                          </td>
+                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📋</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>🧾</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
@@ -753,8 +732,8 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                       {detalhe.entrega_tipo==='parcial'&&(
                         <div style={{background:'#F4EEF9',border:'1.5px solid #D8B4FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                           <p style={{fontSize:12,fontWeight:600,color:'#6B21A8',margin:'0 0 6px'}}>📦 Entrega parcial</p>
-                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6B21A8',margin:'0 0 4px'}}>1ª entrega: {detalhe.entrega_itens1}</p>}
-                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6B21A8',margin:0}}>2ª entrega: {detalhe.entrega_itens2}</p>}
+                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6B21A8',margin:'0 0 4px'}}>1ª: {detalhe.entrega_itens1}</p>}
+                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6B21A8',margin:0}}>2ª: {detalhe.entrega_itens2}</p>}
                         </div>
                       )}
                       <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden'}}>
@@ -776,7 +755,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                                   <input type="date" id={inputId} defaultValue={new Date().toISOString().slice(0,10)} style={{...s.fi,width:'auto',fontSize:11}}/>
                                   <button onClick={async()=>{
                                     const el=document.getElementById(inputId) as HTMLInputElement
-                                    await handleMarcarItemEntregue(item, el?.value||new Date().toISOString().slice(0,10))
+                                    await handleMarcarItemEntregue(item,el?.value||new Date().toISOString().slice(0,10))
                                   }} style={{...s.btnGrn,padding:'4px 10px',fontSize:11}}>Confirmar</button>
                                 </div>
                               ):(
@@ -836,7 +815,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
                     <div>
-                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Produtos</p>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#1A2B38'}}>{fmtR(detalhe.valor_produtos||0)}</p>
                     </div>
                     <div>
@@ -848,11 +827,11 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                       <p style={{fontSize:14,fontWeight:700,color:detalhe.tem_desconto?'#E67E22':'#DDE5EA'}}>{detalhe.tem_desconto&&detalhe.valor_desconto?`- ${fmtR(detalhe.valor_desconto)}`:'—'}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Total final</p>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Total</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#27AE60'}}>{fmtR(detalhe.valor_total)}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo devedor</p>
+                      <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo Devedor</p>
                       <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#E74C3C':'#DDE5EA'}}>
                         {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'—'}
                       </p>
@@ -931,11 +910,8 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   {canAttachNF(detalhe.status_processo)?(
                     <>
                       <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNFComIA(f)}}/>
-                      {loadingIANF?(
-                        <p style={{fontSize:12,color:'#0097A8',fontWeight:600}}>🤖 Lendo NF com IA...</p>
-                      ):(
-                        <AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="🧾" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>
-                      )}
+                      {loadingIANF?<p style={{fontSize:12,color:'#0097A8',fontWeight:600}}>🤖 Lendo NF com IA...</p>
+                      :<AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="🧾" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>}
                     </>
                   ):(
                     <p style={{fontSize:12,color:'#7A919E',margin:0}}>📦 Disponível após <strong>Mercadoria recebida</strong></p>
@@ -988,7 +964,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
             <div style={s.fg}>
               <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
                 <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar orçamento com IA</p>
-                <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, todos os itens e valor do frete automaticamente.</p>
+                <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, todos os itens e frete automaticamente.</p>
                 <input ref={orcIARef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportarOrcamento(f)}}/>
                 <button onClick={()=>orcIARef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
                   {loadingIA?'🔄 Lendo orçamento...':'📄 Selecionar PDF do orçamento'}
@@ -1101,7 +1077,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   </div>
                   <div>
                     <label style={s.lb}>Itens da 1ª entrega</label>
-                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens1} onChange={e=>setEntregaItens1(e.target.value)} placeholder="Ex: 50% dos produtos, cimento e areia"/>
+                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens1} onChange={e=>setEntregaItens1(e.target.value)} placeholder="Ex: 50% dos produtos"/>
                   </div>
                   <div>
                     <label style={s.lb}>Data da 2ª entrega *</label>
@@ -1109,7 +1085,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
                   </div>
                   <div>
                     <label style={s.lb}>Itens da 2ª entrega</label>
-                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens2} onChange={e=>setEntregaItens2(e.target.value)} placeholder="Ex: Restante dos produtos, tijolos"/>
+                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens2} onChange={e=>setEntregaItens2(e.target.value)} placeholder="Ex: Restante dos produtos"/>
                   </div>
                 </>
               )}
@@ -1130,7 +1106,7 @@ Liste TODOS os itens. Se não encontrar use zero.`)
               <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
-              <p style={{fontSize:12,color:'#7A919E',marginBottom:16}}>Revise os itens extraídos pela IA. Você pode editar antes de salvar.</p>
+              <p style={{fontSize:12,color:'#7A919E',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar.</p>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
             </div>
             <div style={s.mfoot}>
