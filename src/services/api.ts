@@ -121,17 +121,8 @@ export const api = {
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos${query}`, { headers })
     const data = await res.json()
     if (!data?.length) return []
-    const ids = data.map((l: any) => l.id).join(',')
-    const [pr, ir] = await Promise.all([
-      fetch(`${BASE_URL}/rest/v1/parcelas?lancamento_id=in.(${ids})&order=numero.asc`, { headers }),
-      fetch(`${BASE_URL}/rest/v1/itens_lancamento?lancamento_id=in.(${ids})&order=criado_em.asc`, { headers }),
-    ])
-    const parcelas = await pr.json()
-    const itens    = await ir.json()
-    const pm: Record<string,any[]> = {}; const im: Record<string,any[]> = {}
-    for (const p of parcelas||[]) { if (!pm[p.lancamento_id]) pm[p.lancamento_id]=[]; pm[p.lancamento_id].push(p) }
-    for (const i of itens||[])    { if (!im[i.lancamento_id]) im[i.lancamento_id]=[]; im[i.lancamento_id].push(i) }
-    return data.map((l: any) => ({ ...l, parcelas: pm[l.id]||[], itens: im[l.id]||[] }))
+    // Sem busca de parcelas/itens na listagem — só carregados no detalhe
+    return data.map((l: any) => ({ ...l, parcelas: [], itens: [] }))
   },
 
   buscar: async (id: string) => {
@@ -259,9 +250,9 @@ export const api = {
   },
 
   listarContasMensais: async () => {
-    const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais?order=titulo.asc&select=*,categorias(nome)`, { headers })
+    const res = await fetch(`${BASE_URL}/rest/v1/contas_mensais?order=titulo.asc`, { headers })
     const data = await res.json()
-    return (data||[]).map((c: any) => ({ ...c, categoria_nome: c.categorias?.nome }))
+    return data||[]
   },
 
   criarContaMensal: async (payload: any) => {
