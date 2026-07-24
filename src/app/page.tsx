@@ -305,6 +305,13 @@ export default function Home() {
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null)
   const [valorGerar,setValorGerar]=useState('')
+  // Pagamento parcial
+  const [modalPagParcial,setModalPagParcial]=useState(false)
+  const [pagParcialTipo,setPagParcialTipo]=useState('pix')
+  const [pagParcialValor,setPagParcialValor]=useState('')
+  const [pagParcialData,setPagParcialData]=useState('')
+  const [pagParcialObs,setPagParcialObs]=useState('')
+  const [pagParcialParc,setPagParcialParc]=useState('')
 
   const orcIARef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
@@ -447,6 +454,34 @@ export default function Home() {
       await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalFormaPgto(false);showToast('💰 Pagamento registrado!');load()
+    } finally {setSaving(false)}
+  }
+
+  const handleConfirmarPagParcial=async()=>{
+    if(!detalhe||!pagParcialData||!pagParcialValor) return showToast('Preencha valor e data',false)
+    setSaving(true)
+    try {
+      const valorNovo=parseFloat(pagParcialValor.replace(/\D/g,''))/100
+      const valorPagoAtual=detalhe.valor_produtos||0
+      const novoValorPago=valorPagoAtual+valorNovo
+      const novoSaldo=Math.max(0,(detalhe.saldo_devedor||0)-valorNovo)
+      const quitado=novoSaldo<=0
+
+      let fp=pagParcialTipo==='pix'?'PIX':pagParcialTipo==='boleto'?'Boleto':pagParcialTipo==='transferencia'?'Transferência':pagParcialTipo==='cartao'?'Cartão':pagParcialTipo==='avista'?'À vista':pagParcialTipo==='parcelado'?`Parcelado${pagParcialParc?` ${pagParcialParc}x`:''}`:pagParcialTipo
+      if(pagParcialObs) fp+=` — ${pagParcialObs}`
+
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
+        valor_produtos: novoValorPago,
+        saldo_devedor: novoSaldo,
+        pago: quitado,
+        data_pagamento: pagParcialData,
+        forma_pagamento: fp,
+      })
+      const d=await api.buscar(detalhe.id);setDetalhe(d)
+      setModalPagParcial(false)
+      setPagParcialValor('');setPagParcialObs('');setPagParcialParc('')
+      showToast(quitado?'✅ Pagamento quitado!':'💰 Pagamento parcial registrado!')
+      load()
     } finally {setSaving(false)}
   }
 
@@ -680,7 +715,7 @@ export default function Home() {
                           <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.nf_numero||'—'}</td>
                           <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
                           <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
-                          <td style={{padding:'8px 11px',color:'#1A2B38',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
+                          <td style={{padding:'8px 11px',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
                           <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
                           <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
@@ -813,7 +848,7 @@ export default function Home() {
                 {/* VALORES */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12}}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:12}}>
                     <div>
                       <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#1A2B38'}}>{fmtR(detalhe.valor_produtos||0)}</p>
@@ -832,11 +867,30 @@ export default function Home() {
                     </div>
                     <div>
                       <p style={{fontSize:10,color:'#7A919E',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo Devedor</p>
-                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#E74C3C':'#DDE5EA'}}>
-                        {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'—'}
+                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#E74C3C':'#27AE60'}}>
+                        {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'✓ Quitado'}
                       </p>
                     </div>
                   </div>
+
+                  {/* BOTÃO PAGAMENTO PARCIAL */}
+                  {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?(
+                    <div style={{paddingTop:12,borderTop:'1px solid #DDE5EA'}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                        <p style={{fontSize:12,color:'#E74C3C',fontWeight:600,margin:0}}>
+                          ⚠️ Saldo em aberto: {fmtR(detalhe.saldo_devedor)}
+                        </p>
+                        <button onClick={()=>{
+                          setPagParcialTipo('pix');setPagParcialValor('');setPagParcialObs('');setPagParcialParc('')
+                          setPagParcialData(new Date().toISOString().slice(0,10))
+                          setModalPagParcial(true)
+                        }} style={{...s.btnGrn,padding:'6px 14px',fontSize:12}}>
+                          💰 Registrar pagamento
+                        </button>
+                      </div>
+                    </div>
+                  ):null}
+
                   {detalhe.status_processo==='em_tratativa'&&!isLocked(detalhe.status_processo)&&(
                     <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #DDE5EA'}}>
                       <p style={{fontSize:11,fontWeight:600,color:'#E67E22',marginBottom:8}}>🤝 Em tratativa — aplicar desconto</p>
@@ -1001,6 +1055,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* MODAL FORMA DE PAGAMENTO — primeira entrada */}
       {modalFormaPgto&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFormaPgto(false)}>
           <div style={{...s.modal,width:440}}>
@@ -1009,35 +1064,83 @@ export default function Home() {
               <button onClick={()=>setModalFormaPgto(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
-              <div>
-                <label style={s.lb}>Forma de pagamento *</label>
+              <div><label style={s.lb}>Forma de pagamento *</label>
                 <select style={s.fi} value={formaPgtoTipo} onChange={e=>setFormaPgtoTipo(e.target.value)}>
-                  <option value="pix">PIX</option>
-                  <option value="transferencia">Transferência bancária</option>
-                  <option value="boleto">Boleto</option>
-                  <option value="cartao">Cartão</option>
-                  <option value="avista">À vista (dinheiro)</option>
-                  <option value="parcelado">Parcelado</option>
+                  <option value="pix">PIX</option><option value="transferencia">Transferência bancária</option>
+                  <option value="boleto">Boleto</option><option value="cartao">Cartão</option>
+                  <option value="avista">À vista (dinheiro)</option><option value="parcelado">Parcelado</option>
                 </select>
               </div>
               {formaPgtoTipo==='parcelado'&&(
-                <div>
-                  <label style={s.lb}>Número de parcelas *</label>
+                <div><label style={s.lb}>Número de parcelas *</label>
                   <input type="number" min={2} max={48} style={s.fi} value={formaPgtoParc} onChange={e=>setFormaPgtoParc(e.target.value)} placeholder="Ex: 3"/>
                 </div>
               )}
-              <div>
-                <label style={s.lb}>Data do pagamento *</label>
+              <div><label style={s.lb}>Data do pagamento *</label>
                 <input type="date" style={s.fi} value={formaPgtoData} onChange={e=>setFormaPgtoData(e.target.value)}/>
               </div>
-              <div>
-                <label style={s.lb}>Observações</label>
+              <div><label style={s.lb}>Observações</label>
                 <input style={s.fi} value={formaPgtoObs} onChange={e=>setFormaPgtoObs(e.target.value)} placeholder="Ex: 30/60/90 dias"/>
               </div>
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalFormaPgto(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleConfirmarFormaPgto} disabled={saving||!formaPgtoData} style={{...s.btnTeal,opacity:(saving||!formaPgtoData)?0.6:1}}>{saving?'Salvando...':'Confirmar pagamento'}</button>
+              <button onClick={handleConfirmarFormaPgto} disabled={saving||!formaPgtoData} style={{...s.btnTeal,opacity:(saving||!formaPgtoData)?0.6:1}}>{saving?'Salvando...':'Confirmar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PAGAMENTO PARCIAL — saldo devedor */}
+      {modalPagParcial&&detalhe&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagParcial(false)}>
+          <div style={{...s.modal,width:460}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>💰 Registrar Pagamento</h3>
+              <button onClick={()=>setModalPagParcial(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div style={{background:'#FEF5EB',borderRadius:8,padding:'10px 14px'}}>
+                <p style={{fontSize:12,color:'#92400E',margin:'0 0 4px',fontWeight:600}}>Saldo em aberto</p>
+                <p style={{fontSize:20,fontWeight:700,color:'#E74C3C',margin:0}}>{fmtR(detalhe.saldo_devedor||0)}</p>
+              </div>
+              <div><label style={s.lb}>Valor pago agora *</label>
+                <input style={s.fi} value={pagParcialValor} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setPagParcialValor(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+                {pagParcialValor&&(()=>{
+                  const v=parseFloat(pagParcialValor.replace(/\D/g,''))/100
+                  const novoSaldo=Math.max(0,(detalhe.saldo_devedor||0)-v)
+                  return <p style={{fontSize:11,color:novoSaldo===0?'#27AE60':'#E67E22',marginTop:6,fontWeight:600}}>
+                    {novoSaldo===0?'✅ Quitará o saldo total':`Saldo restante: ${fmtR(novoSaldo)}`}
+                  </p>
+                })()}
+              </div>
+              <div><label style={s.lb}>Forma de pagamento *</label>
+                <select style={s.fi} value={pagParcialTipo} onChange={e=>setPagParcialTipo(e.target.value)}>
+                  <option value="pix">PIX</option><option value="transferencia">Transferência bancária</option>
+                  <option value="boleto">Boleto</option><option value="cartao">Cartão</option>
+                  <option value="avista">À vista (dinheiro)</option><option value="parcelado">Parcelado</option>
+                </select>
+              </div>
+              {pagParcialTipo==='parcelado'&&(
+                <div><label style={s.lb}>Número de parcelas</label>
+                  <input type="number" min={2} style={s.fi} value={pagParcialParc} onChange={e=>setPagParcialParc(e.target.value)} placeholder="Ex: 2"/>
+                </div>
+              )}
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={pagParcialData} onChange={e=>setPagParcialData(e.target.value)}/>
+              </div>
+              <div><label style={s.lb}>Observações</label>
+                <input style={s.fi} value={pagParcialObs} onChange={e=>setPagParcialObs(e.target.value)} placeholder="Opcional"/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagParcial(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleConfirmarPagParcial} disabled={saving||!pagParcialValor||!pagParcialData} style={{...s.btnGrn,opacity:(saving||!pagParcialValor||!pagParcialData)?0.6:1,padding:'.5rem 1.2rem',fontSize:13}}>
+                {saving?'Salvando...':'Confirmar pagamento'}
+              </button>
             </div>
           </div>
         </div>
@@ -1051,8 +1154,7 @@ export default function Home() {
               <button onClick={()=>setModalEntregaProg(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
-              <div>
-                <label style={s.lb}>Tipo de entrega *</label>
+              <div><label style={s.lb}>Tipo de entrega *</label>
                 <select style={s.fi} value={entregaTipo} onChange={e=>setEntregaTipo(e.target.value)}>
                   <option value="corridos">Dias corridos</option>
                   <option value="uteis">Dias úteis</option>
@@ -1060,33 +1162,18 @@ export default function Home() {
                 </select>
               </div>
               {entregaTipo!=='parcial'?(
-                <div>
-                  <label style={s.lb}>Número de dias *</label>
+                <div><label style={s.lb}>Número de dias *</label>
                   <input type="number" min={1} style={s.fi} value={diasEntrega} placeholder="Ex: 30" onChange={e=>setDiasEntrega(e.target.value)}/>
-                  {diasEntrega&&(
-                    <p style={{fontSize:12,color:'#8E44AD',marginTop:8,fontWeight:600}}>
-                      📅 Previsão: {fmtData(entregaTipo==='uteis'?addDiasUteis(parseInt(diasEntrega)):addDiasCorridos(parseInt(diasEntrega)))}
-                    </p>
-                  )}
+                  {diasEntrega&&<p style={{fontSize:12,color:'#8E44AD',marginTop:8,fontWeight:600}}>
+                    📅 Previsão: {fmtData(entregaTipo==='uteis'?addDiasUteis(parseInt(diasEntrega)):addDiasCorridos(parseInt(diasEntrega)))}
+                  </p>}
                 </div>
               ):(
                 <>
-                  <div>
-                    <label style={s.lb}>Data da 1ª entrega *</label>
-                    <input type="date" style={s.fi} value={entregaData1} onChange={e=>setEntregaData1(e.target.value)}/>
-                  </div>
-                  <div>
-                    <label style={s.lb}>Itens da 1ª entrega</label>
-                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens1} onChange={e=>setEntregaItens1(e.target.value)} placeholder="Ex: 50% dos produtos"/>
-                  </div>
-                  <div>
-                    <label style={s.lb}>Data da 2ª entrega *</label>
-                    <input type="date" style={s.fi} value={entregaData2State} onChange={e=>setEntregaData2State(e.target.value)}/>
-                  </div>
-                  <div>
-                    <label style={s.lb}>Itens da 2ª entrega</label>
-                    <textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens2} onChange={e=>setEntregaItens2(e.target.value)} placeholder="Ex: Restante dos produtos"/>
-                  </div>
+                  <div><label style={s.lb}>Data da 1ª entrega *</label><input type="date" style={s.fi} value={entregaData1} onChange={e=>setEntregaData1(e.target.value)}/></div>
+                  <div><label style={s.lb}>Itens da 1ª entrega</label><textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens1} onChange={e=>setEntregaItens1(e.target.value)} placeholder="Ex: 50% dos produtos"/></div>
+                  <div><label style={s.lb}>Data da 2ª entrega *</label><input type="date" style={s.fi} value={entregaData2State} onChange={e=>setEntregaData2State(e.target.value)}/></div>
+                  <div><label style={s.lb}>Itens da 2ª entrega</label><textarea style={{...s.fi,minHeight:60,resize:'vertical' as const}} value={entregaItens2} onChange={e=>setEntregaItens2(e.target.value)} placeholder="Ex: Restante dos produtos"/></div>
                 </>
               )}
             </div>
@@ -1127,9 +1214,7 @@ export default function Home() {
             <div style={s.fg}>
               <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
               <FF lb="Pago por *" full><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis Empreendimentos"/></FF>
-              <FF lb="Dia de vencimento *" full>
-                <input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/>
-              </FF>
+              <FF lb="Dia de vencimento *" full><input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/></FF>
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalMensal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
