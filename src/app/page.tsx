@@ -60,11 +60,15 @@ function addDiasUteis(dias: number): string {
 }
 
 async function sbPatch(table: string, query: string, body: any) {
-  await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
+  const res = await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
     method:'PATCH',
     headers:{ apikey:SUPA_KEY, Authorization:`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
     body:JSON.stringify(body),
   })
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(errText)
+  }
 }
 
 async function lerDocIA(file: File, prompt: string): Promise<any> {
@@ -141,8 +145,9 @@ function FornecedorInput({value,cnpj,onChange}:{value:string;cnpj:string;onChang
   }
   return (
     <div style={{position:'relative' as const}}>
-      <input style={s.fi} value={value} placeholder="Digite o nome da empresa..."
+      <input style={s.fi} value={value} placeholder="Digite o nome ou CNPJ..."
         onChange={e=>{onChange(e.target.value,cnpj);buscar(e.target.value)}}
+        onFocus={()=>{if(value.length>=2)buscar(value)}}
         onBlur={()=>setTimeout(()=>setAberto(false),200)}/>
       {aberto&&(
         <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1.5px solid #DDE5EA',borderRadius:8,zIndex:100,boxShadow:'0 4px 16px rgba(0,0,0,.1)',maxHeight:200,overflowY:'auto'}}>
@@ -174,10 +179,10 @@ function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i:ItemLa
   return (
     <div style={{gridColumn:'1/-1',border:'1.5px solid #DDE5EA',borderRadius:8,overflow:'hidden'}}>
       <div style={{background:'#FAFCFD',padding:'8px 12px',borderBottom:'1px solid #DDE5EA',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em'}}>Itens do orçamento ({itens.length})</span>
+        <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em'}}>Itens do orçamento ({itens.length}) — opcional</span>
         <button onClick={add} type="button" style={{...s.btnTeal,padding:'3px 10px',fontSize:11}}>+ Item</button>
       </div>
-      {itens.length===0&&<p style={{padding:'12px',fontSize:12,color:'#7A919E',margin:0}}>Clique em + Item para adicionar produtos.</p>}
+      {itens.length===0&&<p style={{padding:'12px',fontSize:12,color:'#7A919E',margin:0}}>Nenhum item adicionado. Você pode salvar só com o valor do frete, ou clicar em + Item.</p>}
       {itens.map((item,i)=>(
         <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 70px 110px 110px 24px',gap:8,padding:'8px 12px',borderBottom:'1px solid #DDE5EA',alignItems:'end'}}>
           <div>
@@ -273,6 +278,8 @@ export default function Home() {
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
+  const [fDataIni,setFDataIni]=useState('')
+  const [fDataFim,setFDataFim]=useState('')
   const [search,setSearch]=useState('')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -305,7 +312,6 @@ export default function Home() {
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null)
   const [valorGerar,setValorGerar]=useState('')
-  // Pagamento parcial
   const [modalPagParcial,setModalPagParcial]=useState(false)
   const [pagParcialTipo,setPagParcialTipo]=useState('pix')
   const [pagParcialValor,setPagParcialValor]=useState('')
@@ -317,7 +323,7 @@ export default function Home() {
   const propostaDetRef=useRef<HTMLInputElement>(null)
   const nfDetRef=useRef<HTMLInputElement>(null)
 
-  const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500)}
+  const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4500)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
@@ -361,15 +367,16 @@ export default function Home() {
           valor_total:(i.quantidade||1)*(i.valor_unitario||0),
           tipo:'orcamento' as const,
         })))
+        showToast('✅ Orçamento importado com itens!')
+      } else {
+        showToast('⚠️ Empresa e dados importados, mas nenhum item foi identificado. Adicione manualmente se precisar.',false)
       }
-      showToast('✅ Orçamento importado!')
-    } catch {showToast('⚠️ Não foi possível extrair. Preencha manualmente.',false)}
+    } catch {showToast('⚠️ Não foi possível ler o PDF. Preencha manualmente.',false)}
     finally {setLoadingIA(false)}
   }
 
   const handleSave=async()=>{
     if(!form.titulo||!form.data) return showToast('Preencha empresa e data',false)
-    if(itensOrcamento.length===0) return showToast('Adicione pelo menos um item',false)
     setSaving(true)
     try {
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
@@ -378,16 +385,19 @@ export default function Home() {
       await api.criar({...form,valor_produtos,valor_frete:vFrete,valor_total,valor_original:valor_total,criado_por:user,itens:itensOrcamento})
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
       setModal(false);showToast('Orçamento salvo!');load()
-    } catch {showToast('Erro ao salvar',false)}
-    finally {setSaving(false)}
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
+    } finally {setSaving(false)}
   }
 
   const handleSalvarDesconto=async()=>{
     if(!detalhe) return
     const valor_desconto=parseFloat(rawDesconto.replace(/\D/g,''))/100||0
     const valor_total=(detalhe.valor_original||detalhe.valor_total)-valor_desconto
-    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
-    const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto aplicado!')
+    try {
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
+      const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto aplicado!')
+    } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
   }
 
   const handleAnexarProposta=async(file:File)=>{
@@ -397,7 +407,7 @@ export default function Home() {
       const url=await api.uploadArquivo(file)
       await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{proposta_url:url})
       const d=await api.buscar(detalhe.id);setDetalhe(d);showToast('Proposta anexada!')
-    } catch {showToast('Erro ao enviar',false)}
+    } catch (err:any) {showToast('Erro ao enviar: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
   }
 
@@ -430,7 +440,7 @@ export default function Home() {
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([])
       showToast('✅ NF e itens salvos!')
-    } catch {showToast('Erro ao salvar NF',false)}
+    } catch (err:any) {showToast('Erro ao salvar NF: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
   }
 
@@ -438,11 +448,13 @@ export default function Home() {
     if(!detalhe) return
     if(novoStatus==='entrega_programada'){setEntregaTipo('corridos');setDiasEntrega('');setEntregaData1('');setEntregaData2State('');setEntregaItens1('');setEntregaItens2('');setModalEntregaProg(true);return}
     if(novoStatus==='pagamento_realizado'){setFormaPgtoTipo('pix');setFormaPgtoParc('');setFormaPgtoObs('');setFormaPgtoData(new Date().toISOString().slice(0,10));setModalFormaPgto(true);return}
-    await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
-    const d=await api.buscar(detalhe.id);setDetalhe(d)
-    const step=PIPELINE.find(p=>p.id===novoStatus)
-    showToast(`${step?.icon} ${step?.label}`)
-    load()
+    try {
+      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
+      const d=await api.buscar(detalhe.id);setDetalhe(d)
+      const step=PIPELINE.find(p=>p.id===novoStatus)
+      showToast(`${step?.icon} ${step?.label}`)
+      load()
+    } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
   }
 
   const handleConfirmarFormaPgto=async()=>{
@@ -454,7 +466,8 @@ export default function Home() {
       await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalFormaPgto(false);showToast('💰 Pagamento registrado!');load()
-    } finally {setSaving(false)}
+    } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+    finally {setSaving(false)}
   }
 
   const handleConfirmarPagParcial=async()=>{
@@ -482,7 +495,8 @@ export default function Home() {
       setPagParcialValor('');setPagParcialObs('');setPagParcialParc('')
       showToast(quitado?'✅ Pagamento quitado!':'💰 Pagamento parcial registrado!')
       load()
-    } finally {setSaving(false)}
+    } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+    finally {setSaving(false)}
   }
 
   const handleConfirmarEntregaProg=async()=>{
@@ -506,7 +520,8 @@ export default function Home() {
       })
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalEntregaProg(false);showToast('📅 Entrega programada!');load()
-    } finally {setSaving(false)}
+    } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+    finally {setSaving(false)}
   }
 
   const handlePagar=async(parcelaId:string,lancId:string)=>{
@@ -547,7 +562,7 @@ export default function Home() {
     try {
       await api.criarContaMensal({...formMensal,ativo:true})
       setModalMensal(false);setFormMensal({});showToast('Conta mensal cadastrada!');load()
-    } catch {showToast('Erro',false)}
+    } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
     finally {setSaving(false)}
   }
 
@@ -559,16 +574,21 @@ export default function Home() {
       const valor=parseFloat(valorGerar.replace(/\D/g,''))/100
       await sbPatch('lancamentos',`?id=eq.${lanc.id}`,{valor_total:valor,valor_original:valor,valor_produtos:valor})
       setModalGerar(null);setValorGerar('');showToast('Lançamento gerado!');setAba('lancamentos');load()
-    } catch {showToast('Erro',false)}
+    } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
     finally {setSaving(false)}
   }
 
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true)}}/>
 
   const filtered=data.filter(l=>{
-    if(!search) return true
-    const q=search.toLowerCase()
-    return [l.titulo,l.cnpj,l.criado_por,l.nf_numero].some(f=>f?.toLowerCase().includes(q))
+    if(search) {
+      const q=search.toLowerCase()
+      const matchBusca=[l.titulo,l.cnpj,l.criado_por,l.nf_numero].some(f=>f?.toLowerCase().includes(q))
+      if(!matchBusca) return false
+    }
+    if(fDataIni && l.data < fDataIni) return false
+    if(fDataFim && l.data > fDataFim) return false
+    return true
   })
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
@@ -686,6 +706,17 @@ export default function Home() {
               <div style={s.toolbar}>
                 <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
                 <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <div style={{display:'flex',alignItems:'center',gap:4}}>
+                  <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>De:</label>
+                  <input type="date" style={s.inp} value={fDataIni} onChange={e=>setFDataIni(e.target.value)}/>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:4}}>
+                  <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>Até:</label>
+                  <input type="date" style={s.inp} value={fDataFim} onChange={e=>setFDataFim(e.target.value)}/>
+                </div>
+                {(fDataIni||fDataFim)&&(
+                  <button onClick={()=>{setFDataIni('');setFDataFim('')}} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar datas</button>
+                )}
                 <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
                   <option value="">Todas as etapas</option>
                   {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
@@ -873,7 +904,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* BOTÃO PAGAMENTO PARCIAL */}
                   {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?(
                     <div style={{paddingTop:12,borderTop:'1px solid #DDE5EA'}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -1018,7 +1048,7 @@ export default function Home() {
             <div style={s.fg}>
               <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed #0097A8'}}>
                 <p style={{fontSize:11,fontWeight:700,color:'#0097A8',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8}}>🤖 Importar orçamento com IA</p>
-                <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, todos os itens e frete automaticamente.</p>
+                <p style={{fontSize:12,color:'#1A2B38',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, itens e frete automaticamente.</p>
                 <input ref={orcIARef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportarOrcamento(f)}}/>
                 <button onClick={()=>orcIARef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
                   {loadingIA?'🔄 Lendo orçamento...':'📄 Selecionar PDF do orçamento'}
@@ -1055,7 +1085,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL FORMA DE PAGAMENTO — primeira entrada */}
       {modalFormaPgto&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFormaPgto(false)}>
           <div style={{...s.modal,width:440}}>
@@ -1091,7 +1120,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL PAGAMENTO PARCIAL — saldo devedor */}
       {modalPagParcial&&detalhe&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagParcial(false)}>
           <div style={{...s.modal,width:460}}>
@@ -1248,7 +1276,7 @@ export default function Home() {
       )}
 
       {toast&&(
-        <div style={{position:'fixed',bottom:20,right:20,padding:'.75rem 1.25rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:toast.ok?'#27AE60':'#E74C3C',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:100}}>
+        <div style={{position:'fixed',bottom:20,right:20,padding:'.75rem 1.25rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:toast.ok?'#27AE60':'#E74C3C',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:100,maxWidth:400}}>
           {toast.msg}
         </div>
       )}
