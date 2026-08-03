@@ -82,6 +82,7 @@ export type Fornecedor = {
   id: string
   nome: string
   cnpj?: string | null
+  criado_em?: string
 }
 
 export const PIPELINE = [
@@ -121,7 +122,6 @@ export const api = {
     const res  = await fetch(`${BASE_URL}/rest/v1/lancamentos${query}`, { headers })
     const data = await res.json()
     if (!data?.length) return []
-    // Sem busca de parcelas/itens na listagem — só carregados no detalhe
     return data.map((l: any) => ({ ...l, parcelas: [], itens: [] }))
   },
 
@@ -156,6 +156,7 @@ export const api = {
       headers: { ...headers, Prefer: 'return=representation' },
       body: JSON.stringify(body),
     })
+    if (!res.ok) throw new Error(await res.text())
     const data = await res.json()
     const lanc = data[0]
     if (itens?.length) {
@@ -228,6 +229,11 @@ export const api = {
     return res.json()
   },
 
+  listarFornecedores: async (): Promise<Fornecedor[]> => {
+    const res = await fetch(`${BASE_URL}/rest/v1/fornecedores?order=nome.asc`, { headers })
+    return res.json()
+  },
+
   salvarFornecedor: async (nome: string, cnpj?: string) => {
     const res = await fetch(`${BASE_URL}/rest/v1/fornecedores?nome=ilike.${encodeURIComponent(nome)}&limit=1`, { headers })
     const existentes = await res.json()
@@ -245,8 +251,36 @@ export const api = {
       headers: { ...headers, Prefer: 'return=representation' },
       body: JSON.stringify({ nome, cnpj: cnpj||null }),
     })
+    if (!res2.ok) throw new Error(await res2.text())
     const data = await res2.json()
     return data[0]
+  },
+
+  criarFornecedor: async (nome: string, cnpj?: string) => {
+    const res = await fetch(`${BASE_URL}/rest/v1/fornecedores`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ nome, cnpj: cnpj||null }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    return data[0]
+  },
+
+  atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null }) => {
+    const res = await fetch(`${BASE_URL}/rest/v1/fornecedores?id=eq.${id}`, {
+      method: 'PATCH',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(await res.text())
+  },
+
+  excluirFornecedor: async (id: string) => {
+    const res = await fetch(`${BASE_URL}/rest/v1/fornecedores?id=eq.${id}`, {
+      method: 'DELETE', headers,
+    })
+    if (!res.ok) throw new Error(await res.text())
   },
 
   listarContasMensais: async () => {

@@ -65,10 +65,7 @@ async function sbPatch(table: string, query: string, body: any) {
     headers:{ apikey:SUPA_KEY, Authorization:`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
     body:JSON.stringify(body),
   })
-  if (!res.ok) {
-    const errText = await res.text()
-    throw new Error(errText)
-  }
+  if (!res.ok) throw new Error(await res.text())
 }
 
 async function lerDocIA(file: File, prompt: string): Promise<any> {
@@ -271,16 +268,18 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'lancamentos'|'mensais'>('lancamentos')
+  const [aba,setAba]=useState<'lancamentos'|'mensais'|'fornecedores'>('lancamentos')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
+  const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
   const [fDataIni,setFDataIni]=useState('')
   const [fDataFim,setFDataFim]=useState('')
   const [search,setSearch]=useState('')
+  const [searchForn,setSearchForn]=useState('')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -318,6 +317,10 @@ export default function Home() {
   const [pagParcialData,setPagParcialData]=useState('')
   const [pagParcialObs,setPagParcialObs]=useState('')
   const [pagParcialParc,setPagParcialParc]=useState('')
+  // Fornecedores
+  const [modalFornecedor,setModalFornecedor]=useState(false)
+  const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
+  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
 
   const orcIARef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
@@ -330,12 +333,13 @@ export default function Home() {
   const load=useCallback(async()=>{
     setLoading(true)
     try {
-      const [lista,mensais,categorias]=await Promise.all([
+      const [lista,mensais,categorias,forns]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec}),
         api.listarContasMensais(),
         api.categorias(),
+        api.listarFornecedores(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
   },[fPipe,fRec])
@@ -578,6 +582,43 @@ export default function Home() {
     finally {setSaving(false)}
   }
 
+  // === Fornecedores ===
+  const openNovoFornecedor=()=>{
+    setFornecedorEdit(null)
+    setFormFornecedor({nome:'',cnpj:''})
+    setModalFornecedor(true)
+  }
+  const openEditarFornecedor=(f:Fornecedor)=>{
+    setFornecedorEdit(f)
+    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||''})
+    setModalFornecedor(true)
+  }
+  const handleSalvarFornecedor=async()=>{
+    if(!formFornecedor.nome.trim()) return showToast('Informe o nome do fornecedor',false)
+    setSaving(true)
+    try {
+      if(fornecedorEdit) {
+        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null})
+        showToast('Fornecedor atualizado!')
+      } else {
+        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined)
+        showToast('Fornecedor cadastrado!')
+      }
+      setModalFornecedor(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+  const handleExcluirFornecedor=async(f:Fornecedor)=>{
+    if(!confirm(`Excluir o fornecedor "${f.nome}"?`)) return
+    try {
+      await api.excluirFornecedor(f.id)
+      showToast('Fornecedor excluído!');load()
+    } catch (err:any) {
+      showToast('Erro ao excluir: '+(err?.message||''),false)
+    }
+  }
+
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true)}}/>
 
   const filtered=data.filter(l=>{
@@ -589,6 +630,12 @@ export default function Home() {
     if(fDataIni && l.data < fDataIni) return false
     if(fDataFim && l.data > fDataFim) return false
     return true
+  })
+
+  const filteredFornecedores = fornecedores.filter(f=>{
+    if(!searchForn) return true
+    const q=searchForn.toLowerCase()
+    return f.nome.toLowerCase().includes(q) || (f.cnpj||'').includes(q)
   })
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
@@ -604,9 +651,9 @@ export default function Home() {
         <span style={{fontWeight:700,fontSize:15,color:'#0097A8'}}>Servis - Conciliação Financeira</span>
         {role!=='entregador'&&(
           <nav style={{display:'flex',gap:4,marginLeft:16}}>
-            {(['lancamentos','mensais'] as const).map(a=>(
+            {(['lancamentos','mensais','fornecedores'] as const).map(a=>(
               <button key={a} onClick={()=>setAba(a)} style={{padding:'.4rem .9rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',background:aba===a?'#0097A8':'transparent',color:aba===a?'#fff':'#7A919E'}}>
-                {a==='lancamentos'?'Lançamentos':'🔄 Contas Mensais'}
+                {a==='lancamentos'?'Lançamentos':a==='mensais'?'🔄 Contas Mensais':'🏢 Fornecedores'}
               </button>
             ))}
           </nav>
@@ -685,6 +732,56 @@ export default function Home() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {role!=='entregador'&&aba==='fornecedores'&&(
+          <div>
+            <div style={s.row}>
+              <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
+              <button onClick={openNovoFornecedor} style={s.btnTeal}>＋ Novo fornecedor</button>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+              <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c="#0097A8"/>
+              <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#27AE60"/>
+            </div>
+            <div style={s.card}>
+              <div style={s.toolbar}>
+                <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
+                <input style={{...s.inp,width:220}} placeholder="Buscar por nome ou CNPJ..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
+              </div>
+              <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead style={{position:'sticky',top:0,zIndex:2}}>
+                    <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
+                      {th('Nome')}{th('CNPJ')}{th('Ações')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum fornecedor cadastrado</td></tr>
+                    :filteredFornecedores.map(f=>(
+                      <tr key={f.id} style={{borderBottom:'1px solid #DDE5EA'}}
+                        onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
+                        <td style={{padding:'10px 11px',color:'#7A919E'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
+                        <td style={{padding:'10px 11px'}}>
+                          <div style={{display:'flex',gap:8}}>
+                            <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}>✏️ Editar</button>
+                            {role==='gestora'&&(
+                              <button onClick={()=>handleExcluirFornecedor(f)} style={{...s.btnRed,padding:'4px 10px',fontSize:11}}>🗑 Excluir</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
+                {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
+              </div>
             </div>
           </div>
         )}
@@ -1270,6 +1367,33 @@ export default function Home() {
             <div style={s.mfoot}>
               <button onClick={()=>setModalGerar(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleGerarLancamento} disabled={saving||!valorGerar} style={{...s.btnTeal,opacity:(saving||!valorGerar)?0.6:1}}>{saving?'Gerando...':'Gerar lançamento'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL FORNECEDOR (novo/editar) */}
+      {modalFornecedor&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
+          <div style={{...s.modal,width:440}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{fornecedorEdit?'Editar Fornecedor':'Novo Fornecedor'}</h3>
+              <button onClick={()=>setModalFornecedor(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7A919E',fontSize:20}}>×</button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div>
+                <label style={s.lb}>Nome da empresa *</label>
+                <input style={s.fi} value={formFornecedor.nome} onChange={e=>setFormFornecedor(p=>({...p,nome:e.target.value}))} placeholder="Ex: Materiais São José"/>
+              </div>
+              <div>
+                <label style={s.lb}>CNPJ</label>
+                <input style={s.fi} value={formFornecedor.cnpj?fmtCNPJ(formFornecedor.cnpj):''} maxLength={18} placeholder="00.000.000/0000-00"
+                  onChange={e=>setFormFornecedor(p=>({...p,cnpj:e.target.value.replace(/\D/g,'')}))}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
             </div>
           </div>
         </div>
