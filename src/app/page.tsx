@@ -1,61 +1,15 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, Parcela, ItemLancamento, ContaMensal, Fornecedor, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
-
-const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora'|'gestora'|'entregador' }> = {
-  'anne':    { senha: 'anne123',    nome: 'Anne',    role: 'lancadora'  },
-  'mayara':  { senha: 'mayara123',  nome: 'Mayara',  role: 'lancadora'  },
-  'edna':    { senha: 'edna123',    nome: 'Edna',    role: 'lancadora'  },
-  'erick':   { senha: 'erick123',   nome: 'Erick',   role: 'lancadora'  },
-  'clau':    { senha: 'clau123',    nome: 'Clau',    role: 'gestora'    },
-  'matheus': { senha: 'matheus123', nome: 'Matheus', role: 'entregador' },
-}
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
+import Icon from '../components/Icon'
+import Sidebar from '../components/Sidebar'
+import LoginScreen, { USUARIOS } from '../components/LoginScreen'
+import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY!
 const AI_KEY   = process.env.NEXT_PUBLIC_ANTHROPIC_KEY!
-
-const SIDEBAR_BG  = '#0B1420'
-const SIDEBAR_BG2 = '#141F2C'
-const ACCENT      = '#0E7C86'
-const ACCENT_LT   = '#0097A8'
-
-const s = {
-  page:    { minHeight:'100vh', display:'flex', fontFamily:"'DM Sans',sans-serif", background:'#F5F7FA', color:'#0F172A' },
-  sidebar: { width:250, minWidth:250, background:SIDEBAR_BG, display:'flex', flexDirection:'column' as const, position:'sticky' as const, top:0, height:'100vh', overflowY:'auto' as const, zIndex:40 },
-  content: { flex:1, display:'flex', flexDirection:'column' as const, minWidth:0 },
-  main:    { flex:1, padding:'1.5rem' },
-  row:     { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem' },
-  h1:      { fontSize:20, fontWeight:600, color:'#0F172A' },
-  p:       { fontSize:12, color:'#64748B', marginTop:2 },
-  btnTeal: { display:'flex', alignItems:'center', gap:8, background:ACCENT, color:'#fff', border:'none', padding:'.5rem 1rem', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' },
-  btnOut:  { display:'flex', alignItems:'center', gap:6, background:'transparent', color:'#0F172A', border:'1.5px solid #E2E8F0', padding:'.4rem .8rem', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' },
-  btnGrn:  { display:'flex', alignItems:'center', gap:6, background:'#16A34A', color:'#fff', border:'none', padding:'.5rem 1rem', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer' },
-  btnRed:  { display:'flex', alignItems:'center', gap:6, background:'transparent', color:'#DC2626', border:'1.5px solid #FEE2E2', padding:'.4rem .8rem', borderRadius:7, fontSize:12, fontWeight:600, cursor:'pointer' },
-  kpi:     { background:'#fff', border:'1px solid #E2E8F0', borderRadius:10, padding:'1rem', position:'relative' as const, overflow:'hidden', boxShadow:'0 1px 2px rgba(15,23,42,.04)' },
-  card:    { background:'#fff', border:'1px solid #E2E8F0', borderRadius:10, overflow:'hidden', boxShadow:'0 1px 2px rgba(15,23,42,.04)', marginBottom:'1.25rem' },
-  toolbar: { display:'flex', alignItems:'center', gap:8, padding:'.8rem 1.1rem', borderBottom:'1px solid #E2E8F0', background:'#FAFBFC', flexWrap:'wrap' as const },
-  badge:   { display:'inline-flex', alignItems:'center', gap:4, padding:'3px 9px', borderRadius:20, fontSize:11, fontWeight:600, whiteSpace:'nowrap' as const },
-  inp:     { border:'1.5px solid #E2E8F0', borderRadius:7, padding:'5px 10px', fontSize:12, fontFamily:'inherit', outline:'none', background:'#fff', color:'#0F172A' },
-  overlay: { position:'fixed' as const, inset:0, background:'rgba(15,23,42,.45)', zIndex:50, display:'flex', alignItems:'flex-start', justifyContent:'center', paddingTop:40 },
-  modal:   { background:'#fff', borderRadius:14, width:760, maxWidth:'95vw', maxHeight:'92vh', overflowY:'auto' as const, boxShadow:'0 20px 60px rgba(0,0,0,.2)' },
-  mhdr:    { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'1rem 1.5rem', borderBottom:'1px solid #E2E8F0', position:'sticky' as const, top:0, background:'#fff', zIndex:1 },
-  mfoot:   { display:'flex', gap:8, justifyContent:'flex-end', padding:'1rem 1.5rem', borderTop:'1px solid #E2E8F0', background:'#FAFBFC', position:'sticky' as const, bottom:0 },
-  fg:      { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px 14px', padding:'1.25rem 1.5rem' },
-  fi:      { width:'100%', border:'1.5px solid #E2E8F0', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:'inherit', color:'#0F172A', outline:'none', boxSizing:'border-box' as const },
-  lb:      { display:'block', fontSize:10, fontWeight:600, color:'#64748B', textTransform:'uppercase' as const, letterSpacing:'.05em', marginBottom:4 },
-  footer:  { background:'#fff', borderTop:'1px solid #E2E8F0', padding:'.65rem 1.5rem', display:'flex', justifyContent:'space-between', alignItems:'center' },
-}
-
-const PIPE_COLORS: Record<string,string> = {
-  orcamento_aprovado:'#64748B', em_tratativa:'#D97706', orcamento_fechado:'#2563EB',
-  pagamento_realizado:'#16A34A', entrega_programada:'#7C3AED', mercadoria_recebida:ACCENT_LT, nf_recebida:'#0F172A',
-}
-
-const STEP_ICONS: Record<string,string> = {
-  orcamento_aprovado:'fileText', em_tratativa:'users', orcamento_fechado:'checkCircle',
-  pagamento_realizado:'dollar', entrega_programada:'calendar', mercadoria_recebida:'package', nf_recebida:'receipt',
-}
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
@@ -104,233 +58,6 @@ async function lerDocIA(file: File, prompt: string): Promise<any> {
   const match = text.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('Falhou')
   return JSON.parse(match[0])
-}
-
-function Icon({name,size=18,color='currentColor',strokeWidth=1.8}:{name:string;size?:number;color?:string;strokeWidth?:number}) {
-  const common = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:color, strokeWidth, strokeLinecap:'round' as const, strokeLinejoin:'round' as const }
-  switch(name) {
-    case 'dashboard': return <svg {...common}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-    case 'plus': return <svg {...common}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    case 'fileText': return <svg {...common}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
-    case 'building': return <svg {...common}><rect x="4" y="3" width="16" height="18" rx="1"/><line x1="8" y1="7" x2="8.01" y2="7"/><line x1="12" y1="7" x2="12.01" y2="7"/><line x1="16" y1="7" x2="16.01" y2="7"/><line x1="8" y1="11" x2="8.01" y2="11"/><line x1="12" y1="11" x2="12.01" y2="11"/><line x1="16" y1="11" x2="16.01" y2="11"/><path d="M9 21v-4h6v4"/></svg>
-    case 'refresh': return <svg {...common}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-    case 'logout': return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-    case 'truck': return <svg {...common}><rect x="1" y="6" width="14" height="11" rx="1"/><path d="M15 9h4l3 3v5h-7z"/><circle cx="6" cy="19" r="2"/><circle cx="17.5" cy="19" r="2"/></svg>
-    case 'clipboard': return <svg {...common}><rect x="6" y="3" width="12" height="18" rx="2"/><rect x="9" y="1.3" width="6" height="3" rx="1"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-    case 'users': return <svg {...common}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    case 'checkCircle': return <svg {...common}><circle cx="12" cy="12" r="9"/><polyline points="8 12 11 15 16 9"/></svg>
-    case 'dollar': return <svg {...common}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-    case 'calendar': return <svg {...common}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    case 'package': return <svg {...common}><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><polyline points="3.3 8 12 13 20.7 8"/><line x1="12" y1="22" x2="12" y2="13"/></svg>
-    case 'receipt': return <svg {...common}><path d="M4 2h16v20l-2-1.5L16 22l-2-1.5L12 22l-2-1.5L8 22l-2-1.5L4 22z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/></svg>
-    case 'lock': return <svg {...common}><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-    case 'alert': return <svg {...common}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    case 'edit': return <svg {...common}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
-    case 'trash': return <svg {...common}><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-    case 'x': return <svg {...common}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    case 'upload': return <svg {...common}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    case 'search': return <svg {...common}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    case 'check': return <svg {...common}><polyline points="20 6 9 17 4 12"/></svg>
-    case 'sparkles': return <svg {...common}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
-    default: return null
-  }
-}
-
-function KPI({l,v,sv,c}:{l:string;v:string|number;sv?:string;c:string}) {
-  return (
-    <div style={s.kpi}>
-      <div style={{position:'absolute',top:0,left:0,right:0,height:3,borderRadius:'10px 10px 0 0',background:c}}/>
-      <p style={{fontSize:10,fontWeight:600,color:'#64748B',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:6}}>{l}</p>
-      <p style={{fontSize:22,fontWeight:700,color:'#0F172A',lineHeight:1.1}}>{v}</p>
-      {sv&&<p style={{fontSize:11,color:'#64748B',marginTop:4}}>{sv}</p>}
-    </div>
-  )
-}
-
-function Badge({label,bg,color}:{label:string;bg:string;color:string}) {
-  return <span style={{...s.badge,background:bg,color}}>{label}</span>
-}
-
-function StepBadge({stepId,label,color}:{stepId:string;label:string;color:string}) {
-  return (
-    <span style={{...s.badge,background:`${color}18`,color}}>
-      <Icon name={STEP_ICONS[stepId]} size={12} color={color}/>
-      {label}
-    </span>
-  )
-}
-
-function FF({lb:label,children,full}:{lb:string;children:React.ReactNode;full?:boolean}) {
-  return <div style={full?{gridColumn:'1/-1'}:{}}><label style={s.lb}>{label}</label>{children}</div>
-}
-
-function AnexoBtn({url,label,icon,onAnexar,onSubstituir,loading}:{url?:string|null;label:string;icon:string;onAnexar:()=>void;onSubstituir:()=>void;loading:boolean}) {
-  if (url) return (
-    <div style={{display:'flex',alignItems:'center',gap:12}}>
-      <a href={url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:ACCENT_LT,textDecoration:'none',fontWeight:600}}><Icon name={icon} size={15}/> Ver {label}</a>
-      <button onClick={onSubstituir} disabled={loading} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>{loading?'Enviando...':'Substituir'}</button>
-    </div>
-  )
-  return (
-    <div style={{display:'flex',alignItems:'center',gap:12}}>
-      <span style={{fontSize:12,color:'#64748B'}}>Sem {label} anexada</span>
-      <button onClick={onAnexar} disabled={loading} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loading?0.6:1}}><Icon name={icon} size={14} color="#fff"/> {loading?'Enviando...':`Anexar ${label}`}</button>
-    </div>
-  )
-}
-
-function FornecedorInput({value,cnpj,onChange}:{value:string;cnpj:string;onChange:(n:string,c:string)=>void}) {
-  const [sugestoes,setSugestoes]=useState<Fornecedor[]>([])
-  const [aberto,setAberto]=useState(false)
-  const timer=useRef<any>(null)
-  const buscar=(termo:string)=>{
-    clearTimeout(timer.current)
-    timer.current=setTimeout(async()=>{
-      const res=await api.buscarFornecedores(termo)
-      setSugestoes(res);setAberto(res.length>0)
-    },300)
-  }
-  return (
-    <div style={{position:'relative' as const}}>
-      <input style={s.fi} value={value} placeholder="Digite o nome ou CNPJ..."
-        onChange={e=>{onChange(e.target.value,cnpj);buscar(e.target.value)}}
-        onFocus={()=>{if(value.length>=2)buscar(value)}}
-        onBlur={()=>setTimeout(()=>setAberto(false),200)}/>
-      {aberto&&(
-        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'#fff',border:'1.5px solid #E2E8F0',borderRadius:8,zIndex:100,boxShadow:'0 4px 16px rgba(0,0,0,.1)',maxHeight:200,overflowY:'auto'}}>
-          {sugestoes.map(f=>(
-            <div key={f.id} onClick={()=>{onChange(f.nome,f.cnpj||'');setAberto(false)}}
-              style={{padding:'8px 12px',cursor:'pointer',borderBottom:'1px solid #F2F6F8'}}
-              onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')}
-              onMouseLeave={e=>(e.currentTarget.style.background='')}>
-              <p style={{margin:0,fontSize:13,fontWeight:600}}>{f.nome}</p>
-              {f.cnpj&&<p style={{margin:0,fontSize:11,color:'#64748B'}}>{fmtCNPJ(f.cnpj)}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i:ItemLancamento[])=>void}) {
-  const add=()=>onChange([...itens,{nome:'',quantidade:1,valor_unitario:0,valor_total:0,tipo:'orcamento'}])
-  const rem=(i:number)=>onChange(itens.filter((_,idx)=>idx!==i))
-  const upd=(i:number,k:string,v:any)=>onChange(itens.map((item,idx)=>{
-    if(idx!==i) return item
-    const u={...item,[k]:v}
-    if(k==='quantidade'||k==='valor_unitario') u.valor_total=(parseFloat(String(u.quantidade))||0)*(parseFloat(String(u.valor_unitario))||0)
-    return u
-  }))
-  const total=itens.reduce((s,i)=>s+(i.valor_total||0),0)
-  return (
-    <div style={{gridColumn:'1/-1',border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden'}}>
-      <div style={{background:'#FAFBFC',padding:'8px 12px',borderBottom:'1px solid #E2E8F0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em'}}>Itens do orçamento ({itens.length}) — opcional</span>
-        <button onClick={add} type="button" style={{...s.btnTeal,padding:'3px 10px',fontSize:11}}><Icon name="plus" size={12} color="#fff"/> Item</button>
-      </div>
-      {itens.length===0&&<p style={{padding:'12px',fontSize:12,color:'#64748B',margin:0}}>Nenhum item adicionado. Você pode salvar só com o valor do frete, ou adicionar um item.</p>}
-      {itens.map((item,i)=>(
-        <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 70px 110px 110px 24px',gap:8,padding:'8px 12px',borderBottom:'1px solid #E2E8F0',alignItems:'end'}}>
-          <div>
-            <label style={{...s.lb,marginBottom:2}}>Produto/Serviço</label>
-            <input style={{...s.fi,fontSize:12}} value={item.nome} placeholder="Ex: Cimento CP-II 50kg" onChange={e=>upd(i,'nome',e.target.value)}/>
-          </div>
-          <div>
-            <label style={{...s.lb,marginBottom:2}}>Qtd</label>
-            <input type="number" step="0.001" min="0" style={{...s.fi,fontSize:12}} value={item.quantidade||''} onChange={e=>upd(i,'quantidade',parseFloat(e.target.value)||0)}/>
-          </div>
-          <div>
-            <label style={{...s.lb,marginBottom:2}}>Vlr unitário</label>
-            <input type="number" step="0.01" min="0" style={{...s.fi,fontSize:12}} value={item.valor_unitario??''} placeholder="0,00" onChange={e=>upd(i,'valor_unitario',parseFloat(e.target.value)||0)}/>
-          </div>
-          <div>
-            <label style={{...s.lb,marginBottom:2}}>Total</label>
-            <input style={{...s.fi,fontSize:12,background:'#F9FAFB',color:'#16A34A',fontWeight:700}} value={fmtR(item.valor_total||0)} readOnly/>
-          </div>
-          <button onClick={()=>rem(i)} type="button" style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626',padding:0,display:'flex'}}><Icon name="x" size={16}/></button>
-        </div>
-      ))}
-      {itens.length>0&&(
-        <div style={{padding:'8px 12px',background:'#F9FAFB',display:'flex',justifyContent:'flex-end'}}>
-          <span style={{fontSize:13,fontWeight:700,color:'#16A34A'}}>Total: {fmtR(total)}</span>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PipelineStepper({atual,onChange}:{atual:string;onChange:(id:string)=>void}) {
-  const idx=PIPELINE.findIndex(p=>p.id===atual)
-  return (
-    <div style={{overflowX:'auto',paddingBottom:4}}>
-      <div style={{display:'flex',alignItems:'center',minWidth:600,marginBottom:16}}>
-        {PIPELINE.map((step,i)=>{
-          const done=i<idx; const current=i===idx; const cor=PIPE_COLORS[step.id]
-          return (
-            <div key={step.id} style={{display:'flex',alignItems:'center',flex:1}}>
-              <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,flex:'0 0 auto'}}>
-                <button onClick={()=>onChange(step.id)} style={{
-                  width:36,height:36,borderRadius:'50%',border:'none',cursor:'pointer',
-                  background:done?'#16A34A':current?cor:'#E2E8F0',
-                  display:'flex',alignItems:'center',justifyContent:'center',
-                  boxShadow:current?`0 0 0 3px ${cor}33`:'none',transition:'all .2s',
-                }}>
-                  {done?<Icon name="check" size={16} color="#fff"/>:<Icon name={STEP_ICONS[step.id]} size={16} color={current?'#fff':'#64748B'}/>}
-                </button>
-                <span style={{fontSize:9,fontWeight:600,color:current?cor:done?'#16A34A':'#64748B',textAlign:'center',maxWidth:70,lineHeight:1.2}}>{step.label}</span>
-              </div>
-              {i<PIPELINE.length-1&&<div style={{flex:1,height:2,background:i<idx?'#16A34A':'#E2E8F0',margin:'0 4px',marginBottom:20}}/>}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function LoginScreen({onLogin}:{onLogin:(nome:string,role:'lancadora'|'gestora'|'entregador')=>void}) {
-  const [login,setLogin]=useState(''); const [senha,setSenha]=useState(''); const [erro,setErro]=useState('')
-  const handleLogin=()=>{
-    const u=USUARIOS[login.trim().toLowerCase()]
-    if(u&&u.senha===senha) onLogin(u.nome,u.role)
-    else {setErro('Usuário ou senha incorretos.');setTimeout(()=>setErro(''),3000)}
-  }
-  return (
-    <div style={{minHeight:'100vh',background:'#F5F7FA',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'DM Sans',sans-serif"}}>
-      <div style={{background:'#fff',borderRadius:16,padding:'2.5rem 2rem',width:360,boxShadow:'0 8px 40px rgba(15,23,42,.1)',display:'flex',flexDirection:'column',alignItems:'center',gap:20}}>
-        <div style={{textAlign:'center'}}>
-          <img src="/logo.jpg" alt="Servis" style={{height:90,objectFit:'contain',marginBottom:12}} onError={e=>(e.currentTarget.style.display='none')}/>
-          <h2 style={{fontSize:18,fontWeight:700,color:'#0F172A',margin:0}}>Servis - Conciliação Financeira</h2>
-          <p style={{fontSize:12,color:'#64748B',marginTop:4}}>Acesso interno</p>
-        </div>
-        <div style={{width:'100%',display:'flex',flexDirection:'column',gap:12}}>
-          <div><label style={s.lb}>Usuário</label><input style={{...s.fi,fontSize:14}} placeholder="Digite seu usuário" value={login} onChange={e=>setLogin(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/></div>
-          <div><label style={s.lb}>Senha</label><input type="password" style={{...s.fi,fontSize:14}} placeholder="Digite sua senha" value={senha} onChange={e=>setSenha(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/></div>
-          {erro&&<p style={{fontSize:12,color:'#DC2626',textAlign:'center',margin:0}}>{erro}</p>}
-          <button onClick={handleLogin} style={{...s.btnTeal,justifyContent:'center',width:'100%',padding:'.75rem',fontSize:14,borderRadius:9,marginTop:4}}>Entrar</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}) {
-  return (
-    <button onClick={onClick} style={{
-      display:'flex',alignItems:'center',gap:11,width:'100%',textAlign:'left',
-      padding:'.6rem .9rem',borderRadius:8,border:'none',cursor:'pointer',
-      background:active?ACCENT:'transparent',color:active?'#fff':'#94A3B8',
-      fontSize:13,fontWeight:600,fontFamily:'inherit',marginBottom:2,
-      transition:'background .15s',
-    }}
-    onMouseEnter={e=>{if(!active)e.currentTarget.style.background=SIDEBAR_BG2}}
-    onMouseLeave={e=>{if(!active)e.currentTarget.style.background='transparent'}}
-    >
-      <Icon name={icon} size={16} color={active?'#fff':'#94A3B8'}/>
-      {label}
-    </button>
-  )
 }
 
 export default function Home() {
@@ -714,50 +441,15 @@ export default function Home() {
   return (
     <div style={s.page}>
 
-      {/* SIDEBAR */}
-      <aside style={s.sidebar}>
-        <div style={{padding:'1.25rem 1.1rem .5rem'}}>
-          <img src="/logo.jpg" alt="Servis" style={{height:34,objectFit:'contain',marginBottom:14,filter:'brightness(0) invert(1)'}} onError={e=>(e.currentTarget.style.display='none')}/>
-          <p style={{fontSize:9,fontWeight:700,color:'#475569',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 4px'}}>Sessão ativa</p>
-          <p style={{fontSize:15,fontWeight:700,color:'#fff',margin:0}}>{user}</p>
-          <span style={{...s.badge,background:role==='gestora'?'#0D3B2E':role==='entregador'?'#3B2A0D':'#0D2E3B',color:role==='gestora'?'#4ADE80':role==='entregador'?'#F5A623':'#4FC3D9',marginTop:6}}>
-            {role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'}
-          </span>
-        </div>
+      <Sidebar
+        user={user}
+        role={role}
+        aba={aba}
+        setAba={setAba}
+        onNovoOrcamento={openNovo}
+        onSair={()=>setLogado(false)}
+      />
 
-        <div style={{height:1,background:'#1E2A38',margin:'.75rem 0'}}/>
-
-        <div style={{padding:'0 .9rem',flex:1}}>
-          <p style={{fontSize:9,fontWeight:700,color:'#475569',textTransform:'uppercase',letterSpacing:'.08em',margin:'.5rem 0 .6rem .5rem'}}>Navegação</p>
-
-          {role==='entregador'?(
-            <NavItem icon="truck" label="Entregas" active={true} onClick={()=>{}}/>
-          ):(
-            <>
-              <NavItem icon="dashboard" label="Visão Geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
-              <NavItem icon="plus" label="Novo Orçamento" active={false} onClick={openNovo}/>
-              <NavItem icon="fileText" label="Lançamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
-              <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
-              <NavItem icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
-            </>
-          )}
-        </div>
-
-        <div style={{padding:'.9rem',borderTop:'1px solid #1E2A38'}}>
-          <button onClick={()=>setLogado(false)} style={{
-            display:'flex',alignItems:'center',gap:11,width:'100%',textAlign:'left',
-            padding:'.6rem .9rem',borderRadius:8,border:'none',cursor:'pointer',
-            background:'transparent',color:'#F87171',fontSize:13,fontWeight:600,fontFamily:'inherit',
-          }}
-          onMouseEnter={e=>(e.currentTarget.style.background='#2A1416')}
-          onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
-          >
-            <Icon name="logout" size={16} color="#F87171"/> Sair
-          </button>
-        </div>
-      </aside>
-
-      {/* CONTEÚDO */}
       <div style={s.content}>
         <main style={s.main}>
 
