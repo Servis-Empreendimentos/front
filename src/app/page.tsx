@@ -4,7 +4,7 @@ import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, fmtR, fmtData
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
-import LoginScreen, { USUARIOS } from '../components/LoginScreen'
+import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -142,7 +142,7 @@ export default function Home() {
   useEffect(()=>{if(logado)load()},[load,logado])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',titulo:'',cnpj:''})
+    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',cnpj:''})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
@@ -181,7 +181,16 @@ export default function Home() {
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
       const vFrete=parseFloat(rawFrete.replace(/\D/g,''))/100||0
       const valor_total=valor_produtos+vFrete
-      await api.criar({...form,valor_produtos,valor_frete:vFrete,valor_total,valor_original:valor_total,criado_por:user,itens:itensOrcamento})
+      await api.criar({
+        ...form,
+        tipo_pagamento: form.tipo_pagamento || 'avista',
+        valor_produtos,
+        valor_frete: vFrete,
+        valor_total,
+        valor_original: valor_total,
+        criado_por: user,
+        itens: itensOrcamento,
+      })
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
       setModal(false);showToast('Orçamento salvo!');load()
     } catch (err:any) {
