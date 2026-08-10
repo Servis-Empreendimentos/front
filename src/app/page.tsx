@@ -15,10 +15,15 @@ const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY!
 const AI_KEY   = process.env.NEXT_PUBLIC_ANTHROPIC_KEY!
 
+const SIDEBAR_BG = '#101C27'
+const SIDEBAR_BG2 = '#16232F'
+const ACCENT = '#0097A8'
+
 const s = {
-  page:    { minHeight:'100vh', display:'flex', flexDirection:'column' as const, fontFamily:"'DM Sans',sans-serif", background:'#F2F6F8', color:'#1A2B38' },
-  topbar:  { background:'#fff', borderBottom:'3px solid #0097A8', padding:'.7rem 1.5rem', display:'flex', alignItems:'center', gap:'1rem', position:'sticky' as const, top:0, zIndex:40, boxShadow:'0 2px 10px rgba(0,151,168,.1)' },
-  main:    { flex:1, padding:'1.25rem 1.5rem' },
+  page:    { minHeight:'100vh', display:'flex', fontFamily:"'DM Sans',sans-serif", background:'#F2F6F8', color:'#1A2B38' },
+  sidebar: { width:250, minWidth:250, background:SIDEBAR_BG, display:'flex', flexDirection:'column' as const, position:'sticky' as const, top:0, height:'100vh', overflowY:'auto' as const, zIndex:40 },
+  content: { flex:1, display:'flex', flexDirection:'column' as const, minWidth:0 },
+  main:    { flex:1, padding:'1.5rem' },
   row:     { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.25rem' },
   h1:      { fontSize:20, fontWeight:600, color:'#1A2B38' },
   p:       { fontSize:12, color:'#7A919E', marginTop:2 },
@@ -264,11 +269,29 @@ function LoginScreen({onLogin}:{onLogin:(nome:string,role:'lancadora'|'gestora'|
   )
 }
 
+function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}) {
+  return (
+    <button onClick={onClick} style={{
+      display:'flex',alignItems:'center',gap:10,width:'100%',textAlign:'left',
+      padding:'.6rem .9rem',borderRadius:8,border:'none',cursor:'pointer',
+      background:active?ACCENT:'transparent',color:active?'#fff':'#B8C4CE',
+      fontSize:13,fontWeight:600,fontFamily:'inherit',marginBottom:2,
+      transition:'background .15s',
+    }}
+    onMouseEnter={e=>{if(!active)e.currentTarget.style.background=SIDEBAR_BG2}}
+    onMouseLeave={e=>{if(!active)e.currentTarget.style.background='transparent'}}
+    >
+      <span style={{fontSize:15,width:18,textAlign:'center'}}>{icon}</span>
+      {label}
+    </button>
+  )
+}
+
 export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'lancamentos'|'mensais'|'fornecedores'>('lancamentos')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -317,7 +340,6 @@ export default function Home() {
   const [pagParcialData,setPagParcialData]=useState('')
   const [pagParcialObs,setPagParcialObs]=useState('')
   const [pagParcialParc,setPagParcialParc]=useState('')
-  // Fornecedores
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
   const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
@@ -582,7 +604,6 @@ export default function Home() {
     finally {setSaving(false)}
   }
 
-  // === Fornecedores ===
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
     setFormFornecedor({nome:'',cnpj:''})
@@ -619,7 +640,7 @@ export default function Home() {
     }
   }
 
-  if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true)}}/>
+  if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}}/>
 
   const filtered=data.filter(l=>{
     if(search) {
@@ -646,132 +667,160 @@ export default function Home() {
 
   return (
     <div style={s.page}>
-      <header style={s.topbar}>
-        <img src="/logo.jpg" alt="Servis" style={{height:40,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
-        <span style={{fontWeight:700,fontSize:15,color:'#0097A8'}}>Servis - Conciliação Financeira</span>
-        {role!=='entregador'&&(
-          <nav style={{display:'flex',gap:4,marginLeft:16}}>
-            {(['lancamentos','mensais','fornecedores'] as const).map(a=>(
-              <button key={a} onClick={()=>setAba(a)} style={{padding:'.4rem .9rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',background:aba===a?'#0097A8':'transparent',color:aba===a?'#fff':'#7A919E'}}>
-                {a==='lancamentos'?'Lançamentos':a==='mensais'?'🔄 Contas Mensais':'🏢 Fornecedores'}
-              </button>
-            ))}
-          </nav>
-        )}
-        <div style={{flex:1}}/>
-        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'#7A919E'}}>
-          <span>👤 {user}</span>
-          <span style={{...s.badge,background:role==='gestora'?'#EAF7EE':role==='entregador'?'#FEF5EB':'#E0F5F7',color:role==='gestora'?'#27AE60':role==='entregador'?'#E67E22':'#0097A8'}}>
+
+      {/* SIDEBAR */}
+      <aside style={s.sidebar}>
+        <div style={{padding:'1.25rem 1.1rem .5rem'}}>
+          <img src="/logo.jpg" alt="Servis" style={{height:34,objectFit:'contain',marginBottom:14,filter:'brightness(0) invert(1)'}} onError={e=>(e.currentTarget.style.display='none')}/>
+          <p style={{fontSize:9,fontWeight:700,color:'#5A7080',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 4px'}}>Sessão ativa</p>
+          <p style={{fontSize:15,fontWeight:700,color:'#fff',margin:0}}>{user}</p>
+          <span style={{...s.badge,background:role==='gestora'?'#0D3B2E':role==='entregador'?'#3B2A0D':'#0D2E3B',color:role==='gestora'?'#4ADE80':role==='entregador'?'#F5A623':'#4FC3D9',marginTop:6}}>
             {role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'}
           </span>
-          <button onClick={()=>setLogado(false)} style={{...s.btnOut,padding:'3px 10px',fontSize:11,color:'#E74C3C',borderColor:'#FDECEA'}}>Sair</button>
         </div>
-      </header>
 
-      <main style={s.main}>
+        <div style={{height:1,background:'#22323F',margin:'.75rem 0'}}/>
 
-        {role==='entregador'&&(
-          <div>
-            <div style={s.row}>
-              <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos na obra</p></div>
-            </div>
-            <div style={s.card}>
-              <div style={s.toolbar}>
-                <input style={{...s.inp,width:200}} placeholder="Buscar empresa..." value={search} onChange={e=>setSearch(e.target.value)}/>
-                <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
-                  <option value="">Todas as etapas</option>
-                  {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
-                </select>
+        <div style={{padding:'0 .9rem',flex:1}}>
+          <p style={{fontSize:9,fontWeight:700,color:'#5A7080',textTransform:'uppercase',letterSpacing:'.08em',margin:'.5rem 0 .6rem .5rem'}}>Navegação</p>
+
+          {role==='entregador'?(
+            <NavItem icon="🚚" label="Entregas" active={true} onClick={()=>{}}/>
+          ):(
+            <>
+              <NavItem icon="📊" label="Visão Geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
+              <NavItem icon="➕" label="Novo Orçamento" active={false} onClick={openNovo}/>
+              <NavItem icon="📄" label="Lançamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+              <NavItem icon="🏢" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
+              <NavItem icon="🔄" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
+            </>
+          )}
+        </div>
+
+        <div style={{padding:'.9rem',borderTop:'1px solid #22323F'}}>
+          <button onClick={()=>setLogado(false)} style={{
+            display:'flex',alignItems:'center',gap:10,width:'100%',textAlign:'left',
+            padding:'.6rem .9rem',borderRadius:8,border:'none',cursor:'pointer',
+            background:'transparent',color:'#E88',fontSize:13,fontWeight:600,fontFamily:'inherit',
+          }}
+          onMouseEnter={e=>(e.currentTarget.style.background='#2A1416')}
+          onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
+          >
+            <span style={{fontSize:15,width:18,textAlign:'center'}}>⏻</span> Sair
+          </button>
+        </div>
+      </aside>
+
+      {/* CONTEÚDO */}
+      <div style={s.content}>
+        <main style={s.main}>
+
+          {role==='entregador'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos na obra</p></div>
               </div>
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead><tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>{th('Empresa')}{th('Etapa')}{th('Data programada')}</tr></thead>
-                <tbody>
-                  {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                  :filtered.map(l=>{
-                    const step=PIPELINE.find(p=>p.id===l.status_processo)
-                    const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
-                    return (
-                      <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
-                        onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                        <td style={{padding:'10px 11px',fontWeight:600}}>{l.titulo}</td>
-                        <td style={{padding:'10px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label}</span></td>
-                        <td style={{padding:'10px 11px',color:'#7A919E'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {role!=='entregador'&&aba==='mensais'&&(
-          <div>
-            <div style={s.row}>
-              <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos</p></div>
-              <button onClick={()=>setModalMensal(true)} style={s.btnTeal}>＋ Nova conta mensal</button>
-            </div>
-            <div style={s.card}>
-              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                <thead><tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>{th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Status')}{th('Ações')}</tr></thead>
-                <tbody>
-                  {contasMensais.length===0&&<tr><td colSpan={5} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhuma conta mensal cadastrada</td></tr>}
-                  {contasMensais.map(c=>(
-                    <tr key={c.id} style={{borderBottom:'1px solid #DDE5EA'}}>
-                      <td style={{padding:'10px 11px',fontWeight:600}}>{c.titulo}</td>
-                      <td style={{padding:'10px 11px',color:'#7A919E'}}>{c.pago_por}</td>
-                      <td style={{padding:'10px 11px',textAlign:'center'}}><span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 8px',fontWeight:600}}>dia {c.dia_vencimento}</span></td>
-                      <td style={{padding:'10px 11px'}}><Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#27AE60':'#6B8090'}/></td>
-                      <td style={{padding:'10px 11px'}}>
-                        <div style={{display:'flex',gap:8}}>
-                          {c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>＋ Lançar este mês</button>}
-                          <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)} style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#E74C3C':'#27AE60'}}>{c.ativo?'Desativar':'Ativar'}</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {role!=='entregador'&&aba==='fornecedores'&&(
-          <div>
-            <div style={s.row}>
-              <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
-              <button onClick={openNovoFornecedor} style={s.btnTeal}>＋ Novo fornecedor</button>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
-              <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c="#0097A8"/>
-              <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#27AE60"/>
-            </div>
-            <div style={s.card}>
-              <div style={s.toolbar}>
-                <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
-                <input style={{...s.inp,width:220}} placeholder="Buscar por nome ou CNPJ..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
-              </div>
-              <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <input style={{...s.inp,width:200}} placeholder="Buscar empresa..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                  <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
+                    <option value="">Todas as etapas</option>
+                    {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
+                  </select>
+                </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead style={{position:'sticky',top:0,zIndex:2}}>
+                  <thead><tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>{th('Empresa')}{th('Etapa')}{th('Data programada')}</tr></thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :filtered.map(l=>{
+                      const step=PIPELINE.find(p=>p.id===l.status_processo)
+                      const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
+                      return (
+                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'10px 11px',fontWeight:600}}>{l.titulo}</td>
+                          <td style={{padding:'10px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label}</span></td>
+                          <td style={{padding:'10px 11px',color:'#7A919E'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='visao'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Visão Geral</h1><p style={s.p}>Resumo financeiro · Servis Empreendimentos</p></div>
+                <button onClick={openNovo} style={s.btnTeal}>＋ Novo orçamento</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+                <KPI l="Total" v={data.length} sv="lançamentos" c="#0097A8"/>
+                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#E67E22"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#E74C3C"/>
+                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#8E44AD"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
                     <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Nome')}{th('CNPJ')}{th('Ações')}
+                      {th('Empresa')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum fornecedor cadastrado</td></tr>
-                    :filteredFornecedores.map(f=>(
-                      <tr key={f.id} style={{borderBottom:'1px solid #DDE5EA'}}
-                        onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                        <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
-                        <td style={{padding:'10px 11px',color:'#7A919E'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
+                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                    :data.slice(0,8).map(l=>{
+                      const step=PIPELINE.find(p=>p.id===l.status_processo)
+                      const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
+                      const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
+                      return (
+                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'8px 11px',fontWeight:500,maxWidth:180,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                          <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label}</span></td>
+                          <td style={{padding:'8px 11px',color:'#7A919E'}}>{fmtData(l.data)}</td>
+                          <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
+                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
+                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
+                  <button onClick={()=>setAba('lancamentos')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver todos os lançamentos →</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='mensais'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos</p></div>
+                <button onClick={()=>setModalMensal(true)} style={s.btnTeal}>＋ Nova conta mensal</button>
+              </div>
+              <div style={s.card}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead><tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>{th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Status')}{th('Ações')}</tr></thead>
+                  <tbody>
+                    {contasMensais.length===0&&<tr><td colSpan={5} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhuma conta mensal cadastrada</td></tr>}
+                    {contasMensais.map(c=>(
+                      <tr key={c.id} style={{borderBottom:'1px solid #DDE5EA'}}>
+                        <td style={{padding:'10px 11px',fontWeight:600}}>{c.titulo}</td>
+                        <td style={{padding:'10px 11px',color:'#7A919E'}}>{c.pago_por}</td>
+                        <td style={{padding:'10px 11px',textAlign:'center'}}><span style={{background:'#E0F5F7',color:'#0097A8',borderRadius:6,padding:'2px 8px',fontWeight:600}}>dia {c.dia_vencimento}</span></td>
+                        <td style={{padding:'10px 11px'}}><Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#27AE60':'#6B8090'}/></td>
                         <td style={{padding:'10px 11px'}}>
                           <div style={{display:'flex',gap:8}}>
-                            <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}>✏️ Editar</button>
-                            {role==='gestora'&&(
-                              <button onClick={()=>handleExcluirFornecedor(f)} style={{...s.btnRed,padding:'4px 10px',fontSize:11}}>🗑 Excluir</button>
-                            )}
+                            {c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}>＋ Lançar este mês</button>}
+                            <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)} style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#E74C3C':'#27AE60'}}>{c.ativo?'Desativar':'Ativar'}</button>
                           </div>
                         </td>
                       </tr>
@@ -779,98 +828,145 @@ export default function Home() {
                   </tbody>
                 </table>
               </div>
-              <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
-                {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
-              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {role!=='entregador'&&aba==='lancamentos'&&(
-          <div>
-            <div style={s.row}>
-              <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
-              <button onClick={openNovo} style={s.btnTeal}>＋ Novo orçamento</button>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
-              <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
-              <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#E67E22"/>
-              <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#E74C3C"/>
-              <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
-              <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#8E44AD"/>
-            </div>
-            <div style={s.card}>
-              <div style={s.toolbar}>
-                <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
-                <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
-                <div style={{display:'flex',alignItems:'center',gap:4}}>
-                  <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>De:</label>
-                  <input type="date" style={s.inp} value={fDataIni} onChange={e=>setFDataIni(e.target.value)}/>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:4}}>
-                  <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>Até:</label>
-                  <input type="date" style={s.inp} value={fDataFim} onChange={e=>setFDataFim(e.target.value)}/>
-                </div>
-                {(fDataIni||fDataFim)&&(
-                  <button onClick={()=>{setFDataIni('');setFDataFim('')}} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar datas</button>
-                )}
-                <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
-                  <option value="">Todas as etapas</option>
-                  {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
-                </select>
-                <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
-                  <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
-                </select>
+          {role!=='entregador'&&aba==='fornecedores'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
+                <button onClick={openNovoFornecedor} style={s.btnTeal}>＋ Novo fornecedor</button>
               </div>
-              <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead style={{position:'sticky',top:0,zIndex:2}}>
-                    <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
-                      {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum registro</td></tr>
-                    :filtered.map(l=>{
-                      const step=PIPELINE.find(p=>p.id===l.status_processo)
-                      const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
-                      const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
-                      return (
-                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+                <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c="#0097A8"/>
+                <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#27AE60"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
+                  <input style={{...s.inp,width:220}} placeholder="Buscar por nome ou CNPJ..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
+                </div>
+                <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead style={{position:'sticky',top:0,zIndex:2}}>
+                      <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
+                        {th('Nome')}{th('CNPJ')}{th('Ações')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                      :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum fornecedor cadastrado</td></tr>
+                      :filteredFornecedores.map(f=>(
+                        <tr key={f.id} style={{borderBottom:'1px solid #DDE5EA'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.nf_numero||'—'}</td>
-                          <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
-                          <td style={{padding:'8px 11px',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📋</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>🧾</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
+                          <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
+                          <td style={{padding:'10px 11px',color:'#7A919E'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
+                          <td style={{padding:'10px 11px'}}>
+                            <div style={{display:'flex',gap:8}}>
+                              <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}>✏️ Editar</button>
+                              {role==='gestora'&&(
+                                <button onClick={()=>handleExcluirFornecedor(f)} style={{...s.btnRed,padding:'4px 10px',fontSize:11}}>🗑 Excluir</button>
+                              )}
+                            </div>
+                          </td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
-                {filtered.length} registro{filtered.length!==1?'s':''} de {data.length} total
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
+                  {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </main>
+          )}
 
-      <footer style={s.footer}>
-        <img src="/logo.jpg" alt="Servis" style={{height:28,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
-        <p style={{fontSize:11,color:'#7A919E'}}>Servis Empreendimentos · Conciliação Financeira</p>
-        <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
-      </footer>
+          {role!=='entregador'&&aba==='lancamentos'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
+                <button onClick={openNovo} style={s.btnTeal}>＋ Novo orçamento</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+                <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c="#0097A8"/>
+                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#E67E22"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#E74C3C"/>
+                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#27AE60"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#8E44AD"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
+                  <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>De:</label>
+                    <input type="date" style={s.inp} value={fDataIni} onChange={e=>setFDataIni(e.target.value)}/>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <label style={{fontSize:11,color:'#7A919E',fontWeight:600}}>Até:</label>
+                    <input type="date" style={s.inp} value={fDataFim} onChange={e=>setFDataFim(e.target.value)}/>
+                  </div>
+                  {(fDataIni||fDataFim)&&(
+                    <button onClick={()=>{setFDataIni('');setFDataFim('')}} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar datas</button>
+                  )}
+                  <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
+                    <option value="">Todas as etapas</option>
+                    {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.icon} {p.label}</option>)}
+                  </select>
+                  <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
+                    <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
+                  </select>
+                </div>
+                <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead style={{position:'sticky',top:0,zIndex:2}}>
+                      <tr style={{background:'#FAFCFD',borderBottom:'2px solid #DDE5EA'}}>
+                        {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Carregando...</td></tr>
+                      :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7A919E'}}>Nenhum registro</td></tr>
+                      :filtered.map(l=>{
+                        const step=PIPELINE.find(p=>p.id===l.status_processo)
+                        const cor=PIPE_COLORS[l.status_processo]||'#7A919E'
+                        const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
+                        return (
+                          <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #DDE5EA',cursor:'pointer'}}
+                            onMouseEnter={e=>(e.currentTarget.style.background='#F0F7F9')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                            <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                            <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.nf_numero||'—'}</td>
+                            <td style={{padding:'8px 11px'}}><span style={{...s.badge,background:`${cor}18`,color:cor}}>{step?.icon} {step?.label||l.status_processo}</span></td>
+                            <td style={{padding:'8px 11px',color:'#7A919E',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
+                            <td style={{padding:'8px 11px',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
+                            <td style={{padding:'8px 11px',color:'#7A919E'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#E67E22',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
+                            <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#E74C3C',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<span style={{color:'#27AE60',fontWeight:700}}>✓</span>:<span style={{color:'#E74C3C',fontWeight:700}}>✗</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>📋</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:16}}>🧾</a>:<span style={{color:'#DDE5EA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',color:'#7A919E',fontSize:11}}>{l.criado_por}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #DDE5EA',fontSize:11,color:'#7A919E',background:'#FAFCFD'}}>
+                  {filtered.length} registro{filtered.length!==1?'s':''} de {data.length} total
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+
+        <footer style={s.footer}>
+          <img src="/logo.jpg" alt="Servis" style={{height:24,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
+          <p style={{fontSize:11,color:'#7A919E'}}>Servis Empreendimentos · Conciliação Financeira</p>
+          <p style={{fontSize:11,color:'#7A919E'}}>© 2025</p>
+        </footer>
+      </div>
 
       {modal&&detalhe&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModal(false)}>
@@ -973,7 +1069,6 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* VALORES */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:12}}>
@@ -1036,7 +1131,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* ITENS */}
                 {(()=>{
                   const itensOrc=detalhe.itens?.filter(i=>i.tipo==='orcamento')||[]
                   const itensNF=detalhe.itens?.filter(i=>i.tipo==='nf')||[]
@@ -1078,14 +1172,12 @@ export default function Home() {
                   )
                 })()}
 
-                {/* PROPOSTA */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'12px 14px',marginBottom:12}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>📋 Proposta</p>
                   <input ref={propostaDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarProposta(f)}}/>
                   <AnexoBtn url={detalhe.proposta_url} label="proposta" icon="📋" onAnexar={()=>propostaDetRef.current?.click()} onSubstituir={()=>propostaDetRef.current?.click()} loading={loadingAnexo}/>
                 </div>
 
-                {/* NOTA FISCAL */}
                 <div style={{border:'1.5px solid #DDE5EA',borderRadius:8,padding:'12px 14px',marginBottom:16,background:canAttachNF(detalhe.status_processo)?'#fff':'#F9FAFB'}}>
                   <p style={{fontSize:10,fontWeight:700,color:'#7A919E',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10}}>🧾 Nota Fiscal</p>
                   {canAttachNF(detalhe.status_processo)?(
@@ -1372,7 +1464,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* MODAL FORNECEDOR (novo/editar) */}
       {modalFornecedor&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
           <div style={{...s.modal,width:440}}>
