@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -68,6 +68,7 @@ export default function Home() {
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
+  const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
@@ -76,6 +77,7 @@ export default function Home() {
   const [fDataFim,setFDataFim]=useState('')
   const [search,setSearch]=useState('')
   const [searchForn,setSearchForn]=useState('')
+  const [searchMensal,setSearchMensal]=useState('')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -105,8 +107,6 @@ export default function Home() {
   const [loadingIANF,setLoadingIANF]=useState(false)
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
-  const [modalGerar,setModalGerar]=useState<ContaMensal|null>(null)
-  const [valorGerar,setValorGerar]=useState('')
   const [modalPagParcial,setModalPagParcial]=useState(false)
   const [pagParcialTipo,setPagParcialTipo]=useState('pix')
   const [pagParcialValor,setPagParcialValor]=useState('')
@@ -116,6 +116,11 @@ export default function Home() {
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
   const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
+  const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
+  const [valorPagarConta,setValorPagarConta]=useState('')
+  const [dataPagarConta,setDataPagarConta]=useState('')
+  const [modalHistoricoConta,setModalHistoricoConta]=useState<ContaMensal|null>(null)
+  const [historicoConta,setHistoricoConta]=useState<PagamentoContaMensal[]>([])
 
   const orcIARef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
@@ -128,13 +133,14 @@ export default function Home() {
   const load=useCallback(async()=>{
     setLoading(true)
     try {
-      const [lista,mensais,categorias,forns]=await Promise.all([
+      const [lista,mensais,categorias,forns,pagMensais]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec}),
         api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
+        api.listarPagamentosMensais(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais)
     } catch {showToast('Erro ao carregar dados',false)}
     finally {setLoading(false)}
   },[fPipe,fRec])
@@ -374,18 +380,6 @@ export default function Home() {
     finally {setSaving(false)}
   }
 
-  const handleGerarLancamento=async()=>{
-    if(!modalGerar||!valorGerar) return showToast('Informe o valor',false)
-    setSaving(true)
-    try {
-      const lanc=await api.gerarLancamentoMensal(modalGerar,user)
-      const valor=parseFloat(valorGerar.replace(/\D/g,''))/100
-      await sbPatch('lancamentos',`?id=eq.${lanc.id}`,{valor_total:valor,valor_original:valor,valor_produtos:valor})
-      setModalGerar(null);setValorGerar('');showToast('Lançamento gerado!');setAba('lancamentos');load()
-    } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
-    finally {setSaving(false)}
-  }
-
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
     setFormFornecedor({nome:'',cnpj:''})
@@ -420,6 +414,39 @@ export default function Home() {
     } catch (err:any) {
       showToast('Erro ao excluir: '+(err?.message||''),false)
     }
+  }
+
+  const abrirPagarConta=(c:ContaMensal)=>{
+    setModalPagarConta(c)
+    setValorPagarConta('')
+    setDataPagarConta(new Date().toISOString().slice(0,10))
+  }
+
+  const handleRegistrarPagamentoConta=async()=>{
+    if(!modalPagarConta||!valorPagarConta||!dataPagarConta) return showToast('Preencha valor e data',false)
+    setSaving(true)
+    try {
+      const valor=parseFloat(valorPagarConta.replace(/\D/g,''))/100
+      await api.registrarPagamentoMensal(modalPagarConta.id,valor,dataPagarConta)
+      setModalPagarConta(null);showToast('Pagamento registrado!');load()
+    } catch (err:any) {
+      showToast('Erro: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+
+  const abrirHistoricoConta=async(c:ContaMensal)=>{
+    setModalHistoricoConta(c)
+    const h=await api.listarPagamentosDaConta(c.id)
+    setHistoricoConta(h)
+  }
+
+  const handleExcluirPagamentoConta=async(id:string)=>{
+    if(!confirm('Excluir este pagamento?')) return
+    try {
+      await api.excluirPagamentoMensal(id)
+      if(modalHistoricoConta) { const h=await api.listarPagamentosDaConta(modalHistoricoConta.id); setHistoricoConta(h) }
+      showToast('Pagamento excluído!');load()
+    } catch { showToast('Erro ao excluir',false) }
   }
 
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}}/>
@@ -547,36 +574,89 @@ export default function Home() {
             </div>
           )}
 
-          {role!=='entregador'&&aba==='mensais'&&(
-            <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos</p></div>
-                <button onClick={()=>setModalMensal(true)} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova conta mensal</button>
+          {role!=='entregador'&&aba==='mensais'&&(()=>{
+            const filteredMensais = contasMensais.filter(c=>{
+              if(!searchMensal) return true
+              return c.titulo.toLowerCase().includes(searchMensal.toLowerCase())
+            })
+            const ativas = contasMensais.filter(c=>c.ativo).length
+            const inativas = contasMensais.length - ativas
+            const ultimoPagamento = (contaId:string) => pagamentosMensais.find(p=>p.conta_mensal_id===contaId)
+
+            return (
+              <div>
+                <div style={s.row}>
+                  <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos — controle independente dos lançamentos</p></div>
+                  <button onClick={()=>setModalMensal(true)} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova conta mensal</button>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+                  <KPI l="Total de contas" v={contasMensais.length} sv="cadastradas" c={ACCENT_LT}/>
+                  <KPI l="Ativas" v={ativas} sv="em acompanhamento" c="#16A34A"/>
+                  <KPI l="Inativas" v={inativas} sv="pausadas" c="#64748B"/>
+                </div>
+                <div style={s.card}>
+                  <div style={s.toolbar}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todas as contas</span>
+                    <input style={{...s.inp,width:220}} placeholder="Buscar conta..." value={searchMensal} onChange={e=>setSearchMensal(e.target.value)}/>
+                  </div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                          {th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Último valor pago')}{th('Pago em')}{th('Status')}{th('Ações')}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredMensais.length===0&&<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
+                        {filteredMensais.map(c=>{
+                          const ultimo = ultimoPagamento(c.id)
+                          return (
+                            <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
+                              onClick={()=>abrirHistoricoConta(c)}
+                              onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                              <td style={{padding:'9px 11px',fontWeight:600}}>{c.titulo}</td>
+                              <td style={{padding:'9px 11px',color:'#64748B'}}>{c.pago_por}</td>
+                              <td style={{padding:'9px 11px'}}>
+                                <span style={{...s.badge,background:'#E0F5F7',color:ACCENT_LT}}>
+                                  <Icon name="calendar" size={11} color={ACCENT_LT}/> dia {c.dia_vencimento}
+                                </span>
+                              </td>
+                              <td style={{padding:'9px 11px',fontWeight:600}}>{ultimo?fmtR(ultimo.valor):'—'}</td>
+                              <td style={{padding:'9px 11px',color:'#64748B'}}>{ultimo?fmtData(ultimo.data_pagamento):'—'}</td>
+                              <td style={{padding:'9px 11px'}}>
+                                <Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#16A34A':'#64748B'}/>
+                              </td>
+                              <td style={{padding:'9px 11px'}} onClick={e=>e.stopPropagation()}>
+                                <div style={{display:'flex',gap:6}}>
+                                  <button
+                                    title="Registrar pagamento"
+                                    onClick={()=>abrirPagarConta(c)}
+                                    style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#16A34A',border:'none',borderRadius:6,cursor:'pointer'}}
+                                  >
+                                    <Icon name="dollar" size={13} color="#fff"/>
+                                  </button>
+                                  <button
+                                    title={c.ativo?'Desativar':'Ativar'}
+                                    onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)}
+                                    style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',border:`1.5px solid ${c.ativo?'#FEE2E2':'#DCFCE7'}`,borderRadius:6,cursor:'pointer'}}
+                                  >
+                                    <Icon name={c.ativo?'x':'check'} size={14} color={c.ativo?'#DC2626':'#16A34A'}/>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
+                    {filteredMensais.length} conta{filteredMensais.length!==1?'s':''} de {contasMensais.length} total · clique numa linha para ver o histórico
+                  </div>
+                </div>
               </div>
-              <div style={s.card}>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Status')}{th('Ações')}</tr></thead>
-                  <tbody>
-                    {contasMensais.length===0&&<tr><td colSpan={5} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta mensal cadastrada</td></tr>}
-                    {contasMensais.map(c=>(
-                      <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0'}}>
-                        <td style={{padding:'10px 11px',fontWeight:600}}>{c.titulo}</td>
-                        <td style={{padding:'10px 11px',color:'#64748B'}}>{c.pago_por}</td>
-                        <td style={{padding:'10px 11px',textAlign:'center'}}><span style={{background:'#E0F5F7',color:ACCENT_LT,borderRadius:6,padding:'2px 8px',fontWeight:600}}>dia {c.dia_vencimento}</span></td>
-                        <td style={{padding:'10px 11px'}}><Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#16A34A':'#64748B'}/></td>
-                        <td style={{padding:'10px 11px'}}>
-                          <div style={{display:'flex',gap:8}}>
-                            {c.ativo&&<button onClick={()=>{setModalGerar(c);setValorGerar('')}} style={{...s.btnTeal,padding:'4px 10px',fontSize:11}}><Icon name="plus" size={12} color="#fff"/> Lançar este mês</button>}
-                            <button onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)} style={{...s.btnOut,padding:'4px 10px',fontSize:11,color:c.ativo?'#DC2626':'#16A34A'}}>{c.ativo?'Desativar':'Ativar'}</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+            )
+          })()}
 
           {role!=='entregador'&&aba==='fornecedores'&&(
             <div>
@@ -1189,29 +1269,6 @@ export default function Home() {
         </div>
       )}
 
-      {modalGerar&&(
-        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalGerar(null)}>
-          <div style={{...s.modal,width:420}}>
-            <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="refresh" size={15}/>{modalGerar.titulo} — Este mês</h3>
-              <button onClick={()=>setModalGerar(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
-            </div>
-            <div style={{padding:'1.5rem'}}>
-              <p style={{fontSize:13,color:'#64748B',marginBottom:16}}>Informe o valor da conta neste mês:</p>
-              <label style={s.lb}>Valor *</label>
-              <input style={s.fi} value={valorGerar} placeholder="R$ 0,00" onChange={e=>{
-                const d=e.target.value.replace(/\D/g,'')
-                setValorGerar(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
-              }}/>
-            </div>
-            <div style={s.mfoot}>
-              <button onClick={()=>setModalGerar(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleGerarLancamento} disabled={saving||!valorGerar} style={{...s.btnTeal,opacity:(saving||!valorGerar)?0.6:1}}>{saving?'Gerando...':'Gerar lançamento'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {modalFornecedor&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
           <div style={{...s.modal,width:440}}>
@@ -1233,6 +1290,70 @@ export default function Home() {
             <div style={s.mfoot}>
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagarConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarConta(null)}>
+          <div style={{...s.modal,width:420}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarConta.titulo}</h3>
+              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div><label style={s.lb}>Valor pago *</label>
+                <input style={s.fi} value={valorPagarConta} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setValorPagarConta(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+              </div>
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={dataPagarConta} onChange={e=>setDataPagarConta(e.target.value)}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagarConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleRegistrarPagamentoConta} disabled={saving||!valorPagarConta||!dataPagarConta} style={{...s.btnGrn,opacity:(saving||!valorPagarConta||!dataPagarConta)?0.6:1}}>
+                {saving?'Salvando...':'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalHistoricoConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoConta(null)}>
+          <div style={{...s.modal,width:500}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoConta.titulo} — Histórico</h3>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              {historicoConta.length===0?(
+                <p style={{fontSize:13,color:'#64748B',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+              ):(
+                <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden'}}>
+                  {historicoConta.map(p=>(
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E8F0'}}>
+                      <div>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#16A34A'}}>{fmtR(p.valor)}</p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#64748B'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                      </div>
+                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626'}}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{setModalHistoricoConta(null);abrirPagarConta(modalHistoricoConta)}} style={s.btnGrn}>
+                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
+              </button>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>

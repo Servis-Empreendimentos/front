@@ -78,6 +78,14 @@ export type ContaMensal = {
   criado_em: string
 }
 
+export type PagamentoContaMensal = {
+  id: string
+  conta_mensal_id: string
+  valor: number
+  data_pagamento: string
+  criado_em?: string
+}
+
 export type Fornecedor = {
   id: string
   nome: string
@@ -306,19 +314,29 @@ export const api = {
     })
   },
 
-  gerarLancamentoMensal: async (conta: ContaMensal, criado_por: string) => {
-    const hoje = new Date()
-    const data = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-${String(conta.dia_vencimento).padStart(2,'0')}`
-    const res = await fetch(`${BASE_URL}/rest/v1/lancamentos`, {
-      method: 'POST', headers: { ...headers, Prefer: 'return=representation' },
-      body: JSON.stringify({
-        titulo: conta.titulo, valor_total: 0, valor_original: 0, valor_produtos: 0, valor_frete: 0,
-        data, pago_por: 'Servis Empreendimentos', tipo_pagamento: 'avista',
-        recorrente: true, dia_vencimento: conta.dia_vencimento, criado_por,
-        pago: false, status_processo: 'orcamento_aprovado',
-      }),
+  listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => {
+    const res = await fetch(`${BASE_URL}/rest/v1/pagamentos_contas_mensais?order=data_pagamento.desc`, { headers })
+    return res.json()
+  },
+
+  listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => {
+    const res = await fetch(`${BASE_URL}/rest/v1/pagamentos_contas_mensais?conta_mensal_id=eq.${contaId}&order=data_pagamento.desc`, { headers })
+    return res.json()
+  },
+
+  registrarPagamentoMensal: async (conta_mensal_id: string, valor: number, data_pagamento: string) => {
+    const res = await fetch(`${BASE_URL}/rest/v1/pagamentos_contas_mensais`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ conta_mensal_id, valor, data_pagamento }),
     })
-    const data2 = await res.json()
-    return data2[0]
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    return data[0]
+  },
+
+  excluirPagamentoMensal: async (id: string) => {
+    const res = await fetch(`${BASE_URL}/rest/v1/pagamentos_contas_mensais?id=eq.${id}`, { method: 'DELETE', headers })
+    if (!res.ok) throw new Error(await res.text())
   },
 }
