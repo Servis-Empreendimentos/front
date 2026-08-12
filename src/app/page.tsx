@@ -492,7 +492,7 @@ export default function Home() {
           {role==='entregador'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos na obra</p></div>
+                <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos e anexe a nota fiscal</p></div>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
@@ -503,10 +503,11 @@ export default function Home() {
                   </select>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Empresa')}{th('Etapa')}{th('Data programada')}</tr></thead>
+                  <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
                   <tbody>
                     {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                    :filtered.map(l=>{
+                    :filtered.filter(l=>l.pago).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento pago aguardando entrega</td></tr>
+                    :filtered.filter(l=>l.pago).map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#64748B'
                       return (
@@ -850,6 +851,18 @@ export default function Home() {
                             </div>
                           )
                         })}
+                      </div>
+
+                      <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,padding:'12px 14px',marginTop:16}}>
+                        <p style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+                          <Icon name="receipt" size={13}/>Nota Fiscal
+                        </p>
+                        <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNFComIA(f)}}/>
+                        {loadingIANF?(
+                          <p style={{fontSize:12,color:ACCENT_LT,fontWeight:600}}>Lendo NF com IA...</p>
+                        ):(
+                          <AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="receipt" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>
+                        )}
                       </div>
                     </>
                   )
