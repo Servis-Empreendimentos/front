@@ -148,7 +148,7 @@ export default function Home() {
   useEffect(()=>{if(logado)load()},[load,logado])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',cnpj:''})
+    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',cnpj:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
@@ -159,25 +159,32 @@ export default function Home() {
   const handleImportarOrcamento=async(file:File)=>{
     setLoadingIA(true)
     try {
-      const dados=await lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido:
-{"titulo":"nome da empresa","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00}]}`)
+      const [dados, propostaUrl] = await Promise.all([
+        lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido:
+{"titulo":"nome da empresa fornecedora","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00,"valor_total":0.00}]}
+Para cada item, extraia quantidade, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens/produtos do orçamento, sem pular nenhum.`),
+        api.uploadArquivo(file),
+      ])
       if(dados.titulo) set('titulo',dados.titulo)
       if(dados.cnpj) set('cnpj',dados.cnpj)
       if(dados.data) set('data',dados.data)
       if(dados.valor_frete>0) setRawFrete(dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
+      set('proposta_url', propostaUrl)
       if(dados.itens?.length>0) {
         setItensOrcamento(dados.itens.map((i:any)=>({
-          nome:i.nome||'', quantidade:i.quantidade||1,
+          nome:i.nome||'',
+          quantidade:i.quantidade||1,
           valor_unitario:i.valor_unitario||0,
-          valor_total:(i.quantidade||1)*(i.valor_unitario||0),
+          valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
           tipo:'orcamento' as const,
         })))
-        showToast('Orçamento importado com itens!')
+        showToast('Orçamento importado com itens e proposta anexada!')
       } else {
-        showToast('Empresa e dados importados, mas nenhum item foi identificado. Adicione manualmente se precisar.',false)
+        showToast('Empresa e proposta anexada, mas nenhum item foi identificado. Adicione manualmente se precisar.',false)
       }
-    } catch {showToast('Não foi possível ler o PDF. Preencha manualmente.',false)}
-    finally {setLoadingIA(false)}
+    } catch {
+      showToast('Não foi possível ler o PDF. Preencha manualmente.',false)
+    } finally {setLoadingIA(false)}
   }
 
   const handleSave=async()=>{
@@ -230,11 +237,12 @@ export default function Home() {
     setNfFileTemp(file);setLoadingIANF(true)
     try {
       const dados=await lerDocIA(file,`Extraia todos os itens desta nota fiscal e retorne APENAS um JSON válido:
-{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00}]}`)
+{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00,"valor_total":0.00}]}
+Para cada item, extraia quantidade, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
       const itens=(dados.itens||[]).map((i:any)=>({
         nome:i.nome||'', quantidade:i.quantidade||1,
         valor_unitario:i.valor_unitario||0,
-        valor_total:(i.quantidade||1)*(i.valor_unitario||0),
+        valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
         tipo:'nf' as const,
       }))
       setItensNFEditor(itens);setModalNFItens(true)
@@ -1078,11 +1086,16 @@ export default function Home() {
             <div style={s.fg}>
               <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed '+ACCENT_LT}}>
                 <p style={{fontSize:11,fontWeight:700,color:ACCENT_LT,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Icon name="sparkles" size={14} color={ACCENT_LT}/>Importar orçamento com IA</p>
-                <p style={{fontSize:12,color:'#0F172A',marginBottom:10}}>Suba o PDF do orçamento e a IA extrai empresa, CNPJ, itens e frete automaticamente.</p>
+                <p style={{fontSize:12,color:'#0F172A',marginBottom:10}}>Suba o PDF do orçamento: a IA extrai empresa, CNPJ, todos os itens (com quantidade, valor unitário e total) e o frete — e a proposta já fica anexada automaticamente.</p>
                 <input ref={orcIARef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportarOrcamento(f)}}/>
                 <button onClick={()=>orcIARef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
                   <Icon name="upload" size={14} color="#fff"/> {loadingIA?'Lendo orçamento...':'Selecionar PDF do orçamento'}
                 </button>
+                {form.proposta_url&&(
+                  <p style={{fontSize:11,color:'#16A34A',fontWeight:600,marginTop:8,display:'flex',alignItems:'center',gap:6}}>
+                    <Icon name="check" size={13} color="#16A34A"/> Proposta anexada com sucesso
+                  </p>
+                )}
               </div>
               <FF lb="Nome da empresa *" full>
                 <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
