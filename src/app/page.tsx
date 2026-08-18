@@ -127,6 +127,8 @@ export default function Home() {
   const propostaDetRef=useRef<HTMLInputElement>(null)
   const nfDetRef=useRef<HTMLInputElement>(null)
 
+  const HOJE = new Date().toISOString().slice(0,10)
+
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4500)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
@@ -515,8 +517,8 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
                   <tbody>
                     {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                    :filtered.filter(l=>l.pago).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento pago aguardando entrega</td></tr>
-                    :filtered.filter(l=>l.pago).map(l=>{
+                    :filtered.filter(l=>l.pago&&l.data>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento pago aguardando entrega</td></tr>
+                    :filtered.filter(l=>l.pago&&l.data>=HOJE).map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#64748B'
                       return (
