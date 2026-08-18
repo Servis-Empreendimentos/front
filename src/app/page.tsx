@@ -517,8 +517,8 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
                   <tbody>
                     {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                    :filtered.filter(l=>l.pago&&l.criado_em&&l.criado_em.slice(0,10)>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento pago aguardando entrega</td></tr>
-                    :filtered.filter(l=>l.pago&&l.criado_em&&l.criado_em.slice(0,10)>=HOJE).map(l=>{
+                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento aguardando entrega</td></tr>
+                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#64748B'
                       return (
