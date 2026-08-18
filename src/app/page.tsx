@@ -692,7 +692,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                                       </button>
                                       <button
                                         title={c.ativo?'Desativar':'Ativar'}
-                                        onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)}
+                                        onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(()=>load())}
                                         style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',border:`1.5px solid ${c.ativo?'#FEE2E2':'#DCFCE7'}`,borderRadius:6,cursor:'pointer'}}
                                       >
                                         <Icon name={c.ativo?'x':'check'} size={14} color={c.ativo?'#DC2626':'#16A34A'}/>
