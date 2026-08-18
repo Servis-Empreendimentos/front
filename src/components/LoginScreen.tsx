@@ -8,7 +8,7 @@ const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora'|
   'edna':    { senha: 'edna123',    nome: 'Edna',    role: 'lancadora'  },
   'erick':   { senha: 'erick123',   nome: 'Erick',   role: 'lancadora'  },
   'clau':    { senha: 'clau123',    nome: 'Clau',    role: 'gestora'    },
-  'matheus': { senha: 'matheus123', nome: 'Matheus', role: 'entregador' },
+  'obra': { senha: 'obra123', nome: 'Obra', role: 'entregador' },
 }
 
 export default function LoginScreen({onLogin}:{onLogin:(nome:string,role:'lancadora'|'gestora'|'entregador')=>void}) {
