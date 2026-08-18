@@ -133,8 +133,8 @@ export default function Home() {
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
-  const load=useCallback(async()=>{
-    setLoading(true)
+  const load=useCallback(async(silent=false)=>{
+    if(!silent) setLoading(true)
     try {
       const [lista,mensais,categorias,forns,pagMensais]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec}),
@@ -144,15 +144,15 @@ export default function Home() {
         api.listarPagamentosMensais(),
       ])
       setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais)
-    } catch {showToast('Erro ao carregar dados',false)}
-    finally {setLoading(false)}
+    } catch {if(!silent) showToast('Erro ao carregar dados',false)}
+    finally {if(!silent) setLoading(false)}
   },[fPipe,fRec])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
   useEffect(()=>{
     if(!logado) return
-    const interval = setInterval(()=>{ load() }, 15000)
+    const interval = setInterval(()=>{ load(true) }, 15000)
     return ()=>clearInterval(interval)
   },[logado,load])
 
