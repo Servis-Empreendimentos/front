@@ -78,6 +78,7 @@ export default function Home() {
   const [search,setSearch]=useState('')
   const [searchForn,setSearchForn]=useState('')
   const [searchMensal,setSearchMensal]=useState('')
+  const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -592,6 +593,30 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
             const inativas = contasMensais.length - ativas
             const ultimoPagamento = (contaId:string) => pagamentosMensais.find(p=>p.conta_mensal_id===contaId)
 
+            // Últimos 12 meses (mais antigo -> mais recente)
+            const meses = Array.from({length:12}).map((_,i)=>{
+              const d = new Date()
+              d.setDate(1)
+              d.setMonth(d.getMonth() - (11-i))
+              const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+              const label = d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','') + '/' + String(d.getFullYear()).slice(2)
+              return { key, label, ano:d.getFullYear(), mes:d.getMonth()+1 }
+            })
+
+            const valorNoMes = (contaId:string, mesKey:string) => {
+              const pagos = pagamentosMensais.filter(p=>p.conta_mensal_id===contaId && p.data_pagamento.startsWith(mesKey))
+              if(pagos.length===0) return null
+              return pagos.reduce((s,p)=>s+p.valor,0)
+            }
+
+            const abrirPagamentoNoMes = (c:ContaMensal, mes:{key:string;ano:number;mes:number}) => {
+              setModalPagarConta(c)
+              setValorPagarConta('')
+              const diaVenc = Math.min(c.dia_vencimento||1,28)
+              const dataSugerida = `${mes.ano}-${String(mes.mes).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`
+              setDataPagarConta(dataSugerida)
+            }
+
             return (
               <div>
                 <div style={s.row}>
@@ -605,63 +630,119 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 </div>
                 <div style={s.card}>
                   <div style={s.toolbar}>
-                    <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todas as contas</span>
+                    <div style={{display:'flex',gap:4}}>
+                      <button onClick={()=>setViewMensal('lista')} style={{
+                        padding:'.35rem .8rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                        background:viewMensal==='lista'?ACCENT:'transparent',color:viewMensal==='lista'?'#fff':'#64748B',
+                      }}>Lista</button>
+                      <button onClick={()=>setViewMensal('grade')} style={{
+                        padding:'.35rem .8rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
+                        background:viewMensal==='grade'?ACCENT:'transparent',color:viewMensal==='grade'?'#fff':'#64748B',
+                      }}>Grade mensal</button>
+                    </div>
+                    <div style={{flex:1}}/>
                     <input style={{...s.inp,width:220}} placeholder="Buscar conta..." value={searchMensal} onChange={e=>setSearchMensal(e.target.value)}/>
                   </div>
-                  <div style={{overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                      <thead>
-                        <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
-                          {th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Último valor pago')}{th('Pago em')}{th('Status')}{th('Ações')}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredMensais.length===0&&<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
-                        {filteredMensais.map(c=>{
-                          const ultimo = ultimoPagamento(c.id)
-                          return (
-                            <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
-                              onClick={()=>abrirHistoricoConta(c)}
-                              onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                              <td style={{padding:'9px 11px',fontWeight:600}}>{c.titulo}</td>
-                              <td style={{padding:'9px 11px',color:'#64748B'}}>{c.pago_por}</td>
-                              <td style={{padding:'9px 11px'}}>
-                                <span style={{...s.badge,background:'#E0F5F7',color:ACCENT_LT}}>
-                                  <Icon name="calendar" size={11} color={ACCENT_LT}/> dia {c.dia_vencimento}
-                                </span>
-                              </td>
-                              <td style={{padding:'9px 11px',fontWeight:600}}>{ultimo?fmtR(ultimo.valor):'—'}</td>
-                              <td style={{padding:'9px 11px',color:'#64748B'}}>{ultimo?fmtData(ultimo.data_pagamento):'—'}</td>
-                              <td style={{padding:'9px 11px'}}>
-                                <Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#16A34A':'#64748B'}/>
-                              </td>
-                              <td style={{padding:'9px 11px'}} onClick={e=>e.stopPropagation()}>
-                                <div style={{display:'flex',gap:6}}>
-                                  <button
-                                    title="Registrar pagamento"
-                                    onClick={()=>abrirPagarConta(c)}
-                                    style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#16A34A',border:'none',borderRadius:6,cursor:'pointer'}}
-                                  >
-                                    <Icon name="dollar" size={13} color="#fff"/>
-                                  </button>
-                                  <button
-                                    title={c.ativo?'Desativar':'Ativar'}
-                                    onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)}
-                                    style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',border:`1.5px solid ${c.ativo?'#FEE2E2':'#DCFCE7'}`,borderRadius:6,cursor:'pointer'}}
-                                  >
-                                    <Icon name={c.ativo?'x':'check'} size={14} color={c.ativo?'#DC2626':'#16A34A'}/>
-                                  </button>
-                                </div>
-                              </td>
+
+                  {viewMensal==='lista'?(
+                    <>
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead>
+                            <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                              {th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Último valor pago')}{th('Pago em')}{th('Status')}{th('Ações')}
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
-                    {filteredMensais.length} conta{filteredMensais.length!==1?'s':''} de {contasMensais.length} total · clique numa linha para ver o histórico
-                  </div>
+                          </thead>
+                          <tbody>
+                            {filteredMensais.length===0&&<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
+                            {filteredMensais.map(c=>{
+                              const ultimo = ultimoPagamento(c.id)
+                              return (
+                                <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
+                                  onClick={()=>abrirHistoricoConta(c)}
+                                  onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                                  <td style={{padding:'9px 11px',fontWeight:600}}>{c.titulo}</td>
+                                  <td style={{padding:'9px 11px',color:'#64748B'}}>{c.pago_por}</td>
+                                  <td style={{padding:'9px 11px'}}>
+                                    <span style={{...s.badge,background:'#E0F5F7',color:ACCENT_LT}}>
+                                      <Icon name="calendar" size={11} color={ACCENT_LT}/> dia {c.dia_vencimento}
+                                    </span>
+                                  </td>
+                                  <td style={{padding:'9px 11px',fontWeight:600}}>{ultimo?fmtR(ultimo.valor):'—'}</td>
+                                  <td style={{padding:'9px 11px',color:'#64748B'}}>{ultimo?fmtData(ultimo.data_pagamento):'—'}</td>
+                                  <td style={{padding:'9px 11px'}}>
+                                    <Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#16A34A':'#64748B'}/>
+                                  </td>
+                                  <td style={{padding:'9px 11px'}} onClick={e=>e.stopPropagation()}>
+                                    <div style={{display:'flex',gap:6}}>
+                                      <button
+                                        title="Registrar pagamento"
+                                        onClick={()=>abrirPagarConta(c)}
+                                        style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#16A34A',border:'none',borderRadius:6,cursor:'pointer'}}
+                                      >
+                                        <Icon name="dollar" size={13} color="#fff"/>
+                                      </button>
+                                      <button
+                                        title={c.ativo?'Desativar':'Ativar'}
+                                        onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(load)}
+                                        style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',border:`1.5px solid ${c.ativo?'#FEE2E2':'#DCFCE7'}`,borderRadius:6,cursor:'pointer'}}
+                                      >
+                                        <Icon name={c.ativo?'x':'check'} size={14} color={c.ativo?'#DC2626':'#16A34A'}/>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
+                        {filteredMensais.length} conta{filteredMensais.length!==1?'s':''} de {contasMensais.length} total · clique numa linha para ver o histórico
+                      </div>
+                    </>
+                  ):(
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <thead>
+                          <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                            <th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap',position:'sticky',left:0,background:'#FAFBFC',zIndex:1}}>Conta</th>
+                            {meses.map(m=>(
+                              <th key={m.key} style={{padding:'8px 6px',textAlign:'center',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap'}}>{m.label}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredMensais.length===0&&<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
+                          {filteredMensais.map(c=>(
+                            <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0'}}>
+                              <td style={{padding:'9px 11px',fontWeight:600,whiteSpace:'nowrap',position:'sticky',left:0,background:'#fff'}}>{c.titulo}</td>
+                              {meses.map(m=>{
+                                const valor = valorNoMes(c.id,m.key)
+                                const pago = valor!==null
+                                return (
+                                  <td key={m.key} style={{padding:'4px 4px',textAlign:'center'}}>
+                                    <button
+                                      onClick={()=>{if(!pago) abrirPagamentoNoMes(c,m)}}
+                                      title={pago?`Pago: ${fmtR(valor!)}`:'Clique para registrar pagamento'}
+                                      style={{
+                                        width:'100%',minWidth:56,padding:'5px 4px',borderRadius:6,border:'none',cursor:pago?'default':'pointer',
+                                        background:pago?'#EAF7EE':'#F5F6F8',color:pago?'#16A34A':'#CBD5E1',
+                                        fontSize:10,fontWeight:700,display:'flex',flexDirection:'column',alignItems:'center',gap:2,
+                                      }}
+                                    >
+                                      <Icon name={pago?'check':'x'} size={11} color={pago?'#16A34A':'#CBD5E1'}/>
+                                      {pago?fmtR(valor!).replace('R$',''):'—'}
+                                    </button>
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )
