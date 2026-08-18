@@ -150,6 +150,12 @@ export default function Home() {
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
+  useEffect(()=>{
+    if(!logado) return
+    const interval = setInterval(()=>{ load() }, 15000)
+    return ()=>clearInterval(interval)
+  },[logado,load])
+
   const openNovo=()=>{
     setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',cnpj:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
