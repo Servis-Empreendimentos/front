@@ -492,7 +492,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
-    <div style={s.page}>
+    <div className="app-shell" style={s.page}>
 
       <Sidebar
         user={user}
@@ -505,6 +505,14 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
 
       <div style={s.content}>
         <main style={s.main}>
+
+          <div className="workspace-bar">
+            <div>
+              <p className="workspace-eyebrow">Central de operações</p>
+              <p className="workspace-sync"><span className="workspace-sync-dot"/>Dados sincronizados automaticamente</p>
+            </div>
+            <span className="workspace-date">{new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</span>
+          </div>
 
           {role==='entregador'&&(
             <div>
@@ -548,7 +556,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <div><h1 style={s.h1}>Visão Geral</h1><p style={s.p}>Resumo financeiro · Servis Empreendimentos</p></div>
                 <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv="lançamentos" c={ACCENT_LT}/>
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#D97706"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#DC2626"/>
@@ -631,7 +639,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos — controle independente dos lançamentos</p></div>
                   <button onClick={()=>setModalMensal(true)} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova conta mensal</button>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                   <KPI l="Total de contas" v={contasMensais.length} sv="cadastradas" c={ACCENT_LT}/>
                   <KPI l="Ativas" v={ativas} sv="em acompanhamento" c="#16A34A"/>
                   <KPI l="Inativas" v={inativas} sv="pausadas" c="#64748B"/>
@@ -762,7 +770,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
                 <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c={ACCENT_LT}/>
                 <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#16A34A"/>
               </div>
@@ -812,7 +820,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
                 <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:10,marginBottom:'1.25rem'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c={ACCENT_LT}/>
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#D97706"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#DC2626"/>
