@@ -215,7 +215,10 @@ export const api = {
 
   buscar: async (id: string) => {
     const fallback: Lancamento = localLancamentos().find(item => item.id === id) || { id, titulo: '', valor_total: 0, data: '', status_entrega: 'pendente', criado_por: '', criado_em: '', pago: false, recorrente: false, status_processo: 'orcamento_aprovado', parcelas: [], itens: [] }
-    if (API_BASE) return safeRead<Lancamento>(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, fallback)
+    if (API_BASE) {
+      try { return await request<Lancamento>(`/api/lancamentos/${id}`) }
+      catch { /* backend indisponível: cai para a consulta direta ao Supabase abaixo */ }
+    }
     try {
       const [lancamentos, parcelas, itens] = await Promise.all([
         supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),

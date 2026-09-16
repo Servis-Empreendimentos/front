@@ -127,7 +127,11 @@ export default function Home() {
   }
 
   const openDetalhe=async(id:string)=>{
-    const d=await api.buscar(id);setDetalhe(d);setModal(true)
+    try {
+      const d=await api.buscar(id);setDetalhe(d);setModal(true)
+    } catch (err:any) {
+      showToast('Erro ao abrir lançamento: '+(err?.message||'tente novamente'),false)
+    }
   }
 
   const handleImportarOrcamento=async(file:File)=>{
