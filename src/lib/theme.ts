@@ -1,11 +1,11 @@
-export const SIDEBAR_BG  = '#A7BBB3'
-export const SIDEBAR_BG2 = '#C4D2CC'
+export const SIDEBAR_BG  = '#FFFFFF'
+export const SIDEBAR_BG2 = '#E8F0EC'
 export const ACCENT      = '#8BA59A'
 export const ACCENT_LT   = '#748F84'
 
 export const s = {
-  page:    { minHeight:'100vh', display:'flex', fontFamily:"'DM Sans',sans-serif", background:'#F7F9F8', color:'#626262' },
-  sidebar: { width:268, minWidth:268, background:SIDEBAR_BG, display:'flex', flexDirection:'column' as const, position:'sticky' as const, top:0, height:'100vh', overflowY:'auto' as const, zIndex:40, boxShadow:'8px 0 28px rgba(91,112,103,.10)' },
+  page:    { minHeight:'100vh', display:'flex', fontFamily:"'DM Sans',sans-serif", background:'#FFFFFF', color:'#626262' },
+  sidebar: { width:268, minWidth:268, background:SIDEBAR_BG, borderRight:'1px solid #E2EAE6', display:'flex', flexDirection:'column' as const, position:'sticky' as const, top:0, height:'100vh', overflowY:'auto' as const, zIndex:40, boxShadow:'4px 0 18px rgba(116,143,132,.06)' },
   content: { flex:1, display:'flex', flexDirection:'column' as const, minWidth:0 },
   main:    { flex:1, padding:'2rem clamp(1rem, 3vw, 2.75rem)' },
   row:     { display:'flex', alignItems:'flex-end', justifyContent:'space-between', gap:16, marginBottom:'1.4rem' },

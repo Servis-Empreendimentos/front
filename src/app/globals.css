@@ -6,7 +6,7 @@
   --brand: #8BA59A;
   --brand-dark: #748F84;
   --brand-soft: #E8F0EC;
-  --paper: #F7F9F8;
+  --paper: #FFFFFF;
   --surface: #ffffff;
   --line: #e1e7e3;
   --shadow-sm: 0 2px 10px rgba(96, 100, 99, .045);
@@ -15,11 +15,11 @@
 }
 
 * { box-sizing: border-box; }
-html { background: var(--paper); }
+html { background: #FFFFFF; }
 body {
   margin: 0;
   min-width: 320px;
-  background: var(--paper);
+  background: #FFFFFF;
   color: var(--ink);
   font-family: 'DM Sans', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -42,7 +42,7 @@ tbody tr { transition: background 160ms ease; }
 tbody tr:hover { background: #F2F6F3 !important; }
 tbody td { border-bottom-color: var(--line) !important; }
 
-.app-shell { background: var(--paper) !important; }
+.app-shell { background: #FFFFFF !important; }
 .workspace-bar {
   display: flex;
   align-items: center;
@@ -181,7 +181,7 @@ tbody td { border-bottom-color: var(--line) !important; }
   font-weight: 700;
 }
 
-.login-only-button:hover { background: #708277; }
+.login-only-button:hover { background: #748F84; }
 
 .login-only-error {
   margin: 2px 0 0;

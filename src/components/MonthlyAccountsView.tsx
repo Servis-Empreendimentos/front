@@ -100,7 +100,7 @@ export default function MonthlyAccountsView({
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
         <KPI l="Contas ativas" v={ativas.length} sv="em acompanhamento" c={ACCENT_LT}/>
         <KPI l="Pagas neste mês" v={contasPagas.size} sv={`de ${ativas.length} contas ativas`} c="#8BA59A"/>
-        <KPI l="Total pago no mês" v={fmtR(totalPagoMes)} sv={mesAtualNome} c="#708277"/>
+        <KPI l="Total pago no mês" v={fmtR(totalPagoMes)} sv={mesAtualNome} c="#748F84"/>
         <KPI l="Precisam de atenção" v={emAtraso} sv="vencidas sem pagamento" c="#7D7D7D"/>
       </div>
 

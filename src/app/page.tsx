@@ -551,7 +551,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
                 <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#708277"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#748F84"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
@@ -666,7 +666,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
                 <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#708277"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#748F84"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
@@ -755,13 +755,13 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                     <>
                       <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:16}}>
                         {step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}
-                        {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#708277',fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="calendar" size={13}/>{fmtData(detalhe.data_entrega_programada)}</span>}
+                        {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#748F84',fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="calendar" size={13}/>{fmtData(detalhe.data_entrega_programada)}</span>}
                       </div>
                       {detalhe.entrega_tipo==='parcial'&&(
                         <div style={{background:'#EDF2EF',border:'1.5px solid #D6E2DB',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
-                          <p style={{fontSize:12,fontWeight:600,color:'#708277',margin:'0 0 6px'}}>Entrega parcial</p>
-                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#708277',margin:'0 0 4px'}}>1ª: {detalhe.entrega_itens1}</p>}
-                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#708277',margin:0}}>2ª: {detalhe.entrega_itens2}</p>}
+                          <p style={{fontSize:12,fontWeight:600,color:'#748F84',margin:'0 0 6px'}}>Entrega parcial</p>
+                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#748F84',margin:'0 0 4px'}}>1ª: {detalhe.entrega_itens1}</p>}
+                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#748F84',margin:0}}>2ª: {detalhe.entrega_itens2}</p>}
                         </div>
                       )}
                       <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
@@ -824,12 +824,12 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   <div style={{background:'#EDF2EF',border:'1.5px solid #D6E2DB',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                     {detalhe.entrega_tipo==='parcial'?(
                       <>
-                        <p style={{fontSize:12,fontWeight:600,color:'#708277',margin:'0 0 4px'}}>Entrega parcial</p>
-                        {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#708277',margin:'0 0 2px'}}>1ª: {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):''} — {detalhe.entrega_itens1}</p>}
-                        {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#708277',margin:0}}>2ª: {detalhe.entrega_data2?fmtData(detalhe.entrega_data2):''} — {detalhe.entrega_itens2}</p>}
+                        <p style={{fontSize:12,fontWeight:600,color:'#748F84',margin:'0 0 4px'}}>Entrega parcial</p>
+                        {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#748F84',margin:'0 0 2px'}}>1ª: {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):''} — {detalhe.entrega_itens1}</p>}
+                        {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#748F84',margin:0}}>2ª: {detalhe.entrega_data2?fmtData(detalhe.entrega_data2):''} — {detalhe.entrega_itens2}</p>}
                       </>
                     ):(
-                      <p style={{fontSize:12,fontWeight:600,color:'#708277',margin:0}}>
+                      <p style={{fontSize:12,fontWeight:600,color:'#748F84',margin:0}}>
                         Entrega em {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):'?'}
                         {detalhe.dias_entrega&&` (${detalhe.dias_entrega} dias ${detalhe.entrega_tipo==='uteis'?'úteis':'corridos'})`}
                       </p>
@@ -1168,7 +1168,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               {entregaTipo!=='parcial'?(
                 <div><label style={s.lb}>Número de dias *</label>
                   <input type="number" min={1} style={s.fi} value={diasEntrega} placeholder="Ex: 30" onChange={e=>setDiasEntrega(e.target.value)}/>
-                  {diasEntrega&&<p style={{fontSize:12,color:'#708277',marginTop:8,fontWeight:600}}>
+                  {diasEntrega&&<p style={{fontSize:12,color:'#748F84',marginTop:8,fontWeight:600}}>
                     Previsão: {fmtData(entregaTipo==='uteis'?addDiasUteis(parseInt(diasEntrega)):addDiasCorridos(parseInt(diasEntrega)))}
                   </p>}
                 </div>
