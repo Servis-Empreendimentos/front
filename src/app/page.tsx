@@ -1,12 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, Fornecedor, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
 import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
-import MonthlyAccountsView from '../components/MonthlyAccountsView'
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
@@ -29,11 +28,9 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'fornecedores'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
-  const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
-  const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
@@ -42,8 +39,6 @@ export default function Home() {
   const [fDataFim,setFDataFim]=useState('')
   const [search,setSearch]=useState('')
   const [searchForn,setSearchForn]=useState('')
-  const [searchMensal,setSearchMensal]=useState('')
-  const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -71,8 +66,6 @@ export default function Home() {
   const [itensNFEditor,setItensNFEditor]=useState<ItemLancamento[]>([])
   const [nfFileTemp,setNfFileTemp]=useState<File|null>(null)
   const [loadingIANF,setLoadingIANF]=useState(false)
-  const [modalMensal,setModalMensal]=useState(false)
-  const [formMensal,setFormMensal]=useState<any>({})
   const [modalPagParcial,setModalPagParcial]=useState(false)
   const [pagParcialTipo,setPagParcialTipo]=useState('pix')
   const [pagParcialValor,setPagParcialValor]=useState('')
@@ -82,11 +75,6 @@ export default function Home() {
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
   const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
-  const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
-  const [valorPagarConta,setValorPagarConta]=useState('')
-  const [dataPagarConta,setDataPagarConta]=useState('')
-  const [modalHistoricoConta,setModalHistoricoConta]=useState<ContaMensal|null>(null)
-  const [historicoConta,setHistoricoConta]=useState<PagamentoContaMensal[]>([])
 
   const orcIARef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
@@ -96,19 +84,16 @@ export default function Home() {
 
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4500)}
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
-  const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,pagMensais]=await Promise.all([
+      const [lista,categorias,forns]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec}),
-        api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
-        api.listarPagamentosMensais(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais)
+      setData(lista);setCats(categorias);setFornecedores(forns)
     } catch {if(!silent) showToast('Erro ao carregar dados',false)}
     finally {if(!silent) setLoading(false)}
   },[fPipe,fRec])
@@ -183,7 +168,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         itens: itensOrcamento,
       })
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
-      setModal(false);showToast((salvo as any).__localFallback?'Orçamento salvo neste navegador. Configure a API para sincronizar com o banco.':'Orçamento salvo!');load()
+      setModal(false);showToast((salvo as any).__localFallback?'Orçamento salvo neste navegador. Configure o Supabase no Vercel para sincronizar.':'Orçamento salvo!');load()
     } catch (err:any) {
       showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
     } finally {setSaving(false)}
@@ -356,16 +341,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     const d2=await api.buscar(detalhe.id);setDetalhe(d2);showToast('Item confirmado!');load()
   }
 
-  const handleSaveMensal=async()=>{
-    if(!formMensal.titulo||!formMensal.pago_por||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
-    setSaving(true)
-    try {
-      await api.criarContaMensal({...formMensal,ativo:true})
-      setModalMensal(false);setFormMensal({});showToast('Conta mensal cadastrada!');load()
-    } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
-    finally {setSaving(false)}
-  }
-
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
     setFormFornecedor({nome:'',cnpj:''})
@@ -400,39 +375,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } catch (err:any) {
       showToast('Erro ao excluir: '+(err?.message||''),false)
     }
-  }
-
-  const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
-    setModalPagarConta(c)
-    setValorPagarConta('')
-    setDataPagarConta(dataSugerida || new Date().toISOString().slice(0,10))
-  }
-
-  const handleRegistrarPagamentoConta=async()=>{
-    if(!modalPagarConta||!valorPagarConta||!dataPagarConta) return showToast('Preencha valor e data',false)
-    setSaving(true)
-    try {
-      const valor=parseFloat(valorPagarConta.replace(/\D/g,''))/100
-      await api.registrarPagamentoMensal(modalPagarConta.id,valor,dataPagarConta)
-      setModalPagarConta(null);showToast('Pagamento registrado!');load()
-    } catch (err:any) {
-      showToast('Erro: '+(err?.message||''),false)
-    } finally {setSaving(false)}
-  }
-
-  const abrirHistoricoConta=async(c:ContaMensal)=>{
-    setModalHistoricoConta(c)
-    const h=await api.listarPagamentosDaConta(c.id)
-    setHistoricoConta(h)
-  }
-
-  const handleExcluirPagamentoConta=async(id:string)=>{
-    if(!confirm('Excluir este pagamento?')) return
-    try {
-      await api.excluirPagamentoMensal(id)
-      if(modalHistoricoConta) { const h=await api.listarPagamentosDaConta(modalHistoricoConta.id); setHistoricoConta(h) }
-      showToast('Pagamento excluído!');load()
-    } catch { showToast('Erro ao excluir',false) }
   }
 
   if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}}/>
@@ -566,21 +508,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 </div>
               </div>
             </div>
-          )}
-
-          {role!=='entregador'&&aba==='mensais'&&(
-            <MonthlyAccountsView
-              contasMensais={contasMensais}
-              pagamentosMensais={pagamentosMensais}
-              searchMensal={searchMensal}
-              setSearchMensal={setSearchMensal}
-              viewMensal={viewMensal}
-              setViewMensal={setViewMensal}
-              onNovaConta={()=>setModalMensal(true)}
-              onPagar={abrirPagarConta}
-              onHistorico={abrirHistoricoConta}
-              onAtualizar={()=>load()}
-            />
           )}
 
           {role!=='entregador'&&aba==='fornecedores'&&(
@@ -1191,26 +1118,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         </div>
       )}
 
-      {modalMensal&&(
-        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
-          <div style={{...s.modal,width:480}}>
-            <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700}}>Nova Conta Mensal</h3>
-              <button onClick={()=>setModalMensal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
-            </div>
-            <div style={s.fg}>
-              <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
-              <FF lb="Pago por *" full><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis Empreendimentos"/></FF>
-              <FF lb="Dia de vencimento *" full><input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/></FF>
-            </div>
-            <div style={s.mfoot}>
-              <button onClick={()=>setModalMensal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleSaveMensal} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':'Cadastrar'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {modalFornecedor&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
           <div style={{...s.modal,width:440}}>
@@ -1232,70 +1139,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div style={s.mfoot}>
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalPagarConta&&(
-        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarConta(null)}>
-          <div style={{...s.modal,width:420}}>
-            <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarConta.titulo}</h3>
-              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
-            </div>
-            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
-              <div><label style={s.lb}>Valor pago *</label>
-                <input style={s.fi} value={valorPagarConta} placeholder="R$ 0,00" onChange={e=>{
-                  const d=e.target.value.replace(/\D/g,'')
-                  setValorPagarConta(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
-                }}/>
-              </div>
-              <div><label style={s.lb}>Data do pagamento *</label>
-                <input type="date" style={s.fi} value={dataPagarConta} onChange={e=>setDataPagarConta(e.target.value)}/>
-              </div>
-            </div>
-            <div style={s.mfoot}>
-              <button onClick={()=>setModalPagarConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleRegistrarPagamentoConta} disabled={saving||!valorPagarConta||!dataPagarConta} style={{...s.btnGrn,opacity:(saving||!valorPagarConta||!dataPagarConta)?0.6:1}}>
-                {saving?'Salvando...':'Registrar pagamento'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalHistoricoConta&&(
-        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoConta(null)}>
-          <div style={{...s.modal,width:500}}>
-            <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoConta.titulo} — Histórico</h3>
-              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
-            </div>
-            <div style={{padding:'1.25rem 1.5rem'}}>
-              {historicoConta.length===0?(
-                <p style={{fontSize:13,color:'#7D7D7D',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
-              ):(
-                <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
-                  {historicoConta.map(p=>(
-                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
-                      <div>
-                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)}</p>
-                        <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
-                      </div>
-                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777'}}>
-                        <Icon name="trash" size={15}/>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div style={s.mfoot}>
-              <button onClick={()=>{setModalHistoricoConta(null);abrirPagarConta(modalHistoricoConta)}} style={s.btnGrn}>
-                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
-              </button>
-              <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>
