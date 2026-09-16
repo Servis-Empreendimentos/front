@@ -6,9 +6,8 @@ import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
 import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
+import MonthlyAccountsView from '../components/MonthlyAccountsView'
 
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY!
 const AI_KEY   = process.env.NEXT_PUBLIC_ANTHROPIC_KEY!
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
@@ -22,15 +21,6 @@ function addDiasUteis(dias: number): string {
   let count = 0; const d = new Date()
   while (count < dias) { d.setDate(d.getDate()+1); const dow=d.getDay(); if(dow!==0&&dow!==6) count++ }
   return d.toISOString().slice(0,10)
-}
-
-async function sbPatch(table: string, query: string, body: any) {
-  const res = await fetch(`${SUPA_URL}/rest/v1/${table}${query}`, {
-    method:'PATCH',
-    headers:{ apikey:SUPA_KEY, Authorization:`Bearer ${SUPA_KEY}`, 'Content-Type':'application/json', Prefer:'return=minimal' },
-    body:JSON.stringify(body),
-  })
-  if (!res.ok) throw new Error(await res.text())
 }
 
 async function lerDocIA(file: File, prompt: string): Promise<any> {
@@ -225,7 +215,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     const valor_desconto=parseFloat(rawDesconto.replace(/\D/g,''))/100||0
     const valor_total=(detalhe.valor_original||detalhe.valor_total)-valor_desconto
     try {
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
+      await api.atualizarLancamento(detalhe.id,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
       const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto aplicado!')
     } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
   }
@@ -235,7 +225,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     setLoadingAnexo(true)
     try {
       const url=await api.uploadArquivo(file)
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{proposta_url:url})
+      await api.atualizarLancamento(detalhe.id,{proposta_url:url})
       const d=await api.buscar(detalhe.id);setDetalhe(d);showToast('Proposta anexada!')
     } catch (err:any) {showToast('Erro ao enviar: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
@@ -266,7 +256,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     setLoadingAnexo(true)
     try {
       const url=await api.uploadArquivo(nfFileTemp)
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{arquivo_url:url})
+      await api.atualizarLancamento(detalhe.id,{arquivo_url:url})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([])
@@ -280,7 +270,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     if(novoStatus==='entrega_programada'){setEntregaTipo('corridos');setDiasEntrega('');setEntregaData1('');setEntregaData2State('');setEntregaItens1('');setEntregaItens2('');setModalEntregaProg(true);return}
     if(novoStatus==='pagamento_realizado'){setFormaPgtoTipo('pix');setFormaPgtoParc('');setFormaPgtoObs('');setFormaPgtoData(new Date().toISOString().slice(0,10));setModalFormaPgto(true);return}
     try {
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:novoStatus})
+      await api.atualizarLancamento(detalhe.id,{status_processo:novoStatus})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       const step=PIPELINE.find(p=>p.id===novoStatus)
       showToast(`${step?.label}`)
@@ -294,7 +284,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     try {
       let fp=formaPgtoTipo==='pix'?'PIX':formaPgtoTipo==='boleto'?'Boleto':formaPgtoTipo==='transferencia'?'Transferência':formaPgtoTipo==='cartao'?'Cartão':formaPgtoTipo==='avista'?'À vista':formaPgtoTipo==='parcelado'?`Parcelado${formaPgtoParc?` ${formaPgtoParc}x`:''}`:formaPgtoTipo
       if(formaPgtoObs) fp+=` — ${formaPgtoObs}`
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
+      await api.atualizarLancamento(detalhe.id,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalFormaPgto(false);showToast('Pagamento registrado!');load()
     } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
@@ -314,7 +304,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
       let fp=pagParcialTipo==='pix'?'PIX':pagParcialTipo==='boleto'?'Boleto':pagParcialTipo==='transferencia'?'Transferência':pagParcialTipo==='cartao'?'Cartão':pagParcialTipo==='avista'?'À vista':pagParcialTipo==='parcelado'?`Parcelado${pagParcialParc?` ${pagParcialParc}x`:''}`:pagParcialTipo
       if(pagParcialObs) fp+=` — ${pagParcialObs}`
 
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
+      await api.atualizarLancamento(detalhe.id,{
         valor_produtos: novoValorPago,
         saldo_devedor: novoSaldo,
         pago: quitado,
@@ -340,7 +330,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
       if(entregaTipo==='corridos') data_entrega_programada=addDiasCorridos(parseInt(diasEntrega))
       else if(entregaTipo==='uteis') data_entrega_programada=addDiasUteis(parseInt(diasEntrega))
       else data_entrega_programada=entregaData1
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{
+      await api.atualizarLancamento(detalhe.id,{
         status_processo:'entrega_programada',
         dias_entrega:entregaTipo!=='parcial'?parseInt(diasEntrega):null,
         data_entrega_programada,
@@ -371,7 +361,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
 
   const handleExcluir=async(id:string)=>{
     if(!confirm('Excluir este lançamento?')) return
-    await fetch(`${SUPA_URL}/rest/v1/lancamentos?id=eq.${id}`,{method:'DELETE',headers:{apikey:SUPA_KEY,Authorization:`Bearer ${SUPA_KEY}`}})
+    await api.excluirLancamento(id)
     setModal(false);showToast('Excluído!');load()
   }
 
@@ -382,7 +372,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     const todos=d.itens?.filter((i:any)=>i.tipo==='orcamento')||[]
     const todosEntregues=todos.every((i:any)=>i.entregue)
     if(todosEntregues&&d.status_processo==='entrega_programada') {
-      await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
+      await api.atualizarLancamento(detalhe.id,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
     }
     const d2=await api.buscar(detalhe.id);setDetalhe(d2);showToast('Item confirmado!');load()
   }
@@ -433,10 +423,10 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     }
   }
 
-  const abrirPagarConta=(c:ContaMensal)=>{
+  const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
     setModalPagarConta(c)
     setValorPagarConta('')
-    setDataPagarConta(new Date().toISOString().slice(0,10))
+    setDataPagarConta(dataSugerida || new Date().toISOString().slice(0,10))
   }
 
   const handleRegistrarPagamentoConta=async()=>{
@@ -489,7 +479,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
-  const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
+  const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
     <div className="app-shell" style={s.page}>
@@ -528,19 +518,19 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   </select>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
+                  <thead><tr style={{background:'#FBFCFB',borderBottom:'2px solid #E1E7E3'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
                   <tbody>
-                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum lançamento aguardando entrega</td></tr>
+                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Carregando...</td></tr>
+                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Nenhum lançamento aguardando entrega</td></tr>
                     :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
-                      const cor=PIPE_COLORS[l.status_processo]||'#64748B'
+                      const cor=PIPE_COLORS[l.status_processo]||'#818885'
                       return (
-                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E1E7E3',cursor:'pointer'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F4F7F5')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'10px 11px',fontWeight:600}}>{l.titulo}</td>
                           <td style={{padding:'10px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                          <td style={{padding:'10px 11px',color:'#64748B'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
+                          <td style={{padding:'10px 11px',color:'#818885'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
                         </tr>
                       )
                     })}
@@ -558,211 +548,62 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv="lançamentos" c={ACCENT_LT}/>
-                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#D97706"/>
-                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#DC2626"/>
-                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#16A34A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#7C3AED"/>
+                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#818885"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777B79"/>
+                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#7F9C93"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#6F8E83"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
-                    <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                    <tr style={{background:'#FBFCFB',borderBottom:'2px solid #E1E7E3'}}>
                       {th('Empresa')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
+                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Carregando...</td></tr>
                     :data.slice(0,8).map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
-                      const cor=PIPE_COLORS[l.status_processo]||'#64748B'
+                      const cor=PIPE_COLORS[l.status_processo]||'#818885'
                       const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
                       return (
-                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E1E7E3',cursor:'pointer'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F4F7F5')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'8px 11px',fontWeight:500,maxWidth:180,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
                           <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                          <td style={{padding:'8px 11px',color:'#64748B'}}>{fmtData(l.data)}</td>
+                          <td style={{padding:'8px 11px',color:'#818885'}}>{fmtData(l.data)}</td>
                           <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#DC2626',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#16A34A"/>:<Icon name="x" size={14} color="#DC2626"/>}</td>
+                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#777B79',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#7F9C93"/>:<Icon name="x" size={14} color="#777B79"/>}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
-                <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
+                <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #E1E7E3',fontSize:11,color:'#818885',background:'#FBFCFB'}}>
                   <button onClick={()=>setAba('lancamentos')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver todos os lançamentos →</button>
                 </div>
               </div>
             </div>
           )}
 
-          {role!=='entregador'&&aba==='mensais'&&(()=>{
-            const filteredMensais = contasMensais.filter(c=>{
-              if(!searchMensal) return true
-              return c.titulo.toLowerCase().includes(searchMensal.toLowerCase())
-            })
-            const ativas = contasMensais.filter(c=>c.ativo).length
-            const inativas = contasMensais.length - ativas
-            const ultimoPagamento = (contaId:string) => pagamentosMensais.find(p=>p.conta_mensal_id===contaId)
-
-            // Últimos 12 meses (mais antigo -> mais recente)
-            const meses = Array.from({length:12}).map((_,i)=>{
-              const d = new Date()
-              d.setDate(1)
-              d.setMonth(d.getMonth() - (11-i))
-              const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
-              const label = d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','') + '/' + String(d.getFullYear()).slice(2)
-              return { key, label, ano:d.getFullYear(), mes:d.getMonth()+1 }
-            })
-
-            const valorNoMes = (contaId:string, mesKey:string) => {
-              const pagos = pagamentosMensais.filter(p=>p.conta_mensal_id===contaId && p.data_pagamento.startsWith(mesKey))
-              if(pagos.length===0) return null
-              return pagos.reduce((s,p)=>s+p.valor,0)
-            }
-
-            const abrirPagamentoNoMes = (c:ContaMensal, mes:{key:string;ano:number;mes:number}) => {
-              setModalPagarConta(c)
-              setValorPagarConta('')
-              const diaVenc = Math.min(c.dia_vencimento||1,28)
-              const dataSugerida = `${mes.ano}-${String(mes.mes).padStart(2,'0')}-${String(diaVenc).padStart(2,'0')}`
-              setDataPagarConta(dataSugerida)
-            }
-
-            return (
-              <div>
-                <div style={s.row}>
-                  <div><h1 style={s.h1}>Contas Mensais</h1><p style={s.p}>Água, luz, internet e outros fixos — controle independente dos lançamentos</p></div>
-                  <button onClick={()=>setModalMensal(true)} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova conta mensal</button>
-                </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                  <KPI l="Total de contas" v={contasMensais.length} sv="cadastradas" c={ACCENT_LT}/>
-                  <KPI l="Ativas" v={ativas} sv="em acompanhamento" c="#16A34A"/>
-                  <KPI l="Inativas" v={inativas} sv="pausadas" c="#64748B"/>
-                </div>
-                <div style={s.card}>
-                  <div style={s.toolbar}>
-                    <div style={{display:'flex',gap:4}}>
-                      <button onClick={()=>setViewMensal('lista')} style={{
-                        padding:'.35rem .8rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                        background:viewMensal==='lista'?ACCENT:'transparent',color:viewMensal==='lista'?'#fff':'#64748B',
-                      }}>Lista</button>
-                      <button onClick={()=>setViewMensal('grade')} style={{
-                        padding:'.35rem .8rem',borderRadius:7,border:'none',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:'inherit',
-                        background:viewMensal==='grade'?ACCENT:'transparent',color:viewMensal==='grade'?'#fff':'#64748B',
-                      }}>Grade mensal</button>
-                    </div>
-                    <div style={{flex:1}}/>
-                    <input style={{...s.inp,width:220}} placeholder="Buscar conta..." value={searchMensal} onChange={e=>setSearchMensal(e.target.value)}/>
-                  </div>
-
-                  {viewMensal==='lista'?(
-                    <>
-                      <div style={{overflowX:'auto'}}>
-                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                          <thead>
-                            <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
-                              {th('Conta')}{th('Pago por')}{th('Dia venc.')}{th('Último valor pago')}{th('Pago em')}{th('Status')}{th('Ações')}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredMensais.length===0&&<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
-                            {filteredMensais.map(c=>{
-                              const ultimo = ultimoPagamento(c.id)
-                              return (
-                                <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
-                                  onClick={()=>abrirHistoricoConta(c)}
-                                  onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                                  <td style={{padding:'9px 11px',fontWeight:600}}>{c.titulo}</td>
-                                  <td style={{padding:'9px 11px',color:'#64748B'}}>{c.pago_por}</td>
-                                  <td style={{padding:'9px 11px'}}>
-                                    <span style={{...s.badge,background:'#E0F5F7',color:ACCENT_LT}}>
-                                      <Icon name="calendar" size={11} color={ACCENT_LT}/> dia {c.dia_vencimento}
-                                    </span>
-                                  </td>
-                                  <td style={{padding:'9px 11px',fontWeight:600}}>{ultimo?fmtR(ultimo.valor):'—'}</td>
-                                  <td style={{padding:'9px 11px',color:'#64748B'}}>{ultimo?fmtData(ultimo.data_pagamento):'—'}</td>
-                                  <td style={{padding:'9px 11px'}}>
-                                    <Badge label={c.ativo?'Ativa':'Inativa'} bg={c.ativo?'#EAF7EE':'#EEF0F3'} color={c.ativo?'#16A34A':'#64748B'}/>
-                                  </td>
-                                  <td style={{padding:'9px 11px'}} onClick={e=>e.stopPropagation()}>
-                                    <div style={{display:'flex',gap:6}}>
-                                      <button
-                                        title="Registrar pagamento"
-                                        onClick={()=>abrirPagarConta(c)}
-                                        style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#16A34A',border:'none',borderRadius:6,cursor:'pointer'}}
-                                      >
-                                        <Icon name="dollar" size={13} color="#fff"/>
-                                      </button>
-                                      <button
-                                        title={c.ativo?'Desativar':'Ativar'}
-                                        onClick={()=>api.toggleContaMensal(c.id,!c.ativo).then(()=>load())}
-                                        style={{width:28,height:28,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',border:`1.5px solid ${c.ativo?'#FEE2E2':'#DCFCE7'}`,borderRadius:6,cursor:'pointer'}}
-                                      >
-                                        <Icon name={c.ativo?'x':'check'} size={14} color={c.ativo?'#DC2626':'#16A34A'}/>
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
-                        {filteredMensais.length} conta{filteredMensais.length!==1?'s':''} de {contasMensais.length} total · clique numa linha para ver o histórico
-                      </div>
-                    </>
-                  ):(
-                    <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                        <thead>
-                          <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
-                            <th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap',position:'sticky',left:0,background:'#FAFBFC',zIndex:1}}>Conta</th>
-                            {meses.map(m=>(
-                              <th key={m.key} style={{padding:'8px 6px',textAlign:'center',fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',whiteSpace:'nowrap'}}>{m.label}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredMensais.length===0&&<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhuma conta encontrada</td></tr>}
-                          {filteredMensais.map(c=>(
-                            <tr key={c.id} style={{borderBottom:'1px solid #E2E8F0'}}>
-                              <td style={{padding:'9px 11px',fontWeight:600,whiteSpace:'nowrap',position:'sticky',left:0,background:'#fff'}}>{c.titulo}</td>
-                              {meses.map(m=>{
-                                const valor = valorNoMes(c.id,m.key)
-                                const pago = valor!==null
-                                return (
-                                  <td key={m.key} style={{padding:'4px 4px',textAlign:'center'}}>
-                                    <button
-                                      onClick={()=>{if(!pago) abrirPagamentoNoMes(c,m)}}
-                                      title={pago?`Pago: ${fmtR(valor!)}`:'Clique para registrar pagamento'}
-                                      style={{
-                                        width:'100%',minWidth:56,padding:'5px 4px',borderRadius:6,border:'none',cursor:pago?'default':'pointer',
-                                        background:pago?'#EAF7EE':'#F5F6F8',color:pago?'#16A34A':'#CBD5E1',
-                                        fontSize:10,fontWeight:700,display:'flex',flexDirection:'column',alignItems:'center',gap:2,
-                                      }}
-                                    >
-                                      <Icon name={pago?'check':'x'} size={11} color={pago?'#16A34A':'#CBD5E1'}/>
-                                      {pago?fmtR(valor!).replace('R$',''):'—'}
-                                    </button>
-                                  </td>
-                                )
-                              })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
+          {role!=='entregador'&&aba==='mensais'&&(
+            <MonthlyAccountsView
+              contasMensais={contasMensais}
+              pagamentosMensais={pagamentosMensais}
+              searchMensal={searchMensal}
+              setSearchMensal={setSearchMensal}
+              viewMensal={viewMensal}
+              setViewMensal={setViewMensal}
+              onNovaConta={()=>setModalMensal(true)}
+              onPagar={abrirPagarConta}
+              onHistorico={abrirHistoricoConta}
+              onAtualizar={()=>load()}
+            />
+          )}
 
           {role!=='entregador'&&aba==='fornecedores'&&(
             <div>
@@ -772,28 +613,28 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c={ACCENT_LT}/>
-                <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#16A34A"/>
+                <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#7F9C93"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
                   <input style={{...s.inp,width:220}} placeholder="Buscar por nome ou CNPJ..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
                 </div>
                 <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
-                      <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                      <tr style={{background:'#FBFCFB',borderBottom:'2px solid #E1E7E3'}}>
                         {th('Nome')}{th('CNPJ')}{th('Ações')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                      :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum fornecedor cadastrado</td></tr>
+                      {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Carregando...</td></tr>
+                      :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Nenhum fornecedor cadastrado</td></tr>
                       :filteredFornecedores.map(f=>(
-                        <tr key={f.id} style={{borderBottom:'1px solid #E2E8F0'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <tr key={f.id} style={{borderBottom:'1px solid #E1E7E3'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F4F7F5')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
-                          <td style={{padding:'10px 11px',color:'#64748B'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
+                          <td style={{padding:'10px 11px',color:'#818885'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
                           <td style={{padding:'10px 11px'}}>
                             <div style={{display:'flex',gap:8}}>
                               <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
@@ -807,7 +648,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                     </tbody>
                   </table>
                 </div>
-                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E1E7E3',fontSize:11,color:'#818885',background:'#FBFCFB'}}>
                   {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
                 </div>
               </div>
@@ -822,21 +663,21 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c={ACCENT_LT}/>
-                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#D97706"/>
-                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#DC2626"/>
-                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#16A34A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#7C3AED"/>
+                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#818885"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777B79"/>
+                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#7F9C93"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#6F8E83"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
                   <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <label style={{fontSize:11,color:'#64748B',fontWeight:600}}>De:</label>
+                    <label style={{fontSize:11,color:'#818885',fontWeight:600}}>De:</label>
                     <input type="date" style={s.inp} value={fDataIni} onChange={e=>setFDataIni(e.target.value)}/>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <label style={{fontSize:11,color:'#64748B',fontWeight:600}}>Até:</label>
+                    <label style={{fontSize:11,color:'#818885',fontWeight:600}}>Até:</label>
                     <input type="date" style={s.inp} value={fDataFim} onChange={e=>setFDataFim(e.target.value)}/>
                   </div>
                   {(fDataIni||fDataFim)&&(
@@ -853,40 +694,40 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
-                      <tr style={{background:'#FAFBFC',borderBottom:'2px solid #E2E8F0'}}>
+                      <tr style={{background:'#FBFCFB',borderBottom:'2px solid #E1E7E3'}}>
                         {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Carregando...</td></tr>
-                      :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#64748B'}}>Nenhum registro</td></tr>
+                      {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Carregando...</td></tr>
+                      :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#818885'}}>Nenhum registro</td></tr>
                       :filtered.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
-                        const cor=PIPE_COLORS[l.status_processo]||'#64748B'
+                        const cor=PIPE_COLORS[l.status_processo]||'#818885'
                         const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
                         return (
-                          <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E8F0',cursor:'pointer'}}
-                            onMouseEnter={e=>(e.currentTarget.style.background='#F8FAFB')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E1E7E3',cursor:'pointer'}}
+                            onMouseEnter={e=>(e.currentTarget.style.background='#F4F7F5')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                             <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                            <td style={{padding:'8px 11px',color:'#64748B',fontSize:11}}>{l.nf_numero||'—'}</td>
+                            <td style={{padding:'8px 11px',color:'#818885',fontSize:11}}>{l.nf_numero||'—'}</td>
                             <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                            <td style={{padding:'8px 11px',color:'#64748B',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
+                            <td style={{padding:'8px 11px',color:'#818885',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
                             <td style={{padding:'8px 11px',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
-                            <td style={{padding:'8px 11px',color:'#64748B'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#D97706',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',color:'#818885'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#818885',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
                             <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                            <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#DC2626',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#16A34A"/>:<Icon name="x" size={14} color="#DC2626"/>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="clipboard" size={15}/></a>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="receipt" size={15}/></a>:<span style={{color:'#CBD5E1'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',color:'#64748B',fontSize:11}}>{l.criado_por}</td>
+                            <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#777B79',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#7F9C93"/>:<Icon name="x" size={14} color="#777B79"/>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="clipboard" size={15}/></a>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="receipt" size={15}/></a>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',color:'#818885',fontSize:11}}>{l.criado_por}</td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
-                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E8F0',fontSize:11,color:'#64748B',background:'#FAFBFC'}}>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E1E7E3',fontSize:11,color:'#818885',background:'#FBFCFB'}}>
                   {filtered.length} registro{filtered.length!==1?'s':''} de {data.length} total
                 </div>
               </div>
@@ -896,8 +737,8 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
 
         <footer style={s.footer}>
           <img src="/logo.jpg" alt="Servis" style={{height:24,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
-          <p style={{fontSize:11,color:'#64748B'}}>Servis Empreendimentos · Conciliação Financeira</p>
-          <p style={{fontSize:11,color:'#64748B'}}>© 2025</p>
+          <p style={{fontSize:11,color:'#818885'}}>Servis Empreendimentos · Conciliação Financeira</p>
+          <p style={{fontSize:11,color:'#818885'}}>© 2025</p>
         </footer>
       </div>
 
@@ -906,41 +747,41 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={s.modal}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>{detalhe.titulo}</h3>
-              <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
 
             {role==='entregador'?(
               <div style={{padding:'1.25rem 1.5rem'}}>
                 {(()=>{
                   const step=PIPELINE.find(p=>p.id===detalhe.status_processo)
-                  const cor=PIPE_COLORS[detalhe.status_processo]||'#64748B'
+                  const cor=PIPE_COLORS[detalhe.status_processo]||'#818885'
                   const itensOrc=detalhe.itens?.filter(i=>i.tipo==='orcamento')||[]
                   return (
                     <>
                       <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:16}}>
                         {step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}
-                        {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#7C3AED',fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="calendar" size={13}/>{fmtData(detalhe.data_entrega_programada)}</span>}
+                        {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#6F8E83',fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="calendar" size={13}/>{fmtData(detalhe.data_entrega_programada)}</span>}
                       </div>
                       {detalhe.entrega_tipo==='parcial'&&(
-                        <div style={{background:'#F5F3FF',border:'1.5px solid #DDD6FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
-                          <p style={{fontSize:12,fontWeight:600,color:'#6D28D9',margin:'0 0 6px'}}>Entrega parcial</p>
-                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6D28D9',margin:'0 0 4px'}}>1ª: {detalhe.entrega_itens1}</p>}
-                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6D28D9',margin:0}}>2ª: {detalhe.entrega_itens2}</p>}
+                        <div style={{background:'#EDF2EF',border:'1.5px solid #D6E2DB',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
+                          <p style={{fontSize:12,fontWeight:600,color:'#6F8E83',margin:'0 0 6px'}}>Entrega parcial</p>
+                          {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6F8E83',margin:'0 0 4px'}}>1ª: {detalhe.entrega_itens1}</p>}
+                          {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6F8E83',margin:0}}>2ª: {detalhe.entrega_itens2}</p>}
                         </div>
                       )}
-                      <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden'}}>
-                        <div style={{background:'#FAFBFC',padding:'8px 12px',borderBottom:'1px solid #E2E8F0'}}>
-                          <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase'}}>Itens para confirmar ({itensOrc.length})</span>
+                      <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,overflow:'hidden'}}>
+                        <div style={{background:'#FBFCFB',padding:'8px 12px',borderBottom:'1px solid #E1E7E3'}}>
+                          <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase'}}>Itens para confirmar ({itensOrc.length})</span>
                         </div>
-                        {itensOrc.length===0&&<p style={{padding:'12px',fontSize:12,color:'#64748B',margin:0}}>Nenhum item cadastrado.</p>}
+                        {itensOrc.length===0&&<p style={{padding:'12px',fontSize:12,color:'#818885',margin:0}}>Nenhum item cadastrado.</p>}
                         {itensOrc.map(item=>{
                           const inputId=`data-item-${item.id}`
                           return (
-                            <div key={item.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',borderBottom:'1px solid #E2E8F0',background:item.entregue?'#F0FDF4':'#fff'}}>
+                            <div key={item.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',borderBottom:'1px solid #E1E7E3',background:item.entregue?'#E8F0EB':'#fff'}}>
                               <div>
                                 <p style={{margin:0,fontSize:13,fontWeight:600}}>{item.nome}</p>
-                                <p style={{margin:'2px 0 0',fontSize:11,color:'#64748B'}}>Quantidade: {item.quantidade}</p>
-                                {item.entregue&&item.data_entrega&&<p style={{margin:'2px 0 0',fontSize:11,color:'#16A34A'}}>Confirmado em {fmtData(item.data_entrega)}</p>}
+                                <p style={{margin:'2px 0 0',fontSize:11,color:'#818885'}}>Quantidade: {item.quantidade}</p>
+                                {item.entregue&&item.data_entrega&&<p style={{margin:'2px 0 0',fontSize:11,color:'#7F9C93'}}>Confirmado em {fmtData(item.data_entrega)}</p>}
                               </div>
                               {!item.entregue?(
                                 <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -951,15 +792,15 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                                   }} style={{...s.btnGrn,padding:'4px 10px',fontSize:11}}>Confirmar</button>
                                 </div>
                               ):(
-                                <span style={{fontSize:12,color:'#16A34A',fontWeight:700,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="check" size={13}/>Recebido</span>
+                                <span style={{fontSize:12,color:'#7F9C93',fontWeight:700,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="check" size={13}/>Recebido</span>
                               )}
                             </div>
                           )
                         })}
                       </div>
 
-                      <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,padding:'12px 14px',marginTop:16}}>
-                        <p style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+                      <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,padding:'12px 14px',marginTop:16}}>
+                        <p style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
                           <Icon name="receipt" size={13}/>Nota Fiscal
                         </p>
                         <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNFComIA(f)}}/>
@@ -978,22 +819,22 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <PipelineStepper atual={detalhe.status_processo||'orcamento_aprovado'} onChange={handlePipelineChange}/>
 
                 {isLocked(detalhe.status_processo)&&(
-                  <div style={{background:'#FFFBEB',border:'1.5px solid #FDE68A',borderRadius:8,padding:'10px 14px',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
-                    <Icon name="lock" size={15} color="#92400E"/>
-                    <p style={{fontSize:12,fontWeight:600,color:'#92400E',margin:0}}>Orçamento fechado — valores não podem ser alterados</p>
+                  <div style={{background:'#F2F5F3',border:'1.5px solid #C7D5CD',borderRadius:8,padding:'10px 14px',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+                    <Icon name="lock" size={15} color="#606463"/>
+                    <p style={{fontSize:12,fontWeight:600,color:'#606463',margin:0}}>Orçamento fechado — valores não podem ser alterados</p>
                   </div>
                 )}
 
                 {detalhe.status_processo==='entrega_programada'&&(
-                  <div style={{background:'#F5F3FF',border:'1.5px solid #DDD6FE',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
+                  <div style={{background:'#EDF2EF',border:'1.5px solid #D6E2DB',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
                     {detalhe.entrega_tipo==='parcial'?(
                       <>
-                        <p style={{fontSize:12,fontWeight:600,color:'#6D28D9',margin:'0 0 4px'}}>Entrega parcial</p>
-                        {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6D28D9',margin:'0 0 2px'}}>1ª: {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):''} — {detalhe.entrega_itens1}</p>}
-                        {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6D28D9',margin:0}}>2ª: {detalhe.entrega_data2?fmtData(detalhe.entrega_data2):''} — {detalhe.entrega_itens2}</p>}
+                        <p style={{fontSize:12,fontWeight:600,color:'#6F8E83',margin:'0 0 4px'}}>Entrega parcial</p>
+                        {detalhe.entrega_itens1&&<p style={{fontSize:11,color:'#6F8E83',margin:'0 0 2px'}}>1ª: {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):''} — {detalhe.entrega_itens1}</p>}
+                        {detalhe.entrega_itens2&&<p style={{fontSize:11,color:'#6F8E83',margin:0}}>2ª: {detalhe.entrega_data2?fmtData(detalhe.entrega_data2):''} — {detalhe.entrega_itens2}</p>}
                       </>
                     ):(
-                      <p style={{fontSize:12,fontWeight:600,color:'#6D28D9',margin:0}}>
+                      <p style={{fontSize:12,fontWeight:600,color:'#6F8E83',margin:0}}>
                         Entrega em {detalhe.data_entrega_programada?fmtData(detalhe.data_entrega_programada):'?'}
                         {detalhe.dias_entrega&&` (${detalhe.dias_entrega} dias ${detalhe.entrega_tipo==='uteis'?'úteis':'corridos'})`}
                       </p>
@@ -1011,41 +852,41 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                     ...(detalhe.forma_pagamento?[['Forma de pagamento',detalhe.forma_pagamento]]:[] as any),
                     ...(detalhe.data_pagamento?[['Data do pagamento',fmtData(detalhe.data_pagamento)]]:[] as any),
                   ] as [string,string][]).map(([k,v])=>(
-                    <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
+                    <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#818885',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
                 </div>
 
-                <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
+                <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,padding:'14px 16px',marginBottom:16}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:12}}>
                     <div>
-                      <p style={{fontSize:10,color:'#64748B',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
-                      <p style={{fontSize:14,fontWeight:700,color:'#0F172A'}}>{fmtR(detalhe.valor_produtos||0)}</p>
+                      <p style={{fontSize:10,color:'#818885',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
+                      <p style={{fontSize:14,fontWeight:700,color:'#606463'}}>{fmtR(detalhe.valor_produtos||0)}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#64748B',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Frete</p>
-                      <p style={{fontSize:14,fontWeight:700,color:'#0F172A'}}>{fmtR(detalhe.valor_frete||0)}</p>
+                      <p style={{fontSize:10,color:'#818885',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Frete</p>
+                      <p style={{fontSize:14,fontWeight:700,color:'#606463'}}>{fmtR(detalhe.valor_frete||0)}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#64748B',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Desconto</p>
-                      <p style={{fontSize:14,fontWeight:700,color:detalhe.tem_desconto?'#D97706':'#CBD5E1'}}>{detalhe.tem_desconto&&detalhe.valor_desconto?`- ${fmtR(detalhe.valor_desconto)}`:'—'}</p>
+                      <p style={{fontSize:10,color:'#818885',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Desconto</p>
+                      <p style={{fontSize:14,fontWeight:700,color:detalhe.tem_desconto?'#818885':'#C4CECA'}}>{detalhe.tem_desconto&&detalhe.valor_desconto?`- ${fmtR(detalhe.valor_desconto)}`:'—'}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#64748B',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Total</p>
-                      <p style={{fontSize:14,fontWeight:700,color:'#16A34A'}}>{fmtR(detalhe.valor_total)}</p>
+                      <p style={{fontSize:10,color:'#818885',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Total</p>
+                      <p style={{fontSize:14,fontWeight:700,color:'#7F9C93'}}>{fmtR(detalhe.valor_total)}</p>
                     </div>
                     <div>
-                      <p style={{fontSize:10,color:'#64748B',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo Devedor</p>
-                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#DC2626':'#16A34A'}}>
+                      <p style={{fontSize:10,color:'#818885',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo Devedor</p>
+                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#777B79':'#7F9C93'}}>
                         {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'Quitado'}
                       </p>
                     </div>
                   </div>
 
                   {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?(
-                    <div style={{paddingTop:12,borderTop:'1px solid #E2E8F0'}}>
+                    <div style={{paddingTop:12,borderTop:'1px solid #E1E7E3'}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                        <p style={{fontSize:12,color:'#DC2626',fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:6}}>
+                        <p style={{fontSize:12,color:'#777B79',fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:6}}>
                           <Icon name="alert" size={14}/> Saldo em aberto: {fmtR(detalhe.saldo_devedor)}
                         </p>
                         <button onClick={()=>{
@@ -1060,17 +901,17 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   ):null}
 
                   {detalhe.status_processo==='em_tratativa'&&!isLocked(detalhe.status_processo)&&(
-                    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #E2E8F0'}}>
-                      <p style={{fontSize:11,fontWeight:600,color:'#D97706',marginBottom:8}}>Em tratativa — aplicar desconto</p>
+                    <div style={{marginTop:14,paddingTop:14,borderTop:'1px solid #E1E7E3'}}>
+                      <p style={{fontSize:11,fontWeight:600,color:'#818885',marginBottom:8}}>Em tratativa — aplicar desconto</p>
                       <div style={{display:'flex',gap:8,alignItems:'center'}}>
                         <input style={{...s.fi,flex:1}} value={rawDesconto} placeholder="R$ 0,00"
                           onChange={e=>{const d=e.target.value.replace(/\D/g,'');setRawDesconto(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')} }/>
                         <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>Aplicar</button>
                         {detalhe.tem_desconto&&(
                           <button onClick={async()=>{
-                            await sbPatch('lancamentos',`?id=eq.${detalhe.id}`,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
+                            await api.atualizarLancamento(detalhe.id,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
                             const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!')
-                          }} style={{...s.btnOut,color:'#DC2626',borderColor:'#FEE2E2',whiteSpace:'nowrap' as const}}>Remover</button>
+                          }} style={{...s.btnOut,color:'#777B79',borderColor:'#E1E7E3',whiteSpace:'nowrap' as const}}>Remover</button>
                         )}
                       </div>
                     </div>
@@ -1082,33 +923,33 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   const itensNF=detalhe.itens?.filter(i=>i.tipo==='nf')||[]
                   if(itensOrc.length===0&&itensNF.length===0) return null
                   return (
-                    <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
-                      <div style={{background:'#FAFBFC',padding:'8px 12px',borderBottom:'1px solid #E2E8F0',display:'flex',gap:16}}>
-                        <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase'}}>Itens orçamento ({itensOrc.length})</span>
+                    <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,overflow:'hidden',marginBottom:16}}>
+                      <div style={{background:'#FBFCFB',padding:'8px 12px',borderBottom:'1px solid #E1E7E3',display:'flex',gap:16}}>
+                        <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase'}}>Itens orçamento ({itensOrc.length})</span>
                         {itensNF.length>0&&<span style={{fontSize:10,fontWeight:700,color:ACCENT_LT,textTransform:'uppercase'}}>Itens NF ({itensNF.length})</span>}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:itensNF.length>0?'1fr 1fr':'1fr'}}>
-                        <div style={{borderRight:itensNF.length>0?'1px solid #E2E8F0':'none'}}>
+                        <div style={{borderRight:itensNF.length>0?'1px solid #E1E7E3':'none'}}>
                           {itensOrc.map(item=>(
-                            <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E2E8F0',background:item.entregue?'#F0FDF4':'#fff'}}>
+                            <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E1E7E3',background:item.entregue?'#E8F0EB':'#fff'}}>
                               <p style={{margin:0,fontSize:12,fontWeight:600}}>{item.nome}</p>
-                              <p style={{margin:'2px 0 0',fontSize:11,color:'#64748B'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
-                              {item.entregue&&<span style={{fontSize:11,color:'#16A34A'}}>Recebido {item.data_entrega?fmtData(item.data_entrega):''}</span>}
+                              <p style={{margin:'2px 0 0',fontSize:11,color:'#818885'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
+                              {item.entregue&&<span style={{fontSize:11,color:'#7F9C93'}}>Recebido {item.data_entrega?fmtData(item.data_entrega):''}</span>}
                             </div>
                           ))}
-                          <div style={{padding:'8px 12px',background:'#F9FAFB'}}>
+                          <div style={{padding:'8px 12px',background:'#F6F8F7'}}>
                             <span style={{fontSize:12,fontWeight:700}}>Total: {fmtR(itensOrc.reduce((s,i)=>s+(i.valor_total||0),0))}</span>
                           </div>
                         </div>
                         {itensNF.length>0&&(
                           <div>
                             {itensNF.map(item=>(
-                              <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E2E8F0'}}>
+                              <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E1E7E3'}}>
                                 <p style={{margin:0,fontSize:12,fontWeight:600}}>{item.nome}</p>
-                                <p style={{margin:'2px 0 0',fontSize:11,color:'#64748B'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
+                                <p style={{margin:'2px 0 0',fontSize:11,color:'#818885'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
                               </div>
                             ))}
-                            <div style={{padding:'8px 12px',background:'#F9FAFB'}}>
+                            <div style={{padding:'8px 12px',background:'#F6F8F7'}}>
                               <span style={{fontSize:12,fontWeight:700,color:ACCENT_LT}}>Total NF: {fmtR(itensNF.reduce((s,i)=>s+(i.valor_total||0),0))}</span>
                             </div>
                           </div>
@@ -1118,14 +959,14 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   )
                 })()}
 
-                <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,padding:'12px 14px',marginBottom:12}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}><Icon name="clipboard" size={13}/>Proposta</p>
+                <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,padding:'12px 14px',marginBottom:12}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}><Icon name="clipboard" size={13}/>Proposta</p>
                   <input ref={propostaDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarProposta(f)}}/>
                   <AnexoBtn url={detalhe.proposta_url} label="proposta" icon="clipboard" onAnexar={()=>propostaDetRef.current?.click()} onSubstituir={()=>propostaDetRef.current?.click()} loading={loadingAnexo}/>
                 </div>
 
-                <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,padding:'12px 14px',marginBottom:16,background:canAttachNF(detalhe.status_processo)?'#fff':'#F9FAFB'}}>
-                  <p style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}><Icon name="receipt" size={13}/>Nota Fiscal</p>
+                <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,padding:'12px 14px',marginBottom:16,background:canAttachNF(detalhe.status_processo)?'#fff':'#F6F8F7'}}>
+                  <p style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:10,display:'flex',alignItems:'center',gap:6}}><Icon name="receipt" size={13}/>Nota Fiscal</p>
                   {canAttachNF(detalhe.status_processo)?(
                     <>
                       <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNFComIA(f)}}/>
@@ -1133,27 +974,27 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                       :<AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="receipt" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>}
                     </>
                   ):(
-                    <p style={{fontSize:12,color:'#64748B',margin:0}}>Disponível após <strong>Mercadoria recebida</strong></p>
+                    <p style={{fontSize:12,color:'#818885',margin:0}}>Disponível após <strong>Mercadoria recebida</strong></p>
                   )}
                 </div>
 
                 {detalhe.tipo_pagamento==='parcelado'&&(detalhe.parcelas||[]).length>0&&(
-                  <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden',marginBottom:16}}>
-                    <div style={{background:'#FAFBFC',padding:'8px 12px',borderBottom:'1px solid #E2E8F0'}}>
-                      <span style={{fontSize:10,fontWeight:700,color:'#64748B',textTransform:'uppercase'}}>
+                  <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,overflow:'hidden',marginBottom:16}}>
+                    <div style={{background:'#FBFCFB',padding:'8px 12px',borderBottom:'1px solid #E1E7E3'}}>
+                      <span style={{fontSize:10,fontWeight:700,color:'#818885',textTransform:'uppercase'}}>
                         Parcelas · Pago: {fmtR((detalhe.parcelas||[]).filter(p=>p.pago).reduce((s,p)=>s+p.valor,0))} de {fmtR(detalhe.valor_total)}
                       </span>
                     </div>
                     {(detalhe.parcelas||[]).map(p=>(
-                      <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:'1px solid #E2E8F0',background:p.pago?'#F0FDF4':'#fff'}}>
+                      <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 12px',borderBottom:'1px solid #E1E7E3',background:p.pago?'#E8F0EB':'#fff'}}>
                         <div>
                           <p style={{fontSize:13,fontWeight:600,margin:0}}>Parcela {p.numero} — {fmtR(p.valor)}</p>
-                          <p style={{fontSize:11,color:'#64748B',margin:'2px 0 0'}}>Venc.: {fmtData(p.data_vencimento)}{p.data_pagamento&&` · Pago: ${fmtData(p.data_pagamento)}`}</p>
+                          <p style={{fontSize:11,color:'#818885',margin:'2px 0 0'}}>Venc.: {fmtData(p.data_vencimento)}{p.data_pagamento&&` · Pago: ${fmtData(p.data_pagamento)}`}</p>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:8}}>
                           {p.pago?(
-                            <><span style={{fontSize:12,color:'#16A34A',fontWeight:600}}>Pago</span>
-                            <button onClick={()=>handleEstornar(p.id!,detalhe.id)} disabled={!!acao} style={{fontSize:11,color:'#64748B',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Estornar</button></>
+                            <><span style={{fontSize:12,color:'#7F9C93',fontWeight:600}}>Pago</span>
+                            <button onClick={()=>handleEstornar(p.id!,detalhe.id)} disabled={!!acao} style={{fontSize:11,color:'#818885',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Estornar</button></>
                           ):(
                             <button onClick={()=>handlePagar(p.id!,detalhe.id)} disabled={!!acao} style={{...s.btnTeal,padding:'4px 12px',fontSize:11,opacity:!!acao?0.5:1}}>{acao===p.id?'...':'Marcar pago'}</button>
                           )}
@@ -1178,19 +1019,19 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={s.modal}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>Novo Orçamento</h3>
-              <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={s.fg}>
-              <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E0F5F7,#EAF3FD)',borderRadius:10,border:'1.5px dashed '+ACCENT_LT}}>
+              <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E8EFEB,#F0F4F1)',borderRadius:10,border:'1.5px dashed '+ACCENT_LT}}>
                 <p style={{fontSize:11,fontWeight:700,color:ACCENT_LT,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Icon name="sparkles" size={14} color={ACCENT_LT}/>Importar orçamento com IA</p>
-                <p style={{fontSize:12,color:'#0F172A',marginBottom:10}}>Suba o PDF do orçamento: a IA extrai empresa, CNPJ, todos os itens (com quantidade, valor unitário e total) e o frete — e a proposta já fica anexada automaticamente.</p>
+                <p style={{fontSize:12,color:'#606463',marginBottom:10}}>Suba o PDF do orçamento: a IA extrai empresa, CNPJ, todos os itens (com quantidade, valor unitário e total) e o frete — e a proposta já fica anexada automaticamente.</p>
                 <input ref={orcIARef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportarOrcamento(f)}}/>
                 <button onClick={()=>orcIARef.current?.click()} disabled={loadingIA} style={{...s.btnTeal,opacity:loadingIA?0.6:1,width:'100%',justifyContent:'center'}}>
                   <Icon name="upload" size={14} color="#fff"/> {loadingIA?'Lendo orçamento...':'Selecionar PDF do orçamento'}
                 </button>
                 {form.proposta_url&&(
-                  <p style={{fontSize:11,color:'#16A34A',fontWeight:600,marginTop:8,display:'flex',alignItems:'center',gap:6}}>
-                    <Icon name="check" size={13} color="#16A34A"/> Proposta anexada com sucesso
+                  <p style={{fontSize:11,color:'#7F9C93',fontWeight:600,marginTop:8,display:'flex',alignItems:'center',gap:6}}>
+                    <Icon name="check" size={13} color="#7F9C93"/> Proposta anexada com sucesso
                   </p>
                 )}
               </div>
@@ -1210,8 +1051,8 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   setRawFrete(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                 }}/>
               </FF>
-              <div style={{background:'#F0F7F9',borderRadius:8,padding:'12px 14px',border:'1.5px solid #E0F5F7'}}>
-                <p style={{fontSize:10,fontWeight:600,color:'#64748B',textTransform:'uppercase',marginBottom:4}}>Total do orçamento</p>
+              <div style={{background:'#ECF2EF',borderRadius:8,padding:'12px 14px',border:'1.5px solid #E8EFEB'}}>
+                <p style={{fontSize:10,fontWeight:600,color:'#818885',textTransform:'uppercase',marginBottom:4}}>Total do orçamento</p>
                 <p style={{fontSize:20,fontWeight:700,color:ACCENT_LT}}>
                   {fmtR(itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)+(parseFloat(rawFrete.replace(/\D/g,''))/100||0))}
                 </p>
@@ -1230,7 +1071,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:440}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>Registrar Pagamento</h3>
-              <button onClick={()=>setModalFormaPgto(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalFormaPgto(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div><label style={s.lb}>Forma de pagamento *</label>
@@ -1265,12 +1106,12 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:460}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>Registrar Pagamento</h3>
-              <button onClick={()=>setModalPagParcial(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalPagParcial(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
-              <div style={{background:'#FFFBEB',borderRadius:8,padding:'10px 14px'}}>
-                <p style={{fontSize:12,color:'#92400E',margin:'0 0 4px',fontWeight:600}}>Saldo em aberto</p>
-                <p style={{fontSize:20,fontWeight:700,color:'#DC2626',margin:0}}>{fmtR(detalhe.saldo_devedor||0)}</p>
+              <div style={{background:'#F2F5F3',borderRadius:8,padding:'10px 14px'}}>
+                <p style={{fontSize:12,color:'#606463',margin:'0 0 4px',fontWeight:600}}>Saldo em aberto</p>
+                <p style={{fontSize:20,fontWeight:700,color:'#777B79',margin:0}}>{fmtR(detalhe.saldo_devedor||0)}</p>
               </div>
               <div><label style={s.lb}>Valor pago agora *</label>
                 <input style={s.fi} value={pagParcialValor} placeholder="R$ 0,00" onChange={e=>{
@@ -1280,7 +1121,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 {pagParcialValor&&(()=>{
                   const v=parseFloat(pagParcialValor.replace(/\D/g,''))/100
                   const novoSaldo=Math.max(0,(detalhe.saldo_devedor||0)-v)
-                  return <p style={{fontSize:11,color:novoSaldo===0?'#16A34A':'#D97706',marginTop:6,fontWeight:600}}>
+                  return <p style={{fontSize:11,color:novoSaldo===0?'#7F9C93':'#818885',marginTop:6,fontWeight:600}}>
                     {novoSaldo===0?'Quitará o saldo total':`Saldo restante: ${fmtR(novoSaldo)}`}
                   </p>
                 })()}
@@ -1319,7 +1160,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:480}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="calendar" size={16}/>Programar Entrega</h3>
-              <button onClick={()=>setModalEntregaProg(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalEntregaProg(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div><label style={s.lb}>Tipo de entrega *</label>
@@ -1332,7 +1173,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               {entregaTipo!=='parcial'?(
                 <div><label style={s.lb}>Número de dias *</label>
                   <input type="number" min={1} style={s.fi} value={diasEntrega} placeholder="Ex: 30" onChange={e=>setDiasEntrega(e.target.value)}/>
-                  {diasEntrega&&<p style={{fontSize:12,color:'#7C3AED',marginTop:8,fontWeight:600}}>
+                  {diasEntrega&&<p style={{fontSize:12,color:'#6F8E83',marginTop:8,fontWeight:600}}>
                     Previsão: {fmtData(entregaTipo==='uteis'?addDiasUteis(parseInt(diasEntrega)):addDiasCorridos(parseInt(diasEntrega)))}
                   </p>}
                 </div>
@@ -1358,10 +1199,10 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:700}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="receipt" size={16}/>Itens da Nota Fiscal</h3>
-              <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
-              <p style={{fontSize:12,color:'#64748B',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar.</p>
+              <p style={{fontSize:12,color:'#818885',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar.</p>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
             </div>
             <div style={s.mfoot}>
@@ -1377,7 +1218,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:480}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>Nova Conta Mensal</h3>
-              <button onClick={()=>setModalMensal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalMensal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={s.fg}>
               <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
@@ -1397,7 +1238,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:440}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>{fornecedorEdit?'Editar Fornecedor':'Novo Fornecedor'}</h3>
-              <button onClick={()=>setModalFornecedor(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalFornecedor(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div>
@@ -1423,7 +1264,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:420}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarConta.titulo}</h3>
-              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div><label style={s.lb}>Valor pago *</label>
@@ -1451,20 +1292,20 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           <div style={{...s.modal,width:500}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoConta.titulo} — Histórico</h3>
-              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#64748B'}}><Icon name="x" size={20}/></button>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#818885'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
               {historicoConta.length===0?(
-                <p style={{fontSize:13,color:'#64748B',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+                <p style={{fontSize:13,color:'#818885',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
               ):(
-                <div style={{border:'1.5px solid #E2E8F0',borderRadius:8,overflow:'hidden'}}>
+                <div style={{border:'1.5px solid #E1E7E3',borderRadius:8,overflow:'hidden'}}>
                   {historicoConta.map(p=>(
-                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E8F0'}}>
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E1E7E3'}}>
                       <div>
-                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#16A34A'}}>{fmtR(p.valor)}</p>
-                        <p style={{margin:'2px 0 0',fontSize:12,color:'#64748B'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#7F9C93'}}>{fmtR(p.valor)}</p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#818885'}}>Pago em {fmtData(p.data_pagamento)}</p>
                       </div>
-                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#DC2626'}}>
+                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777B79'}}>
                         <Icon name="trash" size={15}/>
                       </button>
                     </div>
@@ -1483,7 +1324,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
       )}
 
       {toast&&(
-        <div style={{position:'fixed',bottom:20,right:20,padding:'.75rem 1.25rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:toast.ok?'#16A34A':'#DC2626',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:100,maxWidth:400}}>
+        <div style={{position:'fixed',bottom:20,right:20,padding:'.75rem 1.25rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:toast.ok?'#7F9C93':'#777B79',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:100,maxWidth:400}}>
           {toast.msg}
         </div>
       )}
