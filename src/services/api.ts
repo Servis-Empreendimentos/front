@@ -384,31 +384,30 @@ export const api = {
     catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().filter(item => item.id !== id)) }
   },
 
-  listarContasMensais: async (): Promise<ContaMensal[]> => safeRead<ContaMensal[] | null>('/api/contas-mensais', 'contas_mensais?order=titulo.asc', null).then(remote => remote === null ? localAccounts() : remote),
+  // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.
+  listarContasMensais: async (): Promise<ContaMensal[]> => localAccounts(),
 
   criarContaMensal: async (payload: Omit<ContaMensal, 'id' | 'criado_em'>) => {
     const local = { ...payload, id: localId('conta'), criado_em: new Date().toISOString() }
-    try { return await readRemote<ContaMensal>('/api/contas-mensais', 'contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) }).then((result: any) => Array.isArray(result) ? result[0] : result) }
-    catch { writeLocal(LOCAL_ACCOUNTS_KEY, [...localAccounts(), local]); return local }
+    writeLocal(LOCAL_ACCOUNTS_KEY, [...localAccounts(), local])
+    return local
   },
 
   toggleContaMensal: async (id: string, ativo: boolean) => {
-    try { await readRemote(`/api/contas-mensais/${id}`, `contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ativo }) }) }
-    catch { writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().map(conta => conta.id === id ? { ...conta, ativo } : conta)) }
+    writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().map(conta => conta.id === id ? { ...conta, ativo } : conta))
   },
 
-  listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => safeRead<PagamentoContaMensal[] | null>('/api/contas-mensais/pagamentos', 'pagamentos_contas_mensais?order=data_pagamento.desc', null).then(remote => remote === null ? localPayments() : remote),
+  listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => localPayments(),
 
-  listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => safeRead<PagamentoContaMensal[] | null>(`/api/contas-mensais/${contaId}/pagamentos`, `pagamentos_contas_mensais?conta_mensal_id=eq.${encodeURIComponent(contaId)}&order=data_pagamento.desc`, null).then(remote => remote === null ? localPayments().filter(item => item.conta_mensal_id === contaId) : remote),
+  listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => localPayments().filter(item => item.conta_mensal_id === contaId),
 
   registrarPagamentoMensal: async (conta_mensal_id: string, valor: number, data_pagamento: string) => {
     const local = { id: localId('pagamento'), conta_mensal_id, valor, data_pagamento, criado_em: new Date().toISOString() }
-    try { return await readRemote<PagamentoContaMensal>('/api/contas-mensais/pagamentos', 'pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ conta_mensal_id, valor, data_pagamento }) }).then((result: any) => Array.isArray(result) ? result[0] : result) }
-    catch { writeLocal(LOCAL_PAYMENTS_KEY, [local, ...localPayments()]); return local }
+    writeLocal(LOCAL_PAYMENTS_KEY, [local, ...localPayments()])
+    return local
   },
 
   excluirPagamentoMensal: async (id: string) => {
-    try { await readRemote(`/api/pagamentos-contas-mensais/${id}`, `pagamentos_contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
-    catch { writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.id !== id)) }
+    writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.id !== id))
   },
 }
