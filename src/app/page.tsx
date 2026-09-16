@@ -122,7 +122,7 @@ export default function Home() {
   },[logado,load])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',cnpj:'',proposta_url:null})
+    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
@@ -135,13 +135,14 @@ export default function Home() {
     try {
       const [leitura, anexo] = await Promise.allSettled([
         lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido:
-{"titulo":"nome da empresa fornecedora","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00,"valor_total":0.00}]}
-Para cada item, extraia quantidade, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens/produtos do orçamento, sem pular nenhum.`),
+        {"numero_orcamento":"número do orçamento se existir","titulo":"nome da empresa fornecedora","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+Para cada item, extraia quantidade, unidade de medida, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens/produtos do orçamento, sem pular nenhum.`),
         api.uploadArquivo(file),
       ])
       if (leitura.status === 'rejected') throw leitura.reason
       const dados = leitura.value
       if(dados.titulo) set('titulo',dados.titulo)
+      if(dados.numero_orcamento) set('numero_orcamento',String(dados.numero_orcamento))
       if(dados.cnpj) set('cnpj',dados.cnpj)
       if(dados.data) set('data',dados.data)
       if(dados.valor_frete>0) setRawFrete(dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
@@ -150,6 +151,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
         setItensOrcamento(dados.itens.map((i:any)=>({
           nome:i.nome||'',
           quantidade:i.quantidade||1,
+          unidade_medida:i.unidade_medida||'Un',
           valor_unitario:i.valor_unitario||0,
           valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
           tipo:'orcamento' as const,
@@ -158,8 +160,8 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
       } else {
         showToast(anexo.status === 'fulfilled' ? 'Empresa e proposta anexada, mas nenhum item foi identificado. Adicione manualmente se precisar.' : 'PDF lido, mas nenhum item foi identificado e o anexo não foi salvo.',false)
       }
-    } catch {
-      showToast('Não foi possível ler o PDF. Preencha manualmente.',false)
+    } catch (err:any) {
+      showToast(err?.message || 'Não foi possível ler o PDF. Preencha manualmente.',false)
     } finally {setLoadingIA(false)}
   }
 
@@ -170,7 +172,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
       const vFrete=parseFloat(rawFrete.replace(/\D/g,''))/100||0
       const valor_total=valor_produtos+vFrete
-      await api.criar({
+      const salvo=await api.criar({
         ...form,
         tipo_pagamento: form.tipo_pagamento || 'avista',
         valor_produtos,
@@ -181,7 +183,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
         itens: itensOrcamento,
       })
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
-      setModal(false);showToast('Orçamento salvo!');load()
+      setModal(false);showToast((salvo as any).__localFallback?'Orçamento salvo neste navegador. Configure a API para sincronizar com o banco.':'Orçamento salvo!');load()
     } catch (err:any) {
       showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
     } finally {setSaving(false)}
@@ -213,10 +215,10 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
     setNfFileTemp(file);setLoadingIANF(true)
     try {
       const dados=await lerDocIA(file,`Extraia todos os itens desta nota fiscal e retorne APENAS um JSON válido:
-{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00,"valor_total":0.00}]}
-Para cada item, extraia quantidade, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
+{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+Para cada item, extraia quantidade, unidade de medida, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
       const itens=(dados.itens||[]).map((i:any)=>({
-        nome:i.nome||'', quantidade:i.quantidade||1,
+        nome:i.nome||'', quantidade:i.quantidade||1, unidade_medida:i.unidade_medida||'Un',
         valor_unitario:i.valor_unitario||0,
         valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
         tipo:'nf' as const,
@@ -671,12 +673,12 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                        {th('Empresa')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :filtered.length===0?<tr><td colSpan={13} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
+                      {loading?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :filtered.length===0?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
                       :filtered.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
@@ -685,6 +687,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                           <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                             onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                             <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.numero_orcamento||'—'}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.nf_numero||'—'}</td>
                             <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
@@ -816,6 +819,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {([
                     ['Empresa',detalhe.titulo],
+                    ['Nº do orçamento',detalhe.numero_orcamento||'—'],
                     ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
                     ['NF Nº',detalhe.nf_numero||'—'],
                     ['Lançado por',detalhe.criado_por],
@@ -904,7 +908,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                           {itensOrc.map(item=>(
                             <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E2E6E4',background:item.entregue?'#E8F0EB':'#fff'}}>
                               <p style={{margin:0,fontSize:12,fontWeight:600}}>{item.nome}</p>
-                              <p style={{margin:'2px 0 0',fontSize:11,color:'#7D7D7D'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
+                              <p style={{margin:'2px 0 0',fontSize:11,color:'#7D7D7D'}}>Qtd: {item.quantidade} {item.unidade_medida||'Un'} · {fmtR(item.valor_unitario||0)}/{item.unidade_medida||'Un'} · Total: {fmtR(item.valor_total||0)}</p>
                               {item.entregue&&<span style={{fontSize:11,color:'#8BA59A'}}>Recebido {item.data_entrega?fmtData(item.data_entrega):''}</span>}
                             </div>
                           ))}
@@ -917,7 +921,7 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
                             {itensNF.map(item=>(
                               <div key={item.id} style={{padding:'8px 12px',borderBottom:'1px solid #E2E6E4'}}>
                                 <p style={{margin:0,fontSize:12,fontWeight:600}}>{item.nome}</p>
-                                <p style={{margin:'2px 0 0',fontSize:11,color:'#7D7D7D'}}>Qtd: {item.quantidade} · {fmtR(item.valor_unitario||0)}/un · Total: {fmtR(item.valor_total||0)}</p>
+                                <p style={{margin:'2px 0 0',fontSize:11,color:'#7D7D7D'}}>Qtd: {item.quantidade} {item.unidade_medida||'Un'} · {fmtR(item.valor_unitario||0)}/{item.unidade_medida||'Un'} · Total: {fmtR(item.valor_total||0)}</p>
                               </div>
                             ))}
                             <div style={{padding:'8px 12px',background:'#F6F8F7'}}>
@@ -1008,6 +1012,9 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
               </div>
               <FF lb="Nome da empresa *" full>
                 <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
+              </FF>
+              <FF lb="Nº do orçamento">
+                <input style={s.fi} value={form.numero_orcamento||''} placeholder="Ex.: ORC-001" onChange={e=>set('numero_orcamento',e.target.value)}/>
               </FF>
               <FF lb="CNPJ">
                 <input style={s.fi} value={form.cnpj?fmtCNPJ(form.cnpj):''} placeholder="00.000.000/0000-00" maxLength={18} onChange={e=>set('cnpj',e.target.value.replace(/\D/g,''))}/>

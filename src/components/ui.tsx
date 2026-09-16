@@ -82,7 +82,7 @@ export function FornecedorInput({value,cnpj,onChange}:{value:string;cnpj:string;
 }
 
 export function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i:ItemLancamento[])=>void}) {
-  const add=()=>onChange([...itens,{nome:'',quantidade:1,valor_unitario:0,valor_total:0,tipo:'orcamento'}])
+  const add=()=>onChange([...itens,{nome:'',quantidade:1,unidade_medida:'Un',valor_unitario:0,valor_total:0,tipo:'orcamento'}])
   const rem=(i:number)=>onChange(itens.filter((_,idx)=>idx!==i))
   const upd=(i:number,k:string,v:any)=>onChange(itens.map((item,idx)=>{
     if(idx!==i) return item
@@ -99,7 +99,7 @@ export function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i
       </div>
       {itens.length===0&&<p style={{padding:'12px',fontSize:12,color:'#7D7D7D',margin:0}}>Nenhum item adicionado. Você pode salvar só com o valor do frete, ou adicionar um item.</p>}
       {itens.map((item,i)=>(
-        <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 70px 110px 110px 24px',gap:8,padding:'8px 12px',borderBottom:'1px solid #E2E6E4',alignItems:'end'}}>
+        <div key={i} style={{display:'grid',gridTemplateColumns:'minmax(180px,1fr) 66px 82px 110px 110px 24px',gap:8,padding:'8px 12px',borderBottom:'1px solid #E2E6E4',alignItems:'end'}}>
           <div>
             <label style={{...s.lb,marginBottom:2}}>Produto/Serviço</label>
             <input style={{...s.fi,fontSize:12}} value={item.nome} placeholder="Ex: Cimento CP-II 50kg" onChange={e=>upd(i,'nome',e.target.value)}/>
@@ -107,6 +107,12 @@ export function ItensEditor({itens,onChange}:{itens:ItemLancamento[];onChange:(i
           <div>
             <label style={{...s.lb,marginBottom:2}}>Qtd</label>
             <input type="number" step="0.001" min="0" style={{...s.fi,fontSize:12}} value={item.quantidade||''} onChange={e=>upd(i,'quantidade',parseFloat(e.target.value)||0)}/>
+          </div>
+          <div>
+            <label style={{...s.lb,marginBottom:2}}>Unid.</label>
+            <select style={{...s.fi,fontSize:12,paddingLeft:7,paddingRight:4}} value={item.unidade_medida||'Un'} onChange={e=>upd(i,'unidade_medida',e.target.value)}>
+              {['Un','Kg','Rolo','M','M²','M³','L','Caixa','Pacote','Par','Ton','Serviço','Outro'].map(unidade=><option key={unidade} value={unidade}>{unidade}</option>)}
+            </select>
           </div>
           <div>
             <label style={{...s.lb,marginBottom:2}}>Vlr unitário</label>

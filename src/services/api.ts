@@ -7,6 +7,8 @@ const SUPA_HEADERS = {
   'Content-Type': 'application/json',
 }
 
+const LOCAL_LANCAMENTOS_KEY = 'servis.lancamentos.v1'
+const LOCAL_FORNECEDORES_KEY = 'servis.fornecedores.v1'
 const LOCAL_ACCOUNTS_KEY = 'servis.contas-mensais.v1'
 const LOCAL_PAYMENTS_KEY = 'servis.pagamentos-mensais.v1'
 
@@ -33,6 +35,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       return await response.json()
     }
     throw new Error('API não configurada')
+  } catch (error: any) {
+    if (error?.name === 'AbortError') throw new Error('A API demorou para responder. Tente novamente.')
+    if (error instanceof TypeError) throw new Error('Não foi possível conectar à API. Verifique a URL pública do backend.')
+    throw error
   } finally {
     clearTimeout(timer)
   }
@@ -71,6 +77,7 @@ export type ItemLancamento = {
   tipo: 'orcamento' | 'nf'
   nome: string
   quantidade: number
+  unidade_medida?: string | null
   valor_unitario?: number | null
   valor_total?: number | null
   entregue?: boolean
@@ -81,6 +88,7 @@ export type ItemLancamento = {
 export type Lancamento = {
   id: string
   titulo: string
+  numero_orcamento?: string | null
   cnpj?: string | null
   valor_total: number
   valor_original?: number | null
@@ -165,6 +173,8 @@ export const fmtCNPJ = (v: string) => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
 }
 
+const localLancamentos = () => readLocal<Lancamento[]>(LOCAL_LANCAMENTOS_KEY, [])
+const localFornecedores = () => readLocal<Fornecedor[]>(LOCAL_FORNECEDORES_KEY, [])
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
 
@@ -175,20 +185,29 @@ export const api = {
     const params = new URLSearchParams({ order: 'criado_em.desc' })
     if (f.status_processo) params.set('status_processo', f.status_processo)
     if (f.recorrente) params.set('recorrente', f.recorrente)
-    return safeRequest<Lancamento[]>(`/api/lancamentos?${params.toString()}`, [])
+    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente))
+    const remote = await safeRequest<Lancamento[] | null>(`/api/lancamentos?${params.toString()}`, null)
+    return remote === null ? fallback : remote
   },
 
   buscar: async (id: string) => {
-    const fallback: Lancamento = { id, titulo: '', valor_total: 0, data: '', status_entrega: 'pendente', criado_por: '', criado_em: '', pago: false, recorrente: false, status_processo: 'orcamento_aprovado', parcelas: [], itens: [] }
+    const fallback: Lancamento = localLancamentos().find(item => item.id === id) || { id, titulo: '', valor_total: 0, data: '', status_entrega: 'pendente', criado_por: '', criado_em: '', pago: false, recorrente: false, status_processo: 'orcamento_aprovado', parcelas: [], itens: [] }
     return safeRequest<Lancamento>(`/api/lancamentos/${id}`, fallback)
   },
 
   atualizarLancamento: async (id: string, body: Record<string, unknown>) => {
-    await request(`/api/lancamentos/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    try {
+      await request(`/api/lancamentos/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    } catch (error) {
+      const local = localLancamentos()
+      if (!local.some(item => item.id === id)) throw error
+      writeLocal(LOCAL_LANCAMENTOS_KEY, local.map(item => item.id === id ? { ...item, ...body } as Lancamento : item))
+    }
   },
 
   excluirLancamento: async (id: string) => {
-    await request(`/api/lancamentos/${id}`, { method: 'DELETE' })
+    try { await request(`/api/lancamentos/${id}`, { method: 'DELETE' }) }
+    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().filter(item => item.id !== id)) }
   },
 
   uploadArquivo: async (file: File): Promise<string> => {
@@ -209,31 +228,60 @@ export const api = {
 
   criar: async (payload: any) => {
     const body = { ...payload, pago_por: 'Servis Empreendimentos' }
-    return request<Lancamento>('/api/lancamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    try {
+      return await request<Lancamento>('/api/lancamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    } catch {
+      const now = new Date().toISOString()
+      const local: Lancamento & { __localFallback?: boolean } = {
+        ...body,
+        id: localId('orcamento'),
+        criado_em: now,
+        status_entrega: body.status_entrega || 'pendente',
+        pago: Boolean(body.pago),
+        recorrente: Boolean(body.recorrente),
+        status_processo: body.status_processo || 'orcamento_aprovado',
+        saldo_devedor: body.saldo_devedor ?? body.valor_total ?? 0,
+        parcelas: body.parcelas || [],
+        itens: (body.itens || []).map((item: ItemLancamento) => ({ ...item, id: item.id || localId('item'), unidade_medida: item.unidade_medida || 'Un' })),
+        __localFallback: true,
+      }
+      writeLocal(LOCAL_LANCAMENTOS_KEY, [local, ...localLancamentos()])
+      return local
+    }
   },
 
   salvarItensNF: async (lancamento_id: string, itens: ItemLancamento[]) => {
-    await request('/api/itens-lancamento/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lancamento_id, itens }) })
+    try {
+      await request('/api/itens-lancamento/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lancamento_id, itens }) })
+    } catch {
+      writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => item.id === lancamento_id ? { ...item, itens: [...(item.itens || []).filter(existing => existing.tipo !== 'nf'), ...itens] } : item))
+    }
   },
 
   atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {
-    await request(`/api/itens-lancamento/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    try { await request(`/api/itens-lancamento/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }
+    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, itens: item.itens?.map(existing => existing.id === id ? { ...existing, ...body } : existing) }))) }
   },
 
   marcarPago: async (id: string) => {
-    await request(`/api/parcelas/${id}/pagar`, { method: 'PATCH' })
+    try { await request(`/api/parcelas/${id}/pagar`, { method: 'PATCH' }) }
+    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, parcelas: item.parcelas?.map(parcela => parcela.id === id ? { ...parcela, pago: true, data_pagamento: new Date().toISOString().slice(0, 10) } : parcela) }))) }
   },
 
   estornar: async (id: string) => {
-    await request(`/api/parcelas/${id}/estornar`, { method: 'PATCH' })
+    try { await request(`/api/parcelas/${id}/estornar`, { method: 'PATCH' }) }
+    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, parcelas: item.parcelas?.map(parcela => parcela.id === id ? { ...parcela, pago: false, data_pagamento: null } : parcela) }))) }
   },
 
   buscarFornecedores: async (termo: string): Promise<Fornecedor[]> => {
     if (!termo || termo.length < 2) return []
-    return safeRequest<Fornecedor[]>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, [])
+    const q = termo.toLowerCase()
+    const fallback = localFornecedores().filter(item => item.nome.toLowerCase().includes(q) || (item.cnpj || '').includes(termo))
+    const remote = await safeRequest<Fornecedor[] | null>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, null)
+    return remote === null ? fallback : remote
   },
 
-  listarFornecedores: async (): Promise<Fornecedor[]> => safeRequest<Fornecedor[]>('/api/fornecedores', []),
+  listarFornecedores: async (): Promise<Fornecedor[]> => safeRequest<Fornecedor[] | null>('/api/fornecedores', null).then(remote => remote === null ? localFornecedores() : remote),
 
   salvarFornecedor: async (nome: string, cnpj?: string) => {
     const existentes = await api.buscarFornecedores(nome)
@@ -244,14 +292,24 @@ export const api = {
     return api.criarFornecedor(nome, cnpj)
   },
 
-  criarFornecedor: async (nome: string, cnpj?: string) => request<Fornecedor>('/api/fornecedores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, cnpj: cnpj || null }) }),
+  criarFornecedor: async (nome: string, cnpj?: string) => {
+    try {
+      return await request<Fornecedor>('/api/fornecedores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, cnpj: cnpj || null }) })
+    } catch {
+      const fornecedor = { id: localId('fornecedor'), nome, cnpj: cnpj || null, criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_FORNECEDORES_KEY, [fornecedor, ...localFornecedores()])
+      return fornecedor
+    }
+  },
 
   atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null }) => {
-    await request(`/api/fornecedores/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    try { await request(`/api/fornecedores/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }
+    catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().map(item => item.id === id ? { ...item, ...body } : item)) }
   },
 
   excluirFornecedor: async (id: string) => {
-    await request(`/api/fornecedores/${id}`, { method: 'DELETE' })
+    try { await request(`/api/fornecedores/${id}`, { method: 'DELETE' }) }
+    catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().filter(item => item.id !== id)) }
   },
 
   listarContasMensais: async (): Promise<ContaMensal[]> => {
