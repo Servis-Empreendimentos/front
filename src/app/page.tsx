@@ -8,8 +8,6 @@ import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
 
-const AI_KEY   = process.env.NEXT_PUBLIC_ANTHROPIC_KEY!
-
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
@@ -24,30 +22,7 @@ function addDiasUteis(dias: number): string {
 }
 
 async function lerDocIA(file: File, prompt: string): Promise<any> {
-  const base64 = await new Promise<string>((res,rej) => {
-    const r = new FileReader()
-    r.onload = () => res((r.result as string).split(',')[1])
-    r.onerror = () => rej(new Error('Erro'))
-    r.readAsDataURL(file)
-  })
-  const isPDF = file.type === 'application/pdf'
-  const mediaType = isPDF ? 'application/pdf' : file.type==='image/png' ? 'image/png' : 'image/jpeg'
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{ 'x-api-key':AI_KEY, 'anthropic-version':'2023-06-01', 'content-type':'application/json', 'anthropic-dangerous-direct-browser-access':'true' },
-    body:JSON.stringify({
-      model:'claude-sonnet-4-5', max_tokens:2000,
-      messages:[{ role:'user', content:[
-        { type:isPDF?'document':'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
-        { type:'text', text:prompt }
-      ]}]
-    })
-  })
-  const data = await response.json()
-  const text = data.content?.[0]?.text || ''
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) throw new Error('Falhou')
-  return JSON.parse(match[0])
+  return api.lerDocumento(file, prompt)
 }
 
 export default function Home() {
@@ -158,17 +133,19 @@ export default function Home() {
   const handleImportarOrcamento=async(file:File)=>{
     setLoadingIA(true)
     try {
-      const [dados, propostaUrl] = await Promise.all([
+      const [leitura, anexo] = await Promise.allSettled([
         lerDocIA(file,`Extraia todos os dados deste orçamento e retorne APENAS um JSON válido:
 {"titulo":"nome da empresa fornecedora","cnpj":"somente números","data":"YYYY-MM-DD","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"valor_unitario":0.00,"valor_total":0.00}]}
 Para cada item, extraia quantidade, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens/produtos do orçamento, sem pular nenhum.`),
         api.uploadArquivo(file),
       ])
+      if (leitura.status === 'rejected') throw leitura.reason
+      const dados = leitura.value
       if(dados.titulo) set('titulo',dados.titulo)
       if(dados.cnpj) set('cnpj',dados.cnpj)
       if(dados.data) set('data',dados.data)
       if(dados.valor_frete>0) setRawFrete(dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}))
-      set('proposta_url', propostaUrl)
+      if (anexo.status === 'fulfilled') set('proposta_url', anexo.value)
       if(dados.itens?.length>0) {
         setItensOrcamento(dados.itens.map((i:any)=>({
           nome:i.nome||'',
@@ -177,9 +154,9 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
           tipo:'orcamento' as const,
         })))
-        showToast('Orçamento importado com itens e proposta anexada!')
+        showToast(anexo.status === 'fulfilled' ? 'Orçamento importado com itens e proposta anexada!' : 'Orçamento lido com itens. O PDF não foi anexado.')
       } else {
-        showToast('Empresa e proposta anexada, mas nenhum item foi identificado. Adicione manualmente se precisar.',false)
+        showToast(anexo.status === 'fulfilled' ? 'Empresa e proposta anexada, mas nenhum item foi identificado. Adicione manualmente se precisar.' : 'PDF lido, mas nenhum item foi identificado e o anexo não foi salvo.',false)
       }
     } catch {
       showToast('Não foi possível ler o PDF. Preencha manualmente.',false)
@@ -544,7 +521,6 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
             <div>
               <div style={s.row}>
                 <div><h1 style={s.h1}>Visão Geral</h1><p style={s.p}>Resumo financeiro · Servis Empreendimentos</p></div>
-                <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv="lançamentos" c={ACCENT_LT}/>

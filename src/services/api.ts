@@ -19,7 +19,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   try {
     if (API_BASE) {
       const response = await fetch(`${API_BASE}${path}`, { ...init, signal: controller.signal })
-      if (!response.ok) throw new Error(`API ${response.status}`)
+      if (!response.ok) {
+        let detail = ''
+        try { detail = (await response.json())?.detail || '' } catch {}
+        throw new Error(detail || `API ${response.status}`)
+      }
       if (response.status === 204) return undefined as T
       return await response.json()
     }
@@ -138,7 +142,7 @@ export type Fornecedor = {
 }
 
 export const PIPELINE = [
-  { id: 'orcamento_aprovado', label: 'Orçamento aprovado', icon: '📋' },
+  { id: 'orcamento_aprovado', label: 'Orçamento recebido', icon: '📋' },
   { id: 'em_tratativa', label: 'Em tratativa', icon: '🤝' },
   { id: 'orcamento_fechado', label: 'Orçamento fechado', icon: '✅' },
   { id: 'pagamento_realizado', label: 'Pagamento realizado', icon: '💰' },
@@ -194,6 +198,13 @@ export const api = {
     const response = await fetch(`${SUPA_URL}/storage/v1/object/notas-fiscais/${nome}`, { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }, body: file })
     if (!response.ok) throw new Error('Falha ao enviar arquivo')
     return `${SUPA_URL}/storage/v1/object/public/notas-fiscais/${nome}`
+  },
+
+  lerDocumento: async (file: File, prompt: string) => {
+    const body = new FormData()
+    body.append('file', file, file.name)
+    body.append('prompt', prompt)
+    return request<any>('/api/documentos/ler', { method: 'POST', body, timeoutMs: 60000 })
   },
 
   criar: async (payload: any) => {
