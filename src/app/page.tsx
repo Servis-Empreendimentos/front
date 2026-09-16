@@ -1193,6 +1193,26 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         </div>
       )}
 
+      {modalMensal&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>Nova Conta Mensal</h3>
+              <button onClick={()=>setModalMensal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
+              <FF lb="Pago por *" full><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis Empreendimentos"/></FF>
+              <FF lb="Dia de vencimento *" full><input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/></FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalMensal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSaveMensal} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':'Cadastrar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalFornecedor&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
           <div style={{...s.modal,width:440}}>
