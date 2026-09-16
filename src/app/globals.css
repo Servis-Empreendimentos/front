@@ -4,9 +4,9 @@
   --ink: #626262;
   --ink-muted: #7D7D7D;
   --brand: #8BA59A;
-  --brand-dark: #708277;
-  --brand-soft: #e8efeb;
-  --paper: #f4f6f4;
+  --brand-dark: #748F84;
+  --brand-soft: #E8F0EC;
+  --paper: #F7F9F8;
   --surface: #ffffff;
   --line: #e1e7e3;
   --shadow-sm: 0 2px 10px rgba(96, 100, 99, .045);
@@ -28,12 +28,12 @@ button, input, select, textarea { font: inherit; }
 button { transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out), background 160ms ease, border-color 160ms ease, color 160ms ease; }
 button:not(:disabled):active { transform: scale(.975); }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
-  outline: 3px solid rgba(127, 156, 147, .32);
+  outline: 3px solid rgba(139, 165, 154, .32);
   outline-offset: 2px;
 }
 input::placeholder, textarea::placeholder { color: #A5ADA9; }
 input, select, textarea { transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease; }
-input:focus, select:focus, textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 4px rgba(127, 156, 147, .12); }
+input:focus, select:focus, textarea:focus { border-color: var(--brand) !important; box-shadow: 0 0 0 4px rgba(139, 165, 154, .12); }
 
 table { border-spacing: 0; }
 thead tr { background: transparent !important; border-bottom: 1px solid var(--line) !important; }
@@ -73,10 +73,10 @@ tbody td { border-bottom-color: var(--line) !important; }
   height: 7px;
   border-radius: 50%;
   background: var(--brand);
-  box-shadow: 0 0 0 4px rgba(127, 156, 147, .14);
+  box-shadow: 0 0 0 4px rgba(139, 165, 154, .14);
 }
 .workspace-date {
-  color: #9AA29E;
+  color: #879A91;
   font-size: 12px;
   text-transform: capitalize;
 }

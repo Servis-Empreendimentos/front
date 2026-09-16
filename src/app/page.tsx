@@ -735,11 +735,6 @@ Para cada item, extraia quantidade, valor unitário E valor total exatamente com
           )}
         </main>
 
-        <footer style={s.footer}>
-          <img src="/logo.jpg" alt="Servis" style={{height:24,objectFit:'contain'}} onError={e=>(e.currentTarget.style.display='none')}/>
-          <p style={{fontSize:11,color:'#7D7D7D'}}>Servis Empreendimentos · Conciliação Financeira</p>
-          <p style={{fontSize:11,color:'#7D7D7D'}}>© 2025</p>
-        </footer>
       </div>
 
       {modal&&detalhe&&(

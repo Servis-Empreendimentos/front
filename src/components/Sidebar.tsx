@@ -7,15 +7,15 @@ function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:bo
     <button onClick={onClick} style={{
       display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
       padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-      background:active?'rgba(255,255,255,.48)':'transparent',color:active?'#626262':'#F8FAF9',
+      background:active?'rgba(255,255,255,.62)':'transparent',color:'#626262',
       fontSize:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
       transition:'background .15s, color .15s, border-color .15s',
     }}
     onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2;e.currentTarget.style.color='#626262'}}}
-    onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color='#F8FAF9'}}}
+    onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color='#626262'}}}
     >
       <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'rgba(255,255,255,.42)':'rgba(255,255,255,.18)'}}>
-        <Icon name={icon} size={16} color={active?'#626262':'#F8FAF9'}/>
+        <Icon name={icon} size={16} color="#626262"/>
       </span>
       {label}
       {active&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'#708277'}}/>}
@@ -44,17 +44,17 @@ export default function Sidebar({
             <img src="/logo.jpg" alt="" style={{width:29,height:29,objectFit:'cover',objectPosition:'50% 32%',mixBlendMode:'multiply'}} onError={e=>(e.currentTarget.style.display='none')}/>
           </div>
           <div>
-            <p style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:700,letterSpacing:'-.04em',color:'#fff',margin:0}}>servis</p>
-            <p style={{fontSize:9,fontWeight:700,color:'#E5EEE9',letterSpacing:'.14em',textTransform:'uppercase',margin:'1px 0 0'}}>operação</p>
+            <p style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:700,letterSpacing:'-.04em',color:'#626262',margin:0}}>servis</p>
+            <p style={{fontSize:9,fontWeight:700,color:'#748F84',letterSpacing:'.14em',textTransform:'uppercase',margin:'1px 0 0'}}>operação</p>
           </div>
         </div>
         <div style={{padding:'12px 12px 13px',borderRadius:12,background:'rgba(255,255,255,.22)',border:'1px solid rgba(255,255,255,.30)'}}>
-          <p style={{fontSize:9,fontWeight:700,color:'#F8FAF9',textTransform:'uppercase',letterSpacing:'.12em',margin:'0 0 5px'}}>Sessão ativa</p>
+          <p style={{fontSize:9,fontWeight:700,color:'#626262',textTransform:'uppercase',letterSpacing:'.12em',margin:'0 0 5px'}}>Sessão ativa</p>
           <div style={{display:'flex',alignItems:'center',gap:9}}>
             <span style={{width:30,height:30,borderRadius:'50%',background:'#F8FAF9',color:'#708277',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:12}}>{user.slice(0,1).toUpperCase()}</span>
             <div style={{minWidth:0}}>
-              <p style={{fontSize:13,fontWeight:700,color:'#fff',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user}</p>
-              <span style={{fontSize:10,color:'#F8FAF9',fontWeight:700}}>{roleLabel}</span>
+              <p style={{fontSize:13,fontWeight:700,color:'#626262',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user}</p>
+              <span style={{fontSize:10,color:'#748F84',fontWeight:700}}>{roleLabel}</span>
             </div>
           </div>
         </div>
@@ -63,7 +63,7 @@ export default function Sidebar({
       <div style={{height:1,background:'rgba(255,255,255,.38)',margin:'.7rem 1.15rem 1rem'}}/>
 
       <div style={{padding:'0 .85rem',flex:1}}>
-        <p style={{fontSize:9,fontWeight:700,color:'#F8FAF9',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
+        <p style={{fontSize:9,fontWeight:700,color:'#626262',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
 
         {role==='entregador'?(
           <NavItem icon="truck" label="Entregas" active={true} onClick={()=>{}}/>
@@ -82,12 +82,12 @@ export default function Sidebar({
         <button onClick={onSair} style={{
           display:'flex',alignItems:'center',gap:11,width:'100%',textAlign:'left',
           padding:'.68rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-          background:'transparent',color:'#F8FAF9',fontSize:13,fontWeight:700,fontFamily:'inherit',
+          background:'transparent',color:'#626262',fontSize:13,fontWeight:700,fontFamily:'inherit',
         }}
-        onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,.24)')}
+        onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,.42)')}
         onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
         >
-          <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,.18)'}}><Icon name="logout" size={16} color="#F8FAF9"/></span>
+          <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'rgba(255,255,255,.42)'}}><Icon name="logout" size={16} color="#626262"/></span>
           Encerrar sessão
         </button>
       </div>
