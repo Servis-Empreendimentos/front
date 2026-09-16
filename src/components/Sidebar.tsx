@@ -7,18 +7,18 @@ function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:bo
     <button onClick={onClick} style={{
       display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
       padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-      background:active?'rgba(255,255,255,.48)':'transparent',color:active?'#606463':'#F8FAF9',
+      background:active?'rgba(255,255,255,.48)':'transparent',color:active?'#626262':'#F8FAF9',
       fontSize:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
       transition:'background .15s, color .15s, border-color .15s',
     }}
-    onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2;e.currentTarget.style.color='#606463'}}}
+    onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2;e.currentTarget.style.color='#626262'}}}
     onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color='#F8FAF9'}}}
     >
       <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'rgba(255,255,255,.42)':'rgba(255,255,255,.18)'}}>
-        <Icon name={icon} size={16} color={active?'#606463':'#F8FAF9'}/>
+        <Icon name={icon} size={16} color={active?'#626262':'#F8FAF9'}/>
       </span>
       {label}
-      {active&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'#6F8E83'}}/>}
+      {active&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'#708277'}}/>}
     </button>
   )
 }
@@ -40,18 +40,18 @@ export default function Sidebar({
     <aside className="sidebar-shell" style={s.sidebar}>
       <div style={{padding:'1.45rem 1.15rem .8rem'}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:24}}>
-          <div style={{width:34,height:34,borderRadius:10,background:'#E7EFEB',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}>
+          <div style={{width:34,height:34,borderRadius:10,background:'#E5EEE9',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}>
             <img src="/logo.jpg" alt="" style={{width:29,height:29,objectFit:'cover',objectPosition:'50% 32%',mixBlendMode:'multiply'}} onError={e=>(e.currentTarget.style.display='none')}/>
           </div>
           <div>
             <p style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:700,letterSpacing:'-.04em',color:'#fff',margin:0}}>servis</p>
-            <p style={{fontSize:9,fontWeight:700,color:'#E7EFEB',letterSpacing:'.14em',textTransform:'uppercase',margin:'1px 0 0'}}>operação</p>
+            <p style={{fontSize:9,fontWeight:700,color:'#E5EEE9',letterSpacing:'.14em',textTransform:'uppercase',margin:'1px 0 0'}}>operação</p>
           </div>
         </div>
         <div style={{padding:'12px 12px 13px',borderRadius:12,background:'rgba(255,255,255,.22)',border:'1px solid rgba(255,255,255,.30)'}}>
           <p style={{fontSize:9,fontWeight:700,color:'#F8FAF9',textTransform:'uppercase',letterSpacing:'.12em',margin:'0 0 5px'}}>Sessão ativa</p>
           <div style={{display:'flex',alignItems:'center',gap:9}}>
-            <span style={{width:30,height:30,borderRadius:'50%',background:'#F8FAF9',color:'#6F8E83',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:12}}>{user.slice(0,1).toUpperCase()}</span>
+            <span style={{width:30,height:30,borderRadius:'50%',background:'#F8FAF9',color:'#708277',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,fontSize:12}}>{user.slice(0,1).toUpperCase()}</span>
             <div style={{minWidth:0}}>
               <p style={{fontSize:13,fontWeight:700,color:'#fff',margin:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user}</p>
               <span style={{fontSize:10,color:'#F8FAF9',fontWeight:700}}>{roleLabel}</span>
