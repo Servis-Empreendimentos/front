@@ -49,9 +49,9 @@ function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'
+type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'
 
-const FINANCEIRO_ABAS: Aba[] = ['lancamentos','folha','mensais']
+const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais']
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -101,9 +101,10 @@ export default function Sidebar({
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
             <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
+            <NavItem icon="receipt" label="Notas Fiscais" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
 
             <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
-              <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+              <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
               <NavItem sub icon="users" label="Folha de Pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
               <NavItem sub icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
             </NavGroup>

@@ -216,7 +216,18 @@ export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
 export const PIPELINE_NF_FROM = 'mercadoria_recebida'
 
 export const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-export const fmtData = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('pt-BR')
+
+export const mesLabel = (mesKey: string) => {
+  const [ano, mes] = mesKey.split('-').map(Number)
+  const nome = new Date(ano, (mes || 1) - 1, 1).toLocaleDateString('pt-BR', { month: 'long' })
+  return `${nome.charAt(0).toUpperCase()}${nome.slice(1)}/${ano}`
+}
+export const fmtData = (d?: string | null) => {
+  if (!d) return '—'
+  const date = new Date(d + 'T00:00:00')
+  if (isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('pt-BR')
+}
 export const fmtCNPJ = (v: string) => {
   const d = v.replace(/\D/g, '').slice(0, 14)
   if (d.length <= 2) return d

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -30,7 +30,7 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -603,6 +603,30 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
     })(),
   ].filter(item=>item.qtd>0)
+
+  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
+  const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
+  const gruposFolha:Record<string,{valor:number;data:string}>={}
+  pagamentosFuncionarios.forEach(p=>{
+    const mes=(p.data_pagamento||'').slice(0,7)
+    if(!mes) return
+    if(!gruposFolha[mes]) gruposFolha[mes]={valor:0,data:p.data_pagamento}
+    gruposFolha[mes].valor+=p.valor
+    if(p.data_pagamento>gruposFolha[mes].data) gruposFolha[mes].data=p.data_pagamento
+  })
+  const itensFolha:ItemPagar[]=Object.entries(gruposFolha).map(([mes,g])=>({id:'folha-'+mes,tipo:'folha',nome:`Folha de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
+  const gruposMensais:Record<string,{valor:number;data:string}>={}
+  pagamentosMensais.forEach(p=>{
+    const mes=(p.data_pagamento||'').slice(0,7)
+    if(!mes) return
+    if(!gruposMensais[mes]) gruposMensais[mes]={valor:0,data:p.data_pagamento}
+    gruposMensais[mes].valor+=p.valor
+    if(p.data_pagamento>gruposMensais[mes].data) gruposMensais[mes].data=p.data_pagamento
+  })
+  const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
+  const contasAPagar=[...itensNF,...itensFolha,...itensMensais].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
+  const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
+
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -738,6 +762,53 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 </table>
                 <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
                   <button onClick={()=>setAba('lancamentos')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver todos os lançamentos →</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='pagar'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Contas a Pagar</h1><p style={s.p}>Tudo que já foi pago — notas fiscais, folha de pagamento e contas mensais, num lugar só</p></div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
+                <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
+                <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
+                <KPI l="Meses de folha" v={itensFolha.length} sv="agrupados por mês" c="#8BA59A"/>
+                <KPI l="Meses de contas fixas" v={itensMensais.length} sv="agrupados por mês" c="#748F84"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Histórico de pagamentos</span>
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Descrição')}{th('Valor pago')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :contasAPagar.length===0?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum pagamento registrado ainda</td></tr>
+                    :contasAPagar.map(item=>(
+                      <tr key={item.id} onClick={()=>{
+                        if(item.tipo==='nf'&&item.lancamentoId) openDetalhe(item.lancamentoId)
+                        else if(item.tipo==='folha') setAba('folha')
+                        else setAba('mensais')
+                      }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
+                        onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <td style={{padding:'11px'}}>
+                          <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
+                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?'Folha de pagamento':'Contas mensais'} · {fmtData(item.data)}</p>
+                        </td>
+                        <td style={{padding:'11px',textAlign:'right',fontWeight:700}}>{fmtR(item.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {contasAPagar.length} registro{contasAPagar.length!==1?'s':''} · clique numa linha pra ver o detalhe
                 </div>
               </div>
             </div>
