@@ -167,6 +167,7 @@ export type Fornecedor = {
   id: string
   nome: string
   cnpj?: string | null
+  fornecedor_master_id?: string | null
   criado_em?: string
 }
 
@@ -363,21 +364,21 @@ export const api = {
     return api.criarFornecedor(nome, cnpj)
   },
 
-  criarFornecedor: async (nome: string, cnpj?: string) => {
+  criarFornecedor: async (nome: string, cnpj?: string, fornecedorMasterId?: string | null) => {
     try {
       return await readRemote<Fornecedor>(
         '/api/fornecedores',
         'fornecedores',
-        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, cnpj: cnpj || null }) },
+        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, cnpj: cnpj || null, fornecedor_master_id: fornecedorMasterId || null }) },
       ).then((result: any) => Array.isArray(result) ? result[0] : result)
     } catch {
-      const fornecedor = { id: localId('fornecedor'), nome, cnpj: cnpj || null, criado_em: new Date().toISOString() }
+      const fornecedor = { id: localId('fornecedor'), nome, cnpj: cnpj || null, fornecedor_master_id: fornecedorMasterId || null, criado_em: new Date().toISOString() }
       writeLocal(LOCAL_FORNECEDORES_KEY, [fornecedor, ...localFornecedores()])
       return fornecedor
     }
   },
 
-  atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null }) => {
+  atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null; fornecedor_master_id?: string | null }) => {
     try { await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
     catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().map(item => item.id === id ? { ...item, ...body } : item)) }
   },

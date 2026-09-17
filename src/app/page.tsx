@@ -71,6 +71,8 @@ export default function Home() {
   const [itensNFEditor,setItensNFEditor]=useState<ItemLancamento[]>([])
   const [nfFileTemp,setNfFileTemp]=useState<File|null>(null)
   const [loadingIANF,setLoadingIANF]=useState(false)
+  const [nfNumeroTemp,setNfNumeroTemp]=useState('')
+  const [rawFreteNF,setRawFreteNF]=useState('')
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalPagParcial,setModalPagParcial]=useState(false)
@@ -81,7 +83,7 @@ export default function Home() {
   const [pagParcialParc,setPagParcialParc]=useState('')
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
-  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
+  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;masterId:string}>({nome:'',cnpj:'',masterId:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
   const [dataPagarConta,setDataPagarConta]=useState('')
@@ -218,8 +220,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!detalhe) return
     setNfFileTemp(file);setLoadingIANF(true)
     try {
-      const dados=await lerDocIA(file,`Extraia todos os itens desta nota fiscal e retorne APENAS um JSON válido:
-{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+      const dados=await lerDocIA(file,`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido:
+{"numero_nf":"número da nota fiscal","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
 Para cada item, extraia quantidade, unidade de medida, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
       const itens=(dados.itens||[]).map((i:any)=>({
         nome:i.nome||'', quantidade:i.quantidade||1, unidade_medida:i.unidade_medida||'Un',
@@ -227,10 +229,13 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
         tipo:'nf' as const,
       }))
-      setItensNFEditor(itens);setModalNFItens(true)
+      setItensNFEditor(itens)
+      setNfNumeroTemp(dados.numero_nf||'')
+      setRawFreteNF(dados.valor_frete>0?dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+      setModalNFItens(true)
     } catch {
-      setItensNFEditor([]);setModalNFItens(true)
-      showToast('IA não extraiu itens. Preencha manualmente.',false)
+      setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('');setModalNFItens(true)
+      showToast('IA não extraiu os dados. Preencha manualmente.',false)
     } finally {setLoadingIANF(false)}
   }
 
@@ -239,10 +244,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setLoadingAnexo(true)
     try {
       const url=await api.uploadArquivo(nfFileTemp)
-      await api.atualizarLancamento(detalhe.id,{arquivo_url:url})
+      const vFreteNF=parseFloat(rawFreteNF.replace(/\D/g,''))/100||0
+      await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,valor_frete:vFreteNF||detalhe.valor_frete})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
-      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([])
+      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('')
       showToast('NF e itens salvos!')
     } catch (err:any) {showToast('Erro ao salvar NF: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
@@ -361,10 +367,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   }
 
   const handleSaveMensal=async()=>{
-    if(!formMensal.titulo||!formMensal.pago_por||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
+    if(!formMensal.titulo||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
     setSaving(true)
     try {
-      await api.criarContaMensal({...formMensal,ativo:true})
+      await api.criarContaMensal({...formMensal,pago_por:'Servis Empreendimentos',ativo:true})
       setModalMensal(false);setFormMensal({});showToast('Conta mensal cadastrada!');load()
     } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
     finally {setSaving(false)}
@@ -372,12 +378,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
-    setFormFornecedor({nome:'',cnpj:''})
+    setFormFornecedor({nome:'',cnpj:'',masterId:''})
     setModalFornecedor(true)
   }
   const openEditarFornecedor=(f:Fornecedor)=>{
     setFornecedorEdit(f)
-    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||''})
+    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',masterId:f.fornecedor_master_id||''})
     setModalFornecedor(true)
   }
   const handleSalvarFornecedor=async()=>{
@@ -385,10 +391,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSaving(true)
     try {
       if(fornecedorEdit) {
-        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null})
+        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null,fornecedor_master_id:formFornecedor.masterId||null})
         showToast('Fornecedor atualizado!')
       } else {
-        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined)
+        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined,formFornecedor.masterId||null)
         showToast('Fornecedor cadastrado!')
       }
       setModalFornecedor(false);load()
@@ -450,11 +456,24 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     return true
   })
 
-  const filteredFornecedores = fornecedores.filter(f=>{
+  const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
     const q=searchForn.toLowerCase()
     return f.nome.toLowerCase().includes(q) || (f.cnpj||'').includes(q)
+  }
+  const fornecedorMasters = fornecedores.filter(f=>!f.fornecedor_master_id)
+  const fornecedorMasterIds = new Set(fornecedorMasters.map(m=>m.id))
+  const fornecedorRows:{fornecedor:Fornecedor;isSub:boolean}[] = []
+  fornecedorMasters.forEach(m=>{
+    const subs = fornecedores.filter(f=>f.fornecedor_master_id===m.id)
+    const subsMatching = subs.filter(matchFornecedor)
+    const masterMatches = matchFornecedor(m)
+    if(masterMatches||subsMatching.length>0) {
+      fornecedorRows.push({fornecedor:m,isSub:false})
+      ;(masterMatches?subs:subsMatching).forEach(s=>fornecedorRows.push({fornecedor:s,isSub:true}))
+    }
   })
+  fornecedores.filter(f=>f.fornecedor_master_id&&!fornecedorMasterIds.has(f.fornecedor_master_id)).filter(matchFornecedor).forEach(f=>fornecedorRows.push({fornecedor:f,isSub:false}))
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
@@ -577,7 +596,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c={ACCENT_LT}/>
+                <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${fornecedorRows.length} exibidos`} c={ACCENT_LT}/>
                 <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#8BA59A"/>
               </div>
               <div style={s.card}>
@@ -594,11 +613,13 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                     </thead>
                     <tbody>
                       {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
-                      :filteredFornecedores.map(f=>(
-                        <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
+                      :fornecedorRows.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
+                      :fornecedorRows.map(({fornecedor:f,isSub})=>(
+                        <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4',background:isSub?'#FAFBFA':'transparent'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background=isSub?'#FAFBFA':'')}>
+                          <td style={{padding:'10px 11px',fontWeight:isSub?500:700,paddingLeft:isSub?30:11,color:isSub?'#5A5A5A':'#374151'}}>
+                            {isSub&&<span style={{color:'#B7C0BC',marginRight:6}}>└</span>}{f.nome}
+                          </td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
                           <td style={{padding:'10px 11px'}}>
                             <div style={{display:'flex',gap:8}}>
@@ -614,7 +635,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   </table>
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
+                  {fornecedorRows.length} fornecedor{fornecedorRows.length!==1?'es':''} de {fornecedores.length} total
                 </div>
               </div>
             </div>
@@ -1182,7 +1203,20 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
-              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar.</p>
+              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar. Se a IA não conseguir ler algum campo, preencha manualmente.</p>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
+                <div>
+                  <label style={s.lb}>Número da NF</label>
+                  <input style={s.fi} value={nfNumeroTemp} onChange={e=>setNfNumeroTemp(e.target.value)} placeholder="Ex: 12345"/>
+                </div>
+                <div>
+                  <label style={s.lb}>Valor do frete</label>
+                  <input style={s.fi} value={rawFreteNF} placeholder="R$ 0,00" onChange={e=>{
+                    const d=e.target.value.replace(/\D/g,'')
+                    setRawFreteNF(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                  }}/>
+                </div>
+              </div>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
             </div>
             <div style={s.mfoot}>
@@ -1202,7 +1236,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             </div>
             <div style={s.fg}>
               <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
-              <FF lb="Pago por *" full><input style={s.fi} value={formMensal.pago_por||''} onChange={e=>setM('pago_por',e.target.value)} placeholder="Ex: Servis Empreendimentos"/></FF>
               <FF lb="Dia de vencimento *" full><input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/></FF>
             </div>
             <div style={s.mfoot}>
@@ -1229,6 +1262,16 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <label style={s.lb}>CNPJ</label>
                 <input style={s.fi} value={formFornecedor.cnpj?fmtCNPJ(formFornecedor.cnpj):''} maxLength={18} placeholder="00.000.000/0000-00"
                   onChange={e=>setFormFornecedor(p=>({...p,cnpj:e.target.value.replace(/\D/g,'')}))}/>
+              </div>
+              <div>
+                <label style={s.lb}>Fornecedor master (opcional)</label>
+                <select style={s.fi} value={formFornecedor.masterId} onChange={e=>setFormFornecedor(p=>({...p,masterId:e.target.value}))}>
+                  <option value="">Nenhum — este é um fornecedor independente</option>
+                  {fornecedores.filter(f=>!f.fornecedor_master_id&&f.id!==fornecedorEdit?.id).map(f=>(
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+                <p style={{fontSize:11,color:'#969696',margin:'6px 0 0'}}>Escolha um master pra agrupar este fornecedor como sub-item dele (ex: BLINK IGREJA dentro de BLINK - MASTER).</p>
               </div>
             </div>
             <div style={s.mfoot}>
