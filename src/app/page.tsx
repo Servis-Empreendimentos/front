@@ -952,7 +952,22 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div>
               <div style={s.row}>
                 <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
-                <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>{
+                    const linhas=[['Numero_Orcamento','NF_Numero','Empresa','CNPJ','Obra','Data','Valor_Total','Pago'].join(';')]
+                    data.forEach(l=>{
+                      const obraNome=obras.find(o=>o.id===l.obra_id)?.nome||''
+                      linhas.push([l.numero_orcamento||'',l.nf_numero||'',l.titulo,l.cnpj||'',obraNome,l.data,String(l.valor_total).replace('.',','),l.pago?'SIM':'NAO'].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';'))
+                    })
+                    const blob=new Blob(['\ufeff'+linhas.join('\n')],{type:'text/csv;charset=utf-8;'})
+                    const url=URL.createObjectURL(blob)
+                    const a=document.createElement('a')
+                    a.href=url;a.download=`lancamentos_sistema_${new Date().toISOString().slice(0,10)}.csv`
+                    document.body.appendChild(a);a.click();document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                  }} style={{...s.btnOut,padding:'.6rem 1rem'}}><Icon name="upload" size={14}/> Exportar CSV</button>
+                  <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
+                </div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c={ACCENT_LT}/>
