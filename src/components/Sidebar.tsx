@@ -1,21 +1,22 @@
 'use client'
+import { useState, type ReactNode } from 'react'
 import Icon from './Icon'
 import { s, SIDEBAR_BG2 } from '../lib/theme'
 
-function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:boolean;onClick:()=>void}) {
+function NavItem({icon,label,active,onClick,sub}:{icon:string;label:string;active:boolean;onClick:()=>void;sub?:boolean}) {
   return (
     <button onClick={onClick} style={{
-      display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
-      padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
+      display:'flex',alignItems:'center',gap:sub?10:12,width:'100%',textAlign:'left',
+      padding:sub?'.6rem .85rem .6rem 1.1rem':'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
       background:active?'#E8F0EC':'transparent',color:'#626262',
-      fontSize:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
+      fontSize:sub?12.5:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
       transition:'background .15s, color .15s, border-color .15s',
     }}
     onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2;e.currentTarget.style.color='#626262'}}}
     onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color='#626262'}}}
     >
-      <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3'}}>
-        <Icon name={icon} size={16} color="#626262"/>
+      <span style={{width:sub?24:28,height:sub?24:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3',flex:'0 0 auto'}}>
+        <Icon name={icon} size={sub?14:16} color="#626262"/>
       </span>
       {label}
       {active&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'#748F84'}}/>}
@@ -23,7 +24,34 @@ function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:bo
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'
+function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;open:boolean;onToggle:()=>void;children:ReactNode}) {
+  return (
+    <div>
+      <button onClick={onToggle} style={{
+        display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
+        padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
+        background:'transparent',color:'#626262',fontSize:13,fontWeight:600,fontFamily:'inherit',marginBottom:4,
+        transition:'background .15s',
+      }}
+      onMouseEnter={e=>(e.currentTarget.style.background=SIDEBAR_BG2)}
+      onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
+      >
+        <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#F1F5F3',flex:'0 0 auto'}}>
+          <Icon name={icon} size={16} color="#626262"/>
+        </span>
+        {label}
+        <span style={{marginLeft:'auto',transition:'transform .15s',transform:open?'rotate(90deg)':'rotate(0deg)',display:'inline-flex'}}>
+          <Icon name="chevronRight" size={13} color="#969696"/>
+        </span>
+      </button>
+      {open&&<div style={{marginBottom:2}}>{children}</div>}
+    </div>
+  )
+}
+
+type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'
+
+const FINANCEIRO_ABAS: Aba[] = ['lancamentos','folha','mensais']
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -35,6 +63,7 @@ export default function Sidebar({
   onNovoOrcamento: ()=>void
   onSair: ()=>void
 }) {
+  const [financeiroAberto,setFinanceiroAberto]=useState<boolean>(FINANCEIRO_ABAS.includes(aba))
   const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'
   return (
     <aside className="sidebar-shell" style={s.sidebar}>
@@ -62,7 +91,7 @@ export default function Sidebar({
 
       <div style={{height:1,background:'#E2EAE6',margin:'.7rem 1.15rem 1rem'}}/>
 
-      <div style={{padding:'0 .85rem',flex:1}}>
+      <div style={{padding:'0 .85rem',flex:1,overflowY:'auto'}}>
         <p style={{fontSize:9,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
 
         {role==='entregador'?(
@@ -72,9 +101,14 @@ export default function Sidebar({
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
             <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
-            <NavItem icon="fileText" label="Lançamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+
+            <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
+              <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+              <NavItem sub icon="users" label="Folha de Pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
+              <NavItem sub icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
+            </NavGroup>
+
             <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
-            <NavItem icon="refresh" label="Contas mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
           </>
         )}
       </div>

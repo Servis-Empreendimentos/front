@@ -12,6 +12,8 @@ const SUPA_HEADERS = {
 const LOCAL_LANCAMENTOS_KEY = 'servis.lancamentos.v1'
 const LOCAL_FORNECEDORES_KEY = 'servis.fornecedores.v1'
 const LOCAL_OBRAS_KEY = 'servis.obras.v1'
+const LOCAL_FUNCIONARIOS_KEY = 'servis.funcionarios.v1'
+const LOCAL_PAGAMENTOS_FUNC_KEY = 'servis.pagamentos-funcionario.v1'
 const LOCAL_ACCOUNTS_KEY = 'servis.contas-mensais.v1'
 const LOCAL_PAYMENTS_KEY = 'servis.pagamentos-mensais.v1'
 
@@ -173,6 +175,25 @@ export type PagamentoContaMensal = {
   criado_em?: string
 }
 
+export type Funcionario = {
+  id: string
+  nome: string
+  cargo?: string | null
+  salario_base: number
+  obra_id?: string | null
+  ativo: boolean
+  criado_em?: string
+}
+
+export type PagamentoFuncionario = {
+  id: string
+  funcionario_id: string
+  valor: number
+  tipo: 'salario' | 'adiantamento' | 'vale' | 'outro'
+  data_pagamento: string
+  criado_em?: string
+}
+
 export type Fornecedor = {
   id: string
   nome: string
@@ -208,6 +229,8 @@ export const fmtCNPJ = (v: string) => {
 const localLancamentos = () => readLocal<Lancamento[]>(LOCAL_LANCAMENTOS_KEY, [])
 const localFornecedores = () => readLocal<Fornecedor[]>(LOCAL_FORNECEDORES_KEY, [])
 const localObras = () => readLocal<Obra[]>(LOCAL_OBRAS_KEY, [])
+const localFuncionarios = () => readLocal<Funcionario[]>(LOCAL_FUNCIONARIOS_KEY, [])
+const localPagamentosFunc = () => readLocal<PagamentoFuncionario[]>(LOCAL_PAGAMENTOS_FUNC_KEY, [])
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
 
@@ -215,12 +238,12 @@ export const api = {
   categorias: async () => safeRead<any[]>('/api/categorias', 'categorias?order=nome.asc', []),
 
   listar: async (f: { status_processo?: string; recorrente?: string; obra_id?: string } = {}) => {
-    const backend = new URLSearchParams({ order: 'criado_em.desc' })
-    const supabase = new URLSearchParams({ order: 'criado_em.desc' })
+    const backend = new URLSearchParams({ order: 'data.desc,criado_em.desc' })
+    const supabase = new URLSearchParams({ order: 'data.desc,criado_em.desc' })
     if (f.status_processo) { backend.set('status_processo', f.status_processo); supabase.set('status_processo', `eq.${f.status_processo}`) }
     if (f.recorrente) { backend.set('recorrente', f.recorrente); supabase.set('recorrente', `eq.${f.recorrente}`) }
     if (f.obra_id) { backend.set('obra_id', f.obra_id); supabase.set('obra_id', `eq.${f.obra_id}`) }
-    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id))
+    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id)).sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b.criado_em||'').localeCompare(a.criado_em||''))
     const remote = await safeRead<Lancamento[] | null>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`, null)
     if (remote !== null) return API_BASE ? remote : remote.map(item => ({ ...item, parcelas: [], itens: [] }))
     return fallback
@@ -419,6 +442,54 @@ export const api = {
   atualizarObra: async (id: string, body: { nome?: string; endereco?: string | null; ativa?: boolean }) => {
     try { await readRemote(`/api/obras/${id}`, `obras?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
     catch { writeLocal(LOCAL_OBRAS_KEY, localObras().map(item => item.id === id ? { ...item, ...body } : item)) }
+  },
+
+  listarFuncionarios: async (): Promise<Funcionario[]> => safeRead<Funcionario[] | null>('/api/funcionarios', 'funcionarios?order=nome.asc', null).then(remote => remote === null ? localFuncionarios() : remote),
+
+  criarFuncionario: async (payload: { nome: string; cargo?: string | null; salario_base: number; obra_id?: string | null }) => {
+    try {
+      return await readRemote<Funcionario>(
+        '/api/funcionarios',
+        'funcionarios',
+        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...payload, ativo: true }) },
+      ).then((result: any) => Array.isArray(result) ? result[0] : result)
+    } catch {
+      const funcionario: Funcionario = { id: localId('funcionario'), nome: payload.nome, cargo: payload.cargo || null, salario_base: payload.salario_base, obra_id: payload.obra_id || null, ativo: true, criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_FUNCIONARIOS_KEY, [funcionario, ...localFuncionarios()])
+      return funcionario
+    }
+  },
+
+  atualizarFuncionario: async (id: string, body: { nome?: string; cargo?: string | null; salario_base?: number; obra_id?: string | null; ativo?: boolean }) => {
+    try { await readRemote(`/api/funcionarios/${id}`, `funcionarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
+    catch { writeLocal(LOCAL_FUNCIONARIOS_KEY, localFuncionarios().map(item => item.id === id ? { ...item, ...body } : item)) }
+  },
+
+  listarPagamentosFuncionarios: async (): Promise<PagamentoFuncionario[]> => safeRead<PagamentoFuncionario[] | null>('/api/pagamentos-funcionario', 'pagamentos_funcionario?order=data_pagamento.desc', null).then(remote => remote === null ? localPagamentosFunc() : remote),
+
+  listarPagamentosDoFuncionario: async (funcionarioId: string): Promise<PagamentoFuncionario[]> => {
+    const todos = await safeRead<PagamentoFuncionario[] | null>('/api/pagamentos-funcionario', `pagamentos_funcionario?funcionario_id=eq.${encodeURIComponent(funcionarioId)}&order=data_pagamento.desc`, null)
+    if (todos !== null) return API_BASE ? todos.filter(p => p.funcionario_id === funcionarioId) : todos
+    return localPagamentosFunc().filter(item => item.funcionario_id === funcionarioId)
+  },
+
+  registrarPagamentoFuncionario: async (funcionario_id: string, valor: number, data_pagamento: string, tipo: PagamentoFuncionario['tipo'] = 'salario') => {
+    try {
+      return await readRemote<PagamentoFuncionario>(
+        '/api/pagamentos-funcionario',
+        'pagamentos_funcionario',
+        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ funcionario_id, valor, tipo, data_pagamento }) },
+      ).then((result: any) => Array.isArray(result) ? result[0] : result)
+    } catch {
+      const local: PagamentoFuncionario = { id: localId('pagamento-func'), funcionario_id, valor, tipo, data_pagamento, criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_PAGAMENTOS_FUNC_KEY, [local, ...localPagamentosFunc()])
+      return local
+    }
+  },
+
+  excluirPagamentoFuncionario: async (id: string) => {
+    try { await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
+    catch { writeLocal(LOCAL_PAGAMENTOS_FUNC_KEY, localPagamentosFunc().filter(item => item.id !== id)) }
   },
 
   // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.

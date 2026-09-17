@@ -1,12 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
 import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
+import FolhaPagamentoView from '../components/FolhaPagamentoView'
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
@@ -29,13 +30,15 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
   const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
   const [obras,setObras]=useState<Obra[]>([])
+  const [funcionarios,setFuncionarios]=useState<Funcionario[]>([])
+  const [pagamentosFuncionarios,setPagamentosFuncionarios]=useState<PagamentoFuncionario[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
@@ -48,6 +51,17 @@ export default function Home() {
   const [modalObra,setModalObra]=useState(false)
   const [obraEdit,setObraEdit]=useState<Obra|null>(null)
   const [formObra,setFormObra]=useState<{nome:string;endereco:string}>({nome:'',endereco:''})
+  const [searchFuncionario,setSearchFuncionario]=useState('')
+  const [viewFolha,setViewFolha]=useState<'lista'|'grade'>('lista')
+  const [modalFuncionario,setModalFuncionario]=useState(false)
+  const [funcionarioEdit,setFuncionarioEdit]=useState<Funcionario|null>(null)
+  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',obraId:''})
+  const [modalPagarFuncionario,setModalPagarFuncionario]=useState<Funcionario|null>(null)
+  const [valorPagarFuncionario,setValorPagarFuncionario]=useState('')
+  const [dataPagarFuncionario,setDataPagarFuncionario]=useState('')
+  const [tipoPagarFuncionario,setTipoPagarFuncionario]=useState<'salario'|'adiantamento'|'vale'|'outro'>('salario')
+  const [modalHistoricoFuncionario,setModalHistoricoFuncionario]=useState<Funcionario|null>(null)
+  const [historicoFuncionario,setHistoricoFuncionario]=useState<PagamentoFuncionario[]>([])
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -108,15 +122,17 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,pagMensais,listaObras]=await Promise.all([
+      const [lista,mensais,categorias,forns,pagMensais,listaObras,listaFuncionarios,listaPagamentosFuncionarios]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
         api.listarPagamentosMensais(),
         api.listarObras(),
+        api.listarFuncionarios(),
+        api.listarPagamentosFuncionarios(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
     } catch {if(!silent) showToast('Erro ao carregar dados',false)}
     finally {if(!silent) setLoading(false)}
   },[fPipe,fRec,fObra])
@@ -447,6 +463,66 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const handleToggleObra=async(o:Obra)=>{
     try { await api.atualizarObra(o.id,{ativa:!o.ativa}); showToast(o.ativa?'Obra pausada':'Obra reativada'); load() }
     catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+  }
+
+  const openNovoFuncionario=()=>{
+    setFuncionarioEdit(null)
+    setFormFuncionario({nome:'',cargo:'',salarioBase:'',obraId:''})
+    setModalFuncionario(true)
+  }
+  const openEditarFuncionario=(f:Funcionario)=>{
+    setFuncionarioEdit(f)
+    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',obraId:f.obra_id||''})
+    setModalFuncionario(true)
+  }
+  const handleSalvarFuncionario=async()=>{
+    if(!formFuncionario.nome.trim()) return showToast('Informe o nome do funcionário',false)
+    setSaving(true)
+    try {
+      const salario=parseFloat(formFuncionario.salarioBase.replace(/\D/g,''))/100||0
+      if(funcionarioEdit) {
+        await api.atualizarFuncionario(funcionarioEdit.id,{nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        showToast('Funcionário atualizado!')
+      } else {
+        await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        showToast('Funcionário cadastrado!')
+      }
+      setModalFuncionario(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+
+  const abrirPagarFuncionario=(f:Funcionario, dataSugerida?:string)=>{
+    setModalPagarFuncionario(f)
+    setValorPagarFuncionario(f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+    setDataPagarFuncionario(dataSugerida || new Date().toISOString().slice(0,10))
+    setTipoPagarFuncionario('salario')
+  }
+
+  const handleRegistrarPagamentoFuncionario=async()=>{
+    if(!modalPagarFuncionario||!valorPagarFuncionario||!dataPagarFuncionario) return showToast('Preencha valor e data',false)
+    setSaving(true)
+    try {
+      const valor=parseFloat(valorPagarFuncionario.replace(/\D/g,''))/100
+      await api.registrarPagamentoFuncionario(modalPagarFuncionario.id,valor,dataPagarFuncionario,tipoPagarFuncionario)
+      setModalPagarFuncionario(null);showToast('Pagamento registrado!');load()
+    } catch (err:any) {
+      showToast('Erro: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+
+  const abrirHistoricoFuncionario=async(f:Funcionario)=>{
+    setModalHistoricoFuncionario(f)
+    const h=await api.listarPagamentosDoFuncionario(f.id)
+    setHistoricoFuncionario(h)
+  }
+
+  const handleExcluirPagamentoFuncionario=async(id:string)=>{
+    if(!confirm('Excluir este pagamento?')) return
+    await api.excluirPagamentoFuncionario(id)
+    if(modalHistoricoFuncionario) { const h=await api.listarPagamentosDoFuncionario(modalHistoricoFuncionario.id); setHistoricoFuncionario(h) }
+    showToast('Pagamento excluído!');load()
   }
 
   const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
@@ -785,6 +861,22 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             />
           )}
 
+          {role!=='entregador'&&aba==='folha'&&(
+            <FolhaPagamentoView
+              funcionarios={funcionarios}
+              pagamentos={pagamentosFuncionarios}
+              obras={obras}
+              searchFuncionario={searchFuncionario}
+              setSearchFuncionario={setSearchFuncionario}
+              viewFolha={viewFolha}
+              setViewFolha={setViewFolha}
+              onNovoFuncionario={openNovoFuncionario}
+              onPagar={abrirPagarFuncionario}
+              onHistorico={abrirHistoricoFuncionario}
+              onAtualizar={()=>load()}
+            />
+          )}
+
           {role!=='entregador'&&aba==='lancamentos'&&(
             <div>
               <div style={s.row}>
@@ -832,7 +924,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor dos Itens')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                       </tr>
                     </thead>
                     <tbody>
@@ -997,7 +1089,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:12}}>
                     <div>
-                      <p style={{fontSize:10,color:'#7D7D7D',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
+                      <p style={{fontSize:10,color:'#7D7D7D',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor dos Itens</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#626262'}}>{fmtR(detalhe.valor_produtos||0)}</p>
                     </div>
                     <div>
@@ -1441,6 +1533,173 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div style={s.mfoot}>
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagarConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarConta(null)}>
+          <div style={{...s.modal,width:420}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarConta.titulo}</h3>
+              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div><label style={s.lb}>Valor pago *</label>
+                <input style={s.fi} value={valorPagarConta} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setValorPagarConta(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+              </div>
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={dataPagarConta} onChange={e=>setDataPagarConta(e.target.value)}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagarConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleRegistrarPagamentoConta} disabled={saving||!valorPagarConta||!dataPagarConta} style={{...s.btnGrn,opacity:(saving||!valorPagarConta||!dataPagarConta)?0.6:1}}>
+                {saving?'Salvando...':'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalHistoricoConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoConta(null)}>
+          <div style={{...s.modal,width:500}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoConta.titulo} — Histórico</h3>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              {historicoConta.length===0?(
+                <p style={{fontSize:13,color:'#7D7D7D',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+              ):(
+                <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
+                  {historicoConta.map(p=>(
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
+                      <div>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)}</p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                      </div>
+                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777'}}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{const c=modalHistoricoConta;setModalHistoricoConta(null);abrirPagarConta(c)}} style={s.btnGrn}>
+                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
+              </button>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFuncionario(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{funcionarioEdit?'Editar Funcionário':'Novo Funcionário'}</h3>
+              <button onClick={()=>setModalFuncionario(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome *" full><input style={s.fi} value={formFuncionario.nome} onChange={e=>setFormFuncionario(p=>({...p,nome:e.target.value}))} placeholder="Ex: João da Silva"/></FF>
+              <FF lb="Cargo"><input style={s.fi} value={formFuncionario.cargo} onChange={e=>setFormFuncionario(p=>({...p,cargo:e.target.value}))} placeholder="Ex: Pedreiro"/></FF>
+              <FF lb="Salário base *">
+                <input style={s.fi} value={formFuncionario.salarioBase} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setFormFuncionario(p=>({...p,salarioBase:d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):''}))
+                }}/>
+              </FF>
+              <FF lb="Obra" full>
+                <select style={s.fi} value={formFuncionario.obraId} onChange={e=>setFormFuncionario(p=>({...p,obraId:e.target.value}))}>
+                  <option value="">Sem obra vinculada</option>
+                  {obras.filter(o=>o.ativa).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              </FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalFuncionario(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarFuncionario} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(funcionarioEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagarFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarFuncionario(null)}>
+          <div style={{...s.modal,width:420}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarFuncionario.nome}</h3>
+              <button onClick={()=>setModalPagarFuncionario(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div><label style={s.lb}>Tipo *</label>
+                <select style={s.fi} value={tipoPagarFuncionario} onChange={e=>setTipoPagarFuncionario(e.target.value as any)}>
+                  <option value="salario">Salário</option>
+                  <option value="adiantamento">Adiantamento</option>
+                  <option value="vale">Vale</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+              <div><label style={s.lb}>Valor *</label>
+                <input style={s.fi} value={valorPagarFuncionario} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setValorPagarFuncionario(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+              </div>
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={dataPagarFuncionario} onChange={e=>setDataPagarFuncionario(e.target.value)}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagarFuncionario(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleRegistrarPagamentoFuncionario} disabled={saving||!valorPagarFuncionario||!dataPagarFuncionario} style={{...s.btnGrn,opacity:(saving||!valorPagarFuncionario||!dataPagarFuncionario)?0.6:1}}>
+                {saving?'Salvando...':'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalHistoricoFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoFuncionario(null)}>
+          <div style={{...s.modal,width:500}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoFuncionario.nome} — Histórico</h3>
+              <button onClick={()=>setModalHistoricoFuncionario(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              {historicoFuncionario.length===0?(
+                <p style={{fontSize:13,color:'#7D7D7D',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+              ):(
+                <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
+                  {historicoFuncionario.map(p=>(
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
+                      <div>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)} <span style={{fontSize:11,fontWeight:600,color:'#7D7D7D',textTransform:'capitalize'}}>· {p.tipo}</span></p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                      </div>
+                      <button onClick={()=>handleExcluirPagamentoFuncionario(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777'}}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{const f=modalHistoricoFuncionario;setModalHistoricoFuncionario(null);abrirPagarFuncionario(f)}} style={s.btnGrn}>
+                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
+              </button>
+              <button onClick={()=>setModalHistoricoFuncionario(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>
