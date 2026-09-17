@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -29,12 +29,13 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
   const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
+  const [obras,setObras]=useState<Obra[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
@@ -43,6 +44,10 @@ export default function Home() {
   const [search,setSearch]=useState('')
   const [searchForn,setSearchForn]=useState('')
   const [searchMensal,setSearchMensal]=useState('')
+  const [fObra,setFObra]=useState('')
+  const [modalObra,setModalObra]=useState(false)
+  const [obraEdit,setObraEdit]=useState<Obra|null>(null)
+  const [formObra,setFormObra]=useState<{nome:string;endereco:string}>({nome:'',endereco:''})
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -103,17 +108,18 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,pagMensais]=await Promise.all([
-        api.listar({status_processo:fPipe,recorrente:fRec}),
+      const [lista,mensais,categorias,forns,pagMensais,listaObras]=await Promise.all([
+        api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
         api.listarPagamentosMensais(),
+        api.listarObras(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras)
     } catch {if(!silent) showToast('Erro ao carregar dados',false)}
     finally {if(!silent) setLoading(false)}
-  },[fPipe,fRec])
+  },[fPipe,fRec,fObra])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
@@ -124,7 +130,7 @@ export default function Home() {
   },[logado,load])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',proposta_url:null})
+    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
@@ -412,6 +418,37 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     }
   }
 
+  const openNovaObra=()=>{
+    setObraEdit(null)
+    setFormObra({nome:'',endereco:''})
+    setModalObra(true)
+  }
+  const openEditarObra=(o:Obra)=>{
+    setObraEdit(o)
+    setFormObra({nome:o.nome,endereco:o.endereco||''})
+    setModalObra(true)
+  }
+  const handleSalvarObra=async()=>{
+    if(!formObra.nome.trim()) return showToast('Informe o nome da obra',false)
+    setSaving(true)
+    try {
+      if(obraEdit) {
+        await api.atualizarObra(obraEdit.id,{nome:formObra.nome.trim(),endereco:formObra.endereco||null})
+        showToast('Obra atualizada!')
+      } else {
+        await api.criarObra(formObra.nome.trim(),formObra.endereco||undefined)
+        showToast('Obra cadastrada!')
+      }
+      setModalObra(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+  const handleToggleObra=async(o:Obra)=>{
+    try { await api.atualizarObra(o.id,{ativa:!o.ativa}); showToast(o.ativa?'Obra pausada':'Obra reativada'); load() }
+    catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+  }
+
   const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
     setModalPagarConta(c)
     setValorPagarConta('')
@@ -479,6 +516,17 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
+  const obrasAtivas=obras.filter(o=>o.ativa)
+  const porObra=[
+    ...obrasAtivas.map(o=>{
+      const lancs=data.filter(l=>l.obra_id===o.id)
+      return {obra:o,total:lancs.reduce((s,l)=>s+l.valor_total,0),saldo:lancs.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:lancs.length}
+    }),
+    (()=>{
+      const semObra=data.filter(l=>!l.obra_id)
+      return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
+    })(),
+  ].filter(item=>item.qtd>0)
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -554,6 +602,36 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Quanto sai, por obra</span>
+                  <button onClick={()=>setAba('obras')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Gerenciar obras →</button>
+                </div>
+                {porObra.length===0?(
+                  <p style={{padding:'2rem',textAlign:'center',color:'#7D7D7D',fontSize:12}}>Nenhum lançamento vinculado a obra ainda. Cadastre uma obra e vincule os lançamentos a ela.</p>
+                ):(
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                        {th('Obra')}{th('Lançamentos')}{th('Total gasto')}{th('Falta pagar')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {porObra.map(item=>(
+                        <tr key={item.obra.id||'sem-obra'} style={{borderBottom:'1px solid #E2E6E4',cursor:item.obra.id?'pointer':'default'}}
+                          onClick={()=>{if(item.obra.id){setFObra(item.obra.id);setAba('lancamentos')}}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'9px 11px',fontWeight:600}}>{item.obra.nome}</td>
+                          <td style={{padding:'9px 11px',color:'#7D7D7D'}}>{item.qtd}</td>
+                          <td style={{padding:'9px 11px',fontWeight:700}}>{fmtR(item.total)}</td>
+                          <td style={{padding:'9px 11px'}}>{item.saldo>0?<span style={{color:'#777777',fontWeight:700}}>{fmtR(item.saldo)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div style={{height:16}}/>
+              <div style={s.card}>
+                <div style={s.toolbar}>
                   <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -584,6 +662,57 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 </table>
                 <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
                   <button onClick={()=>setAba('lancamentos')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver todos os lançamentos →</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='obras'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Obras</h1><p style={s.p}>Cadastre cada obra e vincule os lançamentos a ela pra ter o gasto separado por obra</p></div>
+                <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
+                <KPI l="Total de obras" v={obras.length} sv="cadastradas" c={ACCENT_LT}/>
+                <KPI l="Ativas" v={obras.filter(o=>o.ativa).length} sv="em andamento" c="#8BA59A"/>
+                <KPI l="Pausadas" v={obras.filter(o=>!o.ativa).length} sv="finalizadas ou paradas" c="#7D7D7D"/>
+              </div>
+              <div style={s.card}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Obra')}{th('Endereço')}{th('Lançamentos')}{th('Total gasto')}{th('Status')}{th('Ações')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :obras.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhuma obra cadastrada ainda</td></tr>
+                    :obras.map(o=>{
+                      const lancs=data.filter(l=>l.obra_id===o.id)
+                      const totalObra=lancs.reduce((s,l)=>s+l.valor_total,0)
+                      return (
+                        <tr key={o.id} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
+                          onClick={()=>{setFObra(o.id);setAba('lancamentos')}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'10px 11px',fontWeight:600}}>{o.nome}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{o.endereco||'—'}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{lancs.length}</td>
+                          <td style={{padding:'10px 11px',fontWeight:700}}>{fmtR(totalObra)}</td>
+                          <td style={{padding:'10px 11px'}}><Badge label={o.ativa?'Ativa':'Pausada'} bg={o.ativa?'#E8F0EC':'#EEF0EE'} color={o.ativa?ACCENT_LT:'#7D7D7D'}/></td>
+                          <td style={{padding:'10px 11px'}} onClick={e=>e.stopPropagation()}>
+                            <div style={{display:'flex',gap:8}}>
+                              <button onClick={()=>openEditarObra(o)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
+                              <button onClick={()=>handleToggleObra(o)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}>{o.ativa?'Pausar':'Reativar'}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {obras.length} obra{obras.length!==1?'s':''} cadastrada{obras.length!==1?'s':''} · clique numa linha pra ver os lançamentos dela
                 </div>
               </div>
             </div>
@@ -691,25 +820,34 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
                     <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
                   </select>
+                  <select style={s.inp} value={fObra} onChange={e=>setFObra(e.target.value)}>
+                    <option value="">Todas as obras</option>
+                    {obras.map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                  </select>
+                  {fObra&&(
+                    <button onClick={()=>setFObra('')} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar obra</button>
+                  )}
                 </div>
                 <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :filtered.length===0?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
+                      {loading?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :filtered.length===0?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
                       :filtered.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
                         const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
+                        const obraDoLanc=obras.find(o=>o.id===l.obra_id)
                         return (
                           <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                             onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                             <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11,maxWidth:110,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{obraDoLanc?.nome||'—'}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.numero_orcamento||'—'}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.nf_numero||'—'}</td>
                             <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
@@ -842,6 +980,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {([
                     ['Empresa',detalhe.titulo],
+                    ['Obra',obras.find(o=>o.id===detalhe.obra_id)?.nome||'Sem obra vinculada'],
                     ['Nº do orçamento',detalhe.numero_orcamento||'—'],
                     ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
                     ['NF Nº',detalhe.nf_numero||'—'],
@@ -1036,6 +1175,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <FF lb="Nome da empresa *" full>
                 <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
               </FF>
+              <FF lb="Obra">
+                <select style={s.fi} value={form.obra_id||''} onChange={e=>set('obra_id',e.target.value)}>
+                  <option value="">Sem obra / despesa geral</option>
+                  {obras.filter(o=>o.ativa).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              </FF>
               <FF lb="Nº do orçamento">
                 <input style={s.fi} value={form.numero_orcamento||''} placeholder="Ex.: ORC-001" onChange={e=>set('numero_orcamento',e.target.value)}/>
               </FF>
@@ -1222,6 +1367,25 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div style={s.mfoot}>
               <button onClick={()=>setModalNFItens(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarNF} disabled={loadingAnexo} style={{...s.btnTeal,opacity:loadingAnexo?0.6:1}}>{loadingAnexo?'Salvando...':'Salvar NF e itens'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalObra&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalObra(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{obraEdit?'Editar Obra':'Nova Obra'}</h3>
+              <button onClick={()=>setModalObra(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome da obra *" full><input style={s.fi} value={formObra.nome} onChange={e=>setFormObra(p=>({...p,nome:e.target.value}))} placeholder="Ex: Alojamento 01"/></FF>
+              <FF lb="Endereço" full><input style={s.fi} value={formObra.endereco} onChange={e=>setFormObra(p=>({...p,endereco:e.target.value}))} placeholder="Opcional"/></FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalObra(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarObra} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(obraEdit?'Salvar alterações':'Cadastrar')}</button>
             </div>
           </div>
         </div>

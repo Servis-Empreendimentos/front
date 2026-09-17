@@ -11,6 +11,7 @@ const SUPA_HEADERS = {
 
 const LOCAL_LANCAMENTOS_KEY = 'servis.lancamentos.v1'
 const LOCAL_FORNECEDORES_KEY = 'servis.fornecedores.v1'
+const LOCAL_OBRAS_KEY = 'servis.obras.v1'
 const LOCAL_ACCOUNTS_KEY = 'servis.contas-mensais.v1'
 const LOCAL_PAYMENTS_KEY = 'servis.pagamentos-mensais.v1'
 
@@ -111,6 +112,7 @@ export type Lancamento = {
   titulo: string
   numero_orcamento?: string | null
   cnpj?: string | null
+  obra_id?: string | null
   valor_total: number
   valor_original?: number | null
   valor_produtos?: number | null
@@ -142,6 +144,14 @@ export type Lancamento = {
   entrega_itens2?: string | null
   itens?: ItemLancamento[]
   parcelas?: Parcela[]
+}
+
+export type Obra = {
+  id: string
+  nome: string
+  endereco?: string | null
+  ativa: boolean
+  criado_em?: string
 }
 
 export type ContaMensal = {
@@ -197,18 +207,20 @@ export const fmtCNPJ = (v: string) => {
 
 const localLancamentos = () => readLocal<Lancamento[]>(LOCAL_LANCAMENTOS_KEY, [])
 const localFornecedores = () => readLocal<Fornecedor[]>(LOCAL_FORNECEDORES_KEY, [])
+const localObras = () => readLocal<Obra[]>(LOCAL_OBRAS_KEY, [])
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
 
 export const api = {
   categorias: async () => safeRead<any[]>('/api/categorias', 'categorias?order=nome.asc', []),
 
-  listar: async (f: { status_processo?: string; recorrente?: string } = {}) => {
+  listar: async (f: { status_processo?: string; recorrente?: string; obra_id?: string } = {}) => {
     const backend = new URLSearchParams({ order: 'criado_em.desc' })
     const supabase = new URLSearchParams({ order: 'criado_em.desc' })
     if (f.status_processo) { backend.set('status_processo', f.status_processo); supabase.set('status_processo', `eq.${f.status_processo}`) }
     if (f.recorrente) { backend.set('recorrente', f.recorrente); supabase.set('recorrente', `eq.${f.recorrente}`) }
-    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente))
+    if (f.obra_id) { backend.set('obra_id', f.obra_id); supabase.set('obra_id', `eq.${f.obra_id}`) }
+    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id))
     const remote = await safeRead<Lancamento[] | null>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`, null)
     if (remote !== null) return API_BASE ? remote : remote.map(item => ({ ...item, parcelas: [], itens: [] }))
     return fallback
@@ -386,6 +398,27 @@ export const api = {
   excluirFornecedor: async (id: string) => {
     try { await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
     catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().filter(item => item.id !== id)) }
+  },
+
+  listarObras: async (): Promise<Obra[]> => safeRead<Obra[] | null>('/api/obras', 'obras?order=nome.asc', null).then(remote => remote === null ? localObras() : remote),
+
+  criarObra: async (nome: string, endereco?: string) => {
+    try {
+      return await readRemote<Obra>(
+        '/api/obras',
+        'obras',
+        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, endereco: endereco || null, ativa: true }) },
+      ).then((result: any) => Array.isArray(result) ? result[0] : result)
+    } catch {
+      const obra: Obra = { id: localId('obra'), nome, endereco: endereco || null, ativa: true, criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_OBRAS_KEY, [obra, ...localObras()])
+      return obra
+    }
+  },
+
+  atualizarObra: async (id: string, body: { nome?: string; endereco?: string | null; ativa?: boolean }) => {
+    try { await readRemote(`/api/obras/${id}`, `obras?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
+    catch { writeLocal(LOCAL_OBRAS_KEY, localObras().map(item => item.id === id ? { ...item, ...body } : item)) }
   },
 
   // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.

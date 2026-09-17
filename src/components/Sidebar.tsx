@@ -23,7 +23,7 @@ function NavItem({icon,label,active,onClick}:{icon:string;label:string;active:bo
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'
+type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -70,6 +70,7 @@ export default function Sidebar({
         ):(
           <>
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
+            <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
             <NavItem icon="fileText" label="Lançamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
             <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
