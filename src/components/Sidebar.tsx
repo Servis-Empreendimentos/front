@@ -1,5 +1,5 @@
 'use client'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Icon from './Icon'
 import { s, SIDEBAR_BG2 } from '../lib/theme'
 
@@ -49,9 +49,10 @@ function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'
+type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'
 
 const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais']
+const ORCAMENTOS_ABAS: Aba[] = ['lancamentos','notas-fiscais']
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -64,7 +65,13 @@ export default function Sidebar({
   onSair: ()=>void
 }) {
   const [financeiroAberto,setFinanceiroAberto]=useState<boolean>(FINANCEIRO_ABAS.includes(aba))
+  const [orcamentosAberto,setOrcamentosAberto]=useState<boolean>(ORCAMENTOS_ABAS.includes(aba))
   const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'
+
+  useEffect(()=>{
+    if(ORCAMENTOS_ABAS.includes(aba)) setOrcamentosAberto(true)
+    if(FINANCEIRO_ABAS.includes(aba)) setFinanceiroAberto(true)
+  },[aba])
   return (
     <aside className="sidebar-shell" style={s.sidebar}>
       <div style={{padding:'1.45rem 1.15rem .8rem'}}>
@@ -101,7 +108,10 @@ export default function Sidebar({
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
             <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
-            <NavItem icon="receipt" label="Notas Fiscais" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+
+            <NavGroup icon="fileText" label="Orçamentos" open={orcamentosAberto} onToggle={()=>{setAba('lancamentos');setOrcamentosAberto(v=>!v)}}>
+              <NavItem sub icon="receipt" label="Notas Fiscais" active={aba==='notas-fiscais'} onClick={()=>setAba('notas-fiscais')}/>
+            </NavGroup>
 
             <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
               <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
