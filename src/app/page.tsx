@@ -878,8 +878,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
                 <KPI l="Meses com pagamento" v={mesesPagar.length} sv="meses registrados" c="#7D7D7D"/>
-                <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#8BA59A"/>
-                <KPI l="Fornecedores no período" v={new Set(itensNF.map(i=>i.nome)).size} sv="distintos" c="#748F84"/>
               </div>
               <div style={{display:'grid',gap:12}}>
                 {mesesPagar.length===0?(
