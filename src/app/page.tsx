@@ -12,6 +12,9 @@ import FolhaPagamentoView from '../components/FolhaPagamentoView'
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
+function isNotaFiscal(lancamento: Lancamento) {
+  return Boolean(lancamento.nf_numero || lancamento.arquivo_url || lancamento.status_processo === 'nf_recebida')
+}
 
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
@@ -30,7 +33,7 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -568,6 +571,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(fDataFim && l.data > fDataFim) return false
     return true
   })
+  const listaOrcamentos = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered
+  const totalOrcamentos = aba==='notas-fiscais' ? data.filter(isNotaFiscal).length : data.length
 
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
@@ -948,14 +953,15 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             />
           )}
 
-          {role!=='entregador'&&aba==='lancamentos'&&(
+          {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
+                <div><h1 style={s.h1}>{aba==='notas-fiscais'?'Notas Fiscais':'Orçamentos'}</h1><p style={s.p}>{aba==='notas-fiscais'?'Documentos fiscais vinculados aos orçamentos':'Controle de pagamentos, entregas e documentos da obra'}</p></div>
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={()=>{
                     const linhas=[['Numero_Orcamento','NF_Numero','Empresa','CNPJ','Obra','Data','Valor_Total','Pago'].join(';')]
-                    data.forEach(l=>{
+                    const exportData=aba==='notas-fiscais'?data.filter(isNotaFiscal):data
+                    exportData.forEach(l=>{
                       const obraNome=obras.find(o=>o.id===l.obra_id)?.nome||''
                       linhas.push([l.numero_orcamento||'',l.nf_numero||'',l.titulo,l.cnpj||'',obraNome,l.data,String(l.valor_total).replace('.',','),l.pago?'SIM':'NAO'].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';'))
                     })
@@ -970,15 +976,15 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 </div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c={ACCENT_LT}/>
-                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
-                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
-                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#748F84"/>
+                <KPI l="Total" v={totalOrcamentos} sv={`${listaOrcamentos.length} exibidos`} c={ACCENT_LT}/>
+                <KPI l="Valor total" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+lancamento.valor_total,0))} sv="soma dos contratos" c="#7D7D7D"/>
+                <KPI l="Saldo devedor" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+(lancamento.saldo_devedor||0),0))} sv="valores em aberto" c="#777777"/>
+                <KPI l="Pagos" v={listaOrcamentos.filter(lancamento=>lancamento.pago).length} sv="lançamentos quitados" c="#8BA59A"/>
+                <KPI l="Entregas pendentes" v={listaOrcamentos.filter(lancamento=>lancamento.status_entrega==='pendente').length} sv="aguardando confirmação" c="#748F84"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>{aba==='notas-fiscais'?'Notas fiscais vinculadas':'Todos os orçamentos'}</span>
                   <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <label style={{fontSize:11,color:'#7D7D7D',fontWeight:600}}>De:</label>
@@ -1015,8 +1021,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                     </thead>
                     <tbody>
                       {loading?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :filtered.length===0?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
-                      :filtered.map(l=>{
+                      :listaOrcamentos.length===0?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum registro'}</td></tr>
+                      :listaOrcamentos.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
                         const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
@@ -1046,7 +1052,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   </table>
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {filtered.length} registro{filtered.length!==1?'s':''} de {data.length} total
+                  {listaOrcamentos.length} registro{listaOrcamentos.length!==1?'s':''} de {totalOrcamentos} total
                 </div>
               </div>
             </div>
