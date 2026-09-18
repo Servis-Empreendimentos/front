@@ -1,22 +1,22 @@
 'use client'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { s, SIDEBAR_BG2 } from '../lib/theme'
 
-function NavItem({icon,label,active,onClick,sub}:{icon:string;label:string;active:boolean;onClick:()=>void;sub?:boolean}) {
+function NavItem({icon,label,active,onClick,indent=false}:{icon:string;label:string;active:boolean;onClick:()=>void;indent?:boolean}) {
   return (
     <button onClick={onClick} style={{
-      display:'flex',alignItems:'center',gap:sub?10:12,width:'100%',textAlign:'left',
-      padding:sub?'.6rem .85rem .6rem 1.1rem':'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-      background:active?'#E8F0EC':'transparent',color:'#626262',
-      fontSize:sub?12.5:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
+      display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
+      padding:indent?'.62rem .8rem .62rem 1.15rem':'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
+      background:active?'#E8F0EC':'transparent',color:active?'#526E63':'#626262',
+      fontSize:indent?12:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
       transition:'background .15s, color .15s, border-color .15s',
     }}
     onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2;e.currentTarget.style.color='#626262'}}}
     onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent';e.currentTarget.style.color='#626262'}}}
     >
-      <span style={{width:sub?24:28,height:sub?24:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3',flex:'0 0 auto'}}>
-        <Icon name={icon} size={sub?14:16} color="#626262"/>
+      <span style={{width:indent?25:28,height:indent?25:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3'}}>
+        <Icon name={icon} size={indent?14:16} color={active?'#526E63':'#626262'}/>
       </span>
       {label}
       {active&&<span style={{marginLeft:'auto',width:5,height:5,borderRadius:'50%',background:'#748F84'}}/>}
@@ -24,34 +24,30 @@ function NavItem({icon,label,active,onClick,sub}:{icon:string;label:string;activ
   )
 }
 
-function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;open:boolean;onToggle:()=>void;children:ReactNode}) {
+function GroupButton({open,active,onClick}:{open:boolean;active:boolean;onClick:()=>void}) {
   return (
-    <div>
-      <button onClick={onToggle} style={{
-        display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
-        padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-        background:'transparent',color:'#626262',fontSize:13,fontWeight:600,fontFamily:'inherit',marginBottom:4,
-        transition:'background .15s',
-      }}
-      onMouseEnter={e=>(e.currentTarget.style.background=SIDEBAR_BG2)}
-      onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
-      >
-        <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#F1F5F3',flex:'0 0 auto'}}>
-          <Icon name={icon} size={16} color="#626262"/>
-        </span>
-        {label}
-        <span style={{marginLeft:'auto',transition:'transform .15s',transform:open?'rotate(90deg)':'rotate(0deg)',display:'inline-flex'}}>
-          <Icon name="chevronRight" size={13} color="#969696"/>
-        </span>
-      </button>
-      {open&&<div style={{marginBottom:2}}>{children}</div>}
-    </div>
+    <button onClick={onClick} style={{
+      display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
+      padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
+      background:active?'#E8F0EC':'transparent',color:active?'#526E63':'#626262',
+      fontSize:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
+      transition:'background .15s, color .15s',
+    }}
+    onMouseEnter={e=>{if(!active){e.currentTarget.style.background=SIDEBAR_BG2}}}
+    onMouseLeave={e=>{if(!active){e.currentTarget.style.background='transparent'}}}
+    >
+      <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3'}}>
+        <Icon name="fileText" size={16} color={active?'#526E63':'#626262'}/>
+      </span>
+      <span style={{flex:1}}>Orçamentos</span>
+      <span style={{display:'inline-flex',transform:open?'rotate(180deg)':'none',transition:'transform .15s'}}>
+        <Icon name="chevronDown" size={15} color="#748F84"/>
+      </span>
+    </button>
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'
-
-const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais']
+type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -63,8 +59,13 @@ export default function Sidebar({
   onNovoOrcamento: ()=>void
   onSair: ()=>void
 }) {
-  const [financeiroAberto,setFinanceiroAberto]=useState<boolean>(FINANCEIRO_ABAS.includes(aba))
+  const [orcamentosOpen,setOrcamentosOpen]=useState(aba==='lancamentos'||aba==='notas-fiscais')
   const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'
+
+  useEffect(()=>{
+    if(aba==='lancamentos'||aba==='notas-fiscais') setOrcamentosOpen(true)
+  },[aba])
+
   return (
     <aside className="sidebar-shell" style={s.sidebar}>
       <div style={{padding:'1.45rem 1.15rem .8rem'}}>
@@ -91,7 +92,7 @@ export default function Sidebar({
 
       <div style={{height:1,background:'#E2EAE6',margin:'.7rem 1.15rem 1rem'}}/>
 
-      <div style={{padding:'0 .85rem',flex:1,overflowY:'auto'}}>
+      <div style={{padding:'0 .85rem',flex:1}}>
         <p style={{fontSize:9,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
 
         {role==='entregador'?(
@@ -99,17 +100,16 @@ export default function Sidebar({
         ):(
           <>
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
-            <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
+            <GroupButton open={orcamentosOpen} active={aba==='lancamentos'||aba==='notas-fiscais'} onClick={()=>{setOrcamentosOpen(value=>!value);setAba('lancamentos')}}/>
+            {orcamentosOpen&&(
+              <div style={{margin:'-1px 0 5px',paddingLeft:'.45rem',borderLeft:'1px solid #DDE9E3'}}>
+                <NavItem icon="fileText" label="Todos os orçamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')} indent/>
+                <NavItem icon="receipt" label="Notas fiscais" active={aba==='notas-fiscais'} onClick={()=>setAba('notas-fiscais')} indent/>
+              </div>
+            )}
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
-            <NavItem icon="receipt" label="Notas Fiscais" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
-
-            <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
-              <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
-              <NavItem sub icon="users" label="Folha de Pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
-              <NavItem sub icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
-            </NavGroup>
-
             <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
+            <NavItem icon="refresh" label="Contas mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
           </>
         )}
       </div>
