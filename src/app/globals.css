@@ -127,8 +127,15 @@ tbody td { border-bottom-color: var(--line) !important; }
 .budget-filter-search { min-width: 190px; }
 .budget-filter-obra { min-width: 180px; }
 .budget-table-wrap {
-  overflow: auto;
-  max-height: 540px;
+  overflow: visible;
+  max-height: none;
+}
+.budget-card {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  overflow: visible !important;
 }
 .budget-table {
   min-width: 940px;

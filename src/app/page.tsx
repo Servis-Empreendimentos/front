@@ -1037,7 +1037,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                       <col style={{width:'22%'}}/><col style={{width:'13%'}}/><col style={{width:'12%'}}/><col style={{width:'18%'}}/>
                       <col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'15%'}}/>
                     </colgroup>
-                    <thead style={{position:'sticky',top:0,zIndex:2}}>
+                    <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
                         {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo devedor')}{th('Nota fiscal')}
                       </tr>
