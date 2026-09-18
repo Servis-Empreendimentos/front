@@ -145,6 +145,11 @@ export default function Home() {
     finally {if(!silent) setLoading(false)}
   },[fPipe,fRec,fObra])
 
+  // Limpa qualquer resíduo de dados salvos localmente por versões antigas do
+  // sistema (antes do proxy /api/data existir), que podiam inflar totais
+  // silenciosamente em PCs específicos. Roda uma vez, sozinho, ao abrir o site.
+  useEffect(()=>{ api.limparCacheLocal() },[])
+
   useEffect(()=>{if(logado)load()},[load,logado])
 
   useEffect(()=>{
