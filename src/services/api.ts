@@ -17,6 +17,13 @@ const LOCAL_FUNCIONARIOS_KEY = 'servis.funcionarios.v1'
 const LOCAL_PAGAMENTOS_FUNC_KEY = 'servis.pagamentos-funcionario.v1'
 const LOCAL_ACCOUNTS_KEY = 'servis.contas-mensais.v1'
 const LOCAL_PAYMENTS_KEY = 'servis.pagamentos-mensais.v1'
+const SHARED_LOCAL_KEYS = [
+  LOCAL_LANCAMENTOS_KEY,
+  LOCAL_FORNECEDORES_KEY,
+  LOCAL_OBRAS_KEY,
+  LOCAL_FUNCIONARIOS_KEY,
+  LOCAL_PAGAMENTOS_FUNC_KEY,
+]
 
 type RequestOptions = RequestInit & { timeoutMs?: number }
 
@@ -63,18 +70,14 @@ async function supabaseRequest<T>(path: string, options: RequestInit = {}): Prom
 }
 
 async function readRemote<T>(backendPath: string, supabasePath: string, options: RequestOptions = {}): Promise<T> {
-  if (API_BASE) {
-    try {
-      return await request<T>(backendPath, options)
-    } catch {
-      // O backend antigo pode estar desligado. O banco oficial continua sendo o Supabase.
+  try {
+    return await supabaseRequest<T>(supabasePath, options)
+  } catch (supabaseError) {
+    if (API_BASE) {
+      try { return await request<T>(backendPath, options) } catch {}
     }
+    throw supabaseError
   }
-  return supabaseRequest<T>(supabasePath, options)
-}
-
-async function safeRead<T>(backendPath: string, supabasePath: string, fallback: T, options: RequestOptions = {}): Promise<T> {
-  try { return await readRemote<T>(backendPath, supabasePath, options) } catch { return fallback }
 }
 
 function readLocal<T>(key: string, fallback: T): T {
@@ -242,24 +245,15 @@ export const fmtCNPJ = (v: string) => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
 }
 
-const localLancamentos = () => readLocal<Lancamento[]>(LOCAL_LANCAMENTOS_KEY, [])
-const localFornecedores = () => readLocal<Fornecedor[]>(LOCAL_FORNECEDORES_KEY, [])
-const localObras = () => readLocal<Obra[]>(LOCAL_OBRAS_KEY, [])
-const localFuncionarios = () => readLocal<Funcionario[]>(LOCAL_FUNCIONARIOS_KEY, [])
-const localPagamentosFunc = () => readLocal<PagamentoFuncionario[]>(LOCAL_PAGAMENTOS_FUNC_KEY, [])
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
 
-function mergeLocalLancamentos(remote: Lancamento[], local: Lancamento[]) {
-  const idsRemotos = new Set(remote.map(item => item.id))
-  const somenteLocais = local.filter(item => !idsRemotos.has(item.id))
-  return [...remote, ...somenteLocais].sort((a, b) =>
-    (b.data || '').localeCompare(a.data || '') || (b.criado_em || '').localeCompare(a.criado_em || ''),
-  )
-}
-
 export const api = {
-  categorias: async () => safeRead<any[]>('/api/categorias', 'categorias?order=nome.asc', []),
+  limparCacheLocal: () => {
+    if (typeof window !== 'undefined') SHARED_LOCAL_KEYS.forEach(key => window.localStorage.removeItem(key))
+  },
+
+  categorias: async () => readRemote<any[]>('/api/categorias', 'categorias?order=nome.asc'),
 
   listar: async (f: { status_processo?: string; recorrente?: string; obra_id?: string } = {}) => {
     const backend = new URLSearchParams({ order: 'data.desc,criado_em.desc' })
@@ -267,49 +261,32 @@ export const api = {
     if (f.status_processo) { backend.set('status_processo', f.status_processo); supabase.set('status_processo', `eq.${f.status_processo}`) }
     if (f.recorrente) { backend.set('recorrente', f.recorrente); supabase.set('recorrente', `eq.${f.recorrente}`) }
     if (f.obra_id) { backend.set('obra_id', f.obra_id); supabase.set('obra_id', `eq.${f.obra_id}`) }
-    const locais = localLancamentos()
-    const fallback = locais.filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id)).sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b.criado_em||'').localeCompare(a.criado_em||''))
-    const remote = await safeRead<Lancamento[] | null>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`, null)
-    if (remote !== null) {
-      const combinado = mergeLocalLancamentos(remote, locais).filter(item =>
-        (!f.status_processo || item.status_processo === f.status_processo) &&
-        (!f.recorrente || String(item.recorrente) === f.recorrente) &&
-        (!f.obra_id || item.obra_id === f.obra_id),
-      )
-      return API_BASE ? combinado : combinado.map(item => ({ ...item, parcelas: [], itens: [] }))
-    }
-    return fallback
+    return readRemote<Lancamento[]>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`)
   },
 
   buscar: async (id: string) => {
-    const fallback: Lancamento = localLancamentos().find(item => item.id === id) || { id, titulo: '', valor_total: 0, data: '', status_entrega: 'pendente', criado_por: '', criado_em: '', pago: false, recorrente: false, status_processo: 'orcamento_aprovado', parcelas: [], itens: [] }
-    if (API_BASE) {
-      try { return await request<Lancamento>(`/api/lancamentos/${id}`) }
-      catch { /* backend indisponível: cai para a consulta direta ao Supabase abaixo */ }
-    }
     try {
       const [lancamentos, parcelas, itens] = await Promise.all([
         supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),
         supabaseRequest<Parcela[]>(`parcelas?lancamento_id=eq.${encodeURIComponent(id)}&order=numero.asc`),
         supabaseRequest<ItemLancamento[]>(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
       ])
-      return lancamentos[0] ? { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] } : fallback
-    } catch { return fallback }
+      if (!lancamentos[0]) throw new Error('Lançamento não encontrado no banco')
+      return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] }
+    } catch (supabaseError) {
+      if (API_BASE) return request<Lancamento>(`/api/lancamentos/${id}`)
+      throw supabaseError
+    }
   },
 
   atualizarLancamento: async (id: string, body: Record<string, unknown>) => {
     try {
       await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
-    } catch (error) {
-      const local = localLancamentos()
-      if (!local.some(item => item.id === id)) throw error
-      writeLocal(LOCAL_LANCAMENTOS_KEY, local.map(item => item.id === id ? { ...item, ...body } as Lancamento : item))
-    }
+    } catch (error) { throw error }
   },
 
   excluirLancamento: async (id: string) => {
-    try { await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
-    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().filter(item => item.id !== id)) }
+    await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   uploadArquivo: async (file: File): Promise<string> => {
@@ -365,31 +342,10 @@ export const api = {
       const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
       const lanc = data[0]
       if (!lanc) throw new Error('O banco não retornou o orçamento criado')
-      writeLocal(LOCAL_LANCAMENTOS_KEY, [
-        { ...lanc, parcelas: parcelas || [], itens: itens || [] },
-        ...localLancamentos().filter(item => item.id !== lanc.id),
-      ])
       if (itens?.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map((item: ItemLancamento) => ({ lancamento_id: lanc.id, tipo: 'orcamento', nome: item.nome, quantidade: item.quantidade, unidade_medida: item.unidade_medida || 'Un', valor_unitario: item.valor_unitario || 0, valor_total: item.valor_total || 0 }))) })
       if (parcelas?.length) await supabaseRequest('parcelas', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(parcelas.map((p: Parcela) => ({ ...p, lancamento_id: lanc.id }))) })
       return lanc
-    } catch {
-      const now = new Date().toISOString()
-      const local: Lancamento & { __localFallback?: boolean } = {
-        ...body,
-        id: localId('orcamento'),
-        criado_em: now,
-        status_entrega: body.status_entrega || 'pendente',
-        pago: Boolean(body.pago),
-        recorrente: Boolean(body.recorrente),
-        status_processo: body.status_processo || 'orcamento_aprovado',
-        saldo_devedor: body.saldo_devedor ?? body.valor_total ?? 0,
-        parcelas: parcelas || [],
-        itens: (itens || []).map((item: ItemLancamento) => ({ ...item, id: item.id || localId('item'), unidade_medida: item.unidade_medida || 'Un' })),
-        __localFallback: true,
-      }
-      writeLocal(LOCAL_LANCAMENTOS_KEY, [local, ...localLancamentos()])
-      return local
-    }
+    } catch (error) { throw error }
   },
 
   salvarItensNF: async (lancamento_id: string, itens: ItemLancamento[]) => {
@@ -404,34 +360,28 @@ export const api = {
       }
       await supabaseRequest(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(lancamento_id)}&tipo=eq.nf`, { method: 'DELETE' })
       if (itens.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map(i => ({ lancamento_id, tipo: 'nf', nome: i.nome, quantidade: i.quantidade, unidade_medida: i.unidade_medida || 'Un', valor_unitario: i.valor_unitario || 0, valor_total: i.valor_total || 0 }))) })
-    } catch {
-      writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => item.id === lancamento_id ? { ...item, itens: [...(item.itens || []).filter(existing => existing.tipo !== 'nf'), ...itens] } : item))
-    }
+    } catch (error) { throw error }
   },
 
   atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {
-    try { await readRemote(`/api/itens-lancamento/${id}`, `itens_lancamento?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
-    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, itens: item.itens?.map(existing => existing.id === id ? { ...existing, ...body } : existing) }))) }
+    await readRemote(`/api/itens-lancamento/${id}`, `itens_lancamento?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
   marcarPago: async (id: string) => {
-    try { await readRemote(`/api/parcelas/${id}/pagar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: true, data_pagamento: new Date().toISOString().slice(0, 10) }) }) }
-    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, parcelas: item.parcelas?.map(parcela => parcela.id === id ? { ...parcela, pago: true, data_pagamento: new Date().toISOString().slice(0, 10) } : parcela) }))) }
+    await readRemote(`/api/parcelas/${id}/pagar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: true, data_pagamento: new Date().toISOString().slice(0, 10) }) })
   },
 
   estornar: async (id: string) => {
-    try { await readRemote(`/api/parcelas/${id}/estornar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: false, data_pagamento: null }) }) }
-    catch { writeLocal(LOCAL_LANCAMENTOS_KEY, localLancamentos().map(item => ({ ...item, parcelas: item.parcelas?.map(parcela => parcela.id === id ? { ...parcela, pago: false, data_pagamento: null } : parcela) }))) }
+    await readRemote(`/api/parcelas/${id}/estornar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: false, data_pagamento: null }) })
   },
 
   buscarFornecedores: async (termo: string): Promise<Fornecedor[]> => {
     if (!termo || termo.length < 2) return []
-    const fallback = localFornecedores().filter(item => item.nome.toLowerCase().includes(termo.toLowerCase()) || (item.cnpj || '').includes(termo))
     const query = `fornecedores?or=(nome.ilike.*${encodeURIComponent(termo)}*,cnpj.ilike.*${encodeURIComponent(termo)}*)&order=nome.asc&limit=8`
-    return safeRead<Fornecedor[] | null>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, query, null).then(remote => remote === null ? fallback : remote)
+    return readRemote<Fornecedor[]>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, query)
   },
 
-  listarFornecedores: async (): Promise<Fornecedor[]> => safeRead<Fornecedor[] | null>('/api/fornecedores', 'fornecedores?order=nome.asc', null).then(remote => remote === null ? localFornecedores() : remote),
+  listarFornecedores: async (): Promise<Fornecedor[]> => readRemote<Fornecedor[]>('/api/fornecedores', 'fornecedores?order=nome.asc'),
 
   salvarFornecedor: async (nome: string, cnpj?: string) => {
     const existentes = await api.buscarFornecedores(nome)
@@ -443,96 +393,66 @@ export const api = {
   },
 
   criarFornecedor: async (nome: string, cnpj?: string, fornecedorMasterId?: string | null) => {
-    try {
-      return await readRemote<Fornecedor>(
-        '/api/fornecedores',
-        'fornecedores',
-        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, cnpj: cnpj || null, fornecedor_master_id: fornecedorMasterId || null }) },
-      ).then((result: any) => Array.isArray(result) ? result[0] : result)
-    } catch {
-      const fornecedor = { id: localId('fornecedor'), nome, cnpj: cnpj || null, fornecedor_master_id: fornecedorMasterId || null, criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_FORNECEDORES_KEY, [fornecedor, ...localFornecedores()])
-      return fornecedor
-    }
+    return await readRemote<Fornecedor>(
+      '/api/fornecedores',
+      'fornecedores',
+      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, cnpj: cnpj || null, fornecedor_master_id: fornecedorMasterId || null }) },
+    ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
   atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null; fornecedor_master_id?: string | null }) => {
-    try { await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
-    catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().map(item => item.id === id ? { ...item, ...body } : item)) }
+    await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
   excluirFornecedor: async (id: string) => {
-    try { await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
-    catch { writeLocal(LOCAL_FORNECEDORES_KEY, localFornecedores().filter(item => item.id !== id)) }
+    await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  listarObras: async (): Promise<Obra[]> => safeRead<Obra[] | null>('/api/obras', 'obras?order=nome.asc', null).then(remote => remote === null ? localObras() : remote),
+  listarObras: async (): Promise<Obra[]> => readRemote<Obra[]>('/api/obras', 'obras?order=nome.asc'),
 
   criarObra: async (nome: string, endereco?: string) => {
-    try {
-      return await readRemote<Obra>(
-        '/api/obras',
-        'obras',
-        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, endereco: endereco || null, ativa: true }) },
-      ).then((result: any) => Array.isArray(result) ? result[0] : result)
-    } catch {
-      const obra: Obra = { id: localId('obra'), nome, endereco: endereco || null, ativa: true, criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_OBRAS_KEY, [obra, ...localObras()])
-      return obra
-    }
+    return await readRemote<Obra>(
+      '/api/obras',
+      'obras',
+      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, endereco: endereco || null, ativa: true }) },
+    ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
   atualizarObra: async (id: string, body: { nome?: string; endereco?: string | null; ativa?: boolean }) => {
-    try { await readRemote(`/api/obras/${id}`, `obras?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
-    catch { writeLocal(LOCAL_OBRAS_KEY, localObras().map(item => item.id === id ? { ...item, ...body } : item)) }
+    await readRemote(`/api/obras/${id}`, `obras?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
-  listarFuncionarios: async (): Promise<Funcionario[]> => safeRead<Funcionario[] | null>('/api/funcionarios', 'funcionarios?order=nome.asc', null).then(remote => remote === null ? localFuncionarios() : remote),
+  listarFuncionarios: async (): Promise<Funcionario[]> => readRemote<Funcionario[]>('/api/funcionarios', 'funcionarios?order=nome.asc'),
 
   criarFuncionario: async (payload: { nome: string; cargo?: string | null; salario_base: number; obra_id?: string | null }) => {
-    try {
-      return await readRemote<Funcionario>(
-        '/api/funcionarios',
-        'funcionarios',
-        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...payload, ativo: true }) },
-      ).then((result: any) => Array.isArray(result) ? result[0] : result)
-    } catch {
-      const funcionario: Funcionario = { id: localId('funcionario'), nome: payload.nome, cargo: payload.cargo || null, salario_base: payload.salario_base, obra_id: payload.obra_id || null, ativo: true, criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_FUNCIONARIOS_KEY, [funcionario, ...localFuncionarios()])
-      return funcionario
-    }
+    return await readRemote<Funcionario>(
+      '/api/funcionarios',
+      'funcionarios',
+      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...payload, ativo: true }) },
+    ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
   atualizarFuncionario: async (id: string, body: { nome?: string; cargo?: string | null; salario_base?: number; obra_id?: string | null; ativo?: boolean }) => {
-    try { await readRemote(`/api/funcionarios/${id}`, `funcionarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) }) }
-    catch { writeLocal(LOCAL_FUNCIONARIOS_KEY, localFuncionarios().map(item => item.id === id ? { ...item, ...body } : item)) }
+    await readRemote(`/api/funcionarios/${id}`, `funcionarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
-  listarPagamentosFuncionarios: async (): Promise<PagamentoFuncionario[]> => safeRead<PagamentoFuncionario[] | null>('/api/pagamentos-funcionario', 'pagamentos_funcionario?order=data_pagamento.desc', null).then(remote => remote === null ? localPagamentosFunc() : remote),
+  listarPagamentosFuncionarios: async (): Promise<PagamentoFuncionario[]> => readRemote<PagamentoFuncionario[]>('/api/pagamentos-funcionario', 'pagamentos_funcionario?order=data_pagamento.desc'),
 
   listarPagamentosDoFuncionario: async (funcionarioId: string): Promise<PagamentoFuncionario[]> => {
-    const todos = await safeRead<PagamentoFuncionario[] | null>('/api/pagamentos-funcionario', `pagamentos_funcionario?funcionario_id=eq.${encodeURIComponent(funcionarioId)}&order=data_pagamento.desc`, null)
-    if (todos !== null) return API_BASE ? todos.filter(p => p.funcionario_id === funcionarioId) : todos
-    return localPagamentosFunc().filter(item => item.funcionario_id === funcionarioId)
+    const todos = await readRemote<PagamentoFuncionario[]>('/api/pagamentos-funcionario', `pagamentos_funcionario?funcionario_id=eq.${encodeURIComponent(funcionarioId)}&order=data_pagamento.desc`)
+    return API_BASE ? todos.filter(p => p.funcionario_id === funcionarioId) : todos
   },
 
   registrarPagamentoFuncionario: async (funcionario_id: string, valor: number, data_pagamento: string, tipo: PagamentoFuncionario['tipo'] = 'salario') => {
-    try {
-      return await readRemote<PagamentoFuncionario>(
-        '/api/pagamentos-funcionario',
-        'pagamentos_funcionario',
-        { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ funcionario_id, valor, tipo, data_pagamento }) },
-      ).then((result: any) => Array.isArray(result) ? result[0] : result)
-    } catch {
-      const local: PagamentoFuncionario = { id: localId('pagamento-func'), funcionario_id, valor, tipo, data_pagamento, criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_PAGAMENTOS_FUNC_KEY, [local, ...localPagamentosFunc()])
-      return local
-    }
+    return await readRemote<PagamentoFuncionario>(
+      '/api/pagamentos-funcionario',
+      'pagamentos_funcionario',
+      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ funcionario_id, valor, tipo, data_pagamento }) },
+    ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
   excluirPagamentoFuncionario: async (id: string) => {
-    try { await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' }) }
-    catch { writeLocal(LOCAL_PAGAMENTOS_FUNC_KEY, localPagamentosFunc().filter(item => item.id !== id)) }
+    await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.

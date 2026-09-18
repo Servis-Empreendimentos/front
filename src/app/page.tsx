@@ -122,6 +122,8 @@ export default function Home() {
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
+  useEffect(()=>{ api.limparCacheLocal() },[])
+
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
@@ -136,7 +138,10 @@ export default function Home() {
         api.listarPagamentosFuncionarios(),
       ])
       setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
-    } catch {if(!silent) showToast('Erro ao carregar dados',false)}
+    } catch {
+      setData([]);setCats([]);setFornecedores([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
+      if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
+    }
     finally {if(!silent) setLoading(false)}
   },[fPipe,fRec,fObra])
 
@@ -203,7 +208,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
       const vFrete=parseFloat(rawFrete.replace(/\D/g,''))/100||0
       const valor_total=valor_produtos+vFrete
-      const salvo=await api.criar({
+      await api.criar({
         ...form,
         tipo_pagamento: form.tipo_pagamento || 'avista',
         valor_produtos,
@@ -214,7 +219,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         itens: itensOrcamento,
       })
       if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
-      setModal(false);showToast((salvo as any).__localFallback?'Orçamento salvo neste navegador. Configure o Supabase no Vercel para sincronizar.':'Orçamento salvo!');load()
+      setModal(false);showToast('Orçamento salvo no banco compartilhado!');load()
     } catch (err:any) {
       showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
     } finally {setSaving(false)}
