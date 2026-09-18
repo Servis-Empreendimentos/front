@@ -1,17 +1,17 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
 import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
+import FolhaPagamentoView from '../components/FolhaPagamentoView'
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
-function isNotaFiscal(lancamento: Lancamento) { return Boolean(lancamento.nf_numero || lancamento.arquivo_url || lancamento.status_processo === 'nf_recebida') }
 
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
@@ -30,12 +30,15 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
   const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
+  const [obras,setObras]=useState<Obra[]>([])
+  const [funcionarios,setFuncionarios]=useState<Funcionario[]>([])
+  const [pagamentosFuncionarios,setPagamentosFuncionarios]=useState<PagamentoFuncionario[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
@@ -44,6 +47,21 @@ export default function Home() {
   const [search,setSearch]=useState('')
   const [searchForn,setSearchForn]=useState('')
   const [searchMensal,setSearchMensal]=useState('')
+  const [fObra,setFObra]=useState('')
+  const [modalObra,setModalObra]=useState(false)
+  const [obraEdit,setObraEdit]=useState<Obra|null>(null)
+  const [formObra,setFormObra]=useState<{nome:string;endereco:string}>({nome:'',endereco:''})
+  const [searchFuncionario,setSearchFuncionario]=useState('')
+  const [viewFolha,setViewFolha]=useState<'lista'|'grade'>('lista')
+  const [modalFuncionario,setModalFuncionario]=useState(false)
+  const [funcionarioEdit,setFuncionarioEdit]=useState<Funcionario|null>(null)
+  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',obraId:''})
+  const [modalPagarFuncionario,setModalPagarFuncionario]=useState<Funcionario|null>(null)
+  const [valorPagarFuncionario,setValorPagarFuncionario]=useState('')
+  const [dataPagarFuncionario,setDataPagarFuncionario]=useState('')
+  const [tipoPagarFuncionario,setTipoPagarFuncionario]=useState<'salario'|'adiantamento'|'vale'|'outro'>('salario')
+  const [modalHistoricoFuncionario,setModalHistoricoFuncionario]=useState<Funcionario|null>(null)
+  const [historicoFuncionario,setHistoricoFuncionario]=useState<PagamentoFuncionario[]>([])
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -72,6 +90,8 @@ export default function Home() {
   const [itensNFEditor,setItensNFEditor]=useState<ItemLancamento[]>([])
   const [nfFileTemp,setNfFileTemp]=useState<File|null>(null)
   const [loadingIANF,setLoadingIANF]=useState(false)
+  const [nfNumeroTemp,setNfNumeroTemp]=useState('')
+  const [rawFreteNF,setRawFreteNF]=useState('')
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalPagParcial,setModalPagParcial]=useState(false)
@@ -82,7 +102,7 @@ export default function Home() {
   const [pagParcialParc,setPagParcialParc]=useState('')
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
-  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string}>({nome:'',cnpj:''})
+  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;masterId:string}>({nome:'',cnpj:'',masterId:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
   const [dataPagarConta,setDataPagarConta]=useState('')
@@ -102,17 +122,20 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,pagMensais]=await Promise.all([
-        api.listar({status_processo:fPipe,recorrente:fRec}),
+      const [lista,mensais,categorias,forns,pagMensais,listaObras,listaFuncionarios,listaPagamentosFuncionarios]=await Promise.all([
+        api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
         api.listarPagamentosMensais(),
+        api.listarObras(),
+        api.listarFuncionarios(),
+        api.listarPagamentosFuncionarios(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
     } catch {if(!silent) showToast('Erro ao carregar dados',false)}
     finally {if(!silent) setLoading(false)}
-  },[fPipe,fRec])
+  },[fPipe,fRec,fObra])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
@@ -123,12 +146,16 @@ export default function Home() {
   },[logado,load])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',proposta_url:null})
+    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
   const openDetalhe=async(id:string)=>{
-    const d=await api.buscar(id);setDetalhe(d);setModal(true)
+    try {
+      const d=await api.buscar(id);setDetalhe(d);setModal(true)
+    } catch (err:any) {
+      showToast('Erro ao abrir lançamento: '+(err?.message||'tente novamente'),false)
+    }
   }
 
   const handleImportarOrcamento=async(file:File)=>{
@@ -215,8 +242,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!detalhe) return
     setNfFileTemp(file);setLoadingIANF(true)
     try {
-      const dados=await lerDocIA(file,`Extraia todos os itens desta nota fiscal e retorne APENAS um JSON válido:
-{"valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+      const dados=await lerDocIA(file,`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido:
+{"numero_nf":"número da nota fiscal","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
 Para cada item, extraia quantidade, unidade de medida, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
       const itens=(dados.itens||[]).map((i:any)=>({
         nome:i.nome||'', quantidade:i.quantidade||1, unidade_medida:i.unidade_medida||'Un',
@@ -224,10 +251,13 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         valor_total: i.valor_total>0 ? i.valor_total : (i.quantidade||1)*(i.valor_unitario||0),
         tipo:'nf' as const,
       }))
-      setItensNFEditor(itens);setModalNFItens(true)
+      setItensNFEditor(itens)
+      setNfNumeroTemp(dados.numero_nf||'')
+      setRawFreteNF(dados.valor_frete>0?dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+      setModalNFItens(true)
     } catch {
-      setItensNFEditor([]);setModalNFItens(true)
-      showToast('IA não extraiu itens. Preencha manualmente.',false)
+      setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('');setModalNFItens(true)
+      showToast('IA não extraiu os dados. Preencha manualmente.',false)
     } finally {setLoadingIANF(false)}
   }
 
@@ -236,10 +266,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setLoadingAnexo(true)
     try {
       const url=await api.uploadArquivo(nfFileTemp)
-      await api.atualizarLancamento(detalhe.id,{arquivo_url:url})
+      const vFreteNF=parseFloat(rawFreteNF.replace(/\D/g,''))/100||0
+      await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,valor_frete:vFreteNF||detalhe.valor_frete})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
-      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([])
+      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('')
       showToast('NF e itens salvos!')
     } catch (err:any) {showToast('Erro ao salvar NF: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
@@ -358,10 +389,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   }
 
   const handleSaveMensal=async()=>{
-    if(!formMensal.titulo||!formMensal.pago_por||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
+    if(!formMensal.titulo||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
     setSaving(true)
     try {
-      await api.criarContaMensal({...formMensal,ativo:true})
+      await api.criarContaMensal({...formMensal,pago_por:'Servis Empreendimentos',ativo:true})
       setModalMensal(false);setFormMensal({});showToast('Conta mensal cadastrada!');load()
     } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
     finally {setSaving(false)}
@@ -369,12 +400,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
-    setFormFornecedor({nome:'',cnpj:''})
+    setFormFornecedor({nome:'',cnpj:'',masterId:''})
     setModalFornecedor(true)
   }
   const openEditarFornecedor=(f:Fornecedor)=>{
     setFornecedorEdit(f)
-    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||''})
+    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',masterId:f.fornecedor_master_id||''})
     setModalFornecedor(true)
   }
   const handleSalvarFornecedor=async()=>{
@@ -382,10 +413,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSaving(true)
     try {
       if(fornecedorEdit) {
-        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null})
+        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null,fornecedor_master_id:formFornecedor.masterId||null})
         showToast('Fornecedor atualizado!')
       } else {
-        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined)
+        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined,formFornecedor.masterId||null)
         showToast('Fornecedor cadastrado!')
       }
       setModalFornecedor(false);load()
@@ -401,6 +432,97 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } catch (err:any) {
       showToast('Erro ao excluir: '+(err?.message||''),false)
     }
+  }
+
+  const openNovaObra=()=>{
+    setObraEdit(null)
+    setFormObra({nome:'',endereco:''})
+    setModalObra(true)
+  }
+  const openEditarObra=(o:Obra)=>{
+    setObraEdit(o)
+    setFormObra({nome:o.nome,endereco:o.endereco||''})
+    setModalObra(true)
+  }
+  const handleSalvarObra=async()=>{
+    if(!formObra.nome.trim()) return showToast('Informe o nome da obra',false)
+    setSaving(true)
+    try {
+      if(obraEdit) {
+        await api.atualizarObra(obraEdit.id,{nome:formObra.nome.trim(),endereco:formObra.endereco||null})
+        showToast('Obra atualizada!')
+      } else {
+        await api.criarObra(formObra.nome.trim(),formObra.endereco||undefined)
+        showToast('Obra cadastrada!')
+      }
+      setModalObra(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+  const handleToggleObra=async(o:Obra)=>{
+    try { await api.atualizarObra(o.id,{ativa:!o.ativa}); showToast(o.ativa?'Obra pausada':'Obra reativada'); load() }
+    catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
+  }
+
+  const openNovoFuncionario=()=>{
+    setFuncionarioEdit(null)
+    setFormFuncionario({nome:'',cargo:'',salarioBase:'',obraId:''})
+    setModalFuncionario(true)
+  }
+  const openEditarFuncionario=(f:Funcionario)=>{
+    setFuncionarioEdit(f)
+    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',obraId:f.obra_id||''})
+    setModalFuncionario(true)
+  }
+  const handleSalvarFuncionario=async()=>{
+    if(!formFuncionario.nome.trim()) return showToast('Informe o nome do funcionário',false)
+    setSaving(true)
+    try {
+      const salario=parseFloat(formFuncionario.salarioBase.replace(/\D/g,''))/100||0
+      if(funcionarioEdit) {
+        await api.atualizarFuncionario(funcionarioEdit.id,{nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        showToast('Funcionário atualizado!')
+      } else {
+        await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        showToast('Funcionário cadastrado!')
+      }
+      setModalFuncionario(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+
+  const abrirPagarFuncionario=(f:Funcionario, dataSugerida?:string)=>{
+    setModalPagarFuncionario(f)
+    setValorPagarFuncionario(f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+    setDataPagarFuncionario(dataSugerida || new Date().toISOString().slice(0,10))
+    setTipoPagarFuncionario('salario')
+  }
+
+  const handleRegistrarPagamentoFuncionario=async()=>{
+    if(!modalPagarFuncionario||!valorPagarFuncionario||!dataPagarFuncionario) return showToast('Preencha valor e data',false)
+    setSaving(true)
+    try {
+      const valor=parseFloat(valorPagarFuncionario.replace(/\D/g,''))/100
+      await api.registrarPagamentoFuncionario(modalPagarFuncionario.id,valor,dataPagarFuncionario,tipoPagarFuncionario)
+      setModalPagarFuncionario(null);showToast('Pagamento registrado!');load()
+    } catch (err:any) {
+      showToast('Erro: '+(err?.message||''),false)
+    } finally {setSaving(false)}
+  }
+
+  const abrirHistoricoFuncionario=async(f:Funcionario)=>{
+    setModalHistoricoFuncionario(f)
+    const h=await api.listarPagamentosDoFuncionario(f.id)
+    setHistoricoFuncionario(h)
+  }
+
+  const handleExcluirPagamentoFuncionario=async(id:string)=>{
+    if(!confirm('Excluir este pagamento?')) return
+    await api.excluirPagamentoFuncionario(id)
+    if(modalHistoricoFuncionario) { const h=await api.listarPagamentosDoFuncionario(modalHistoricoFuncionario.id); setHistoricoFuncionario(h) }
+    showToast('Pagamento excluído!');load()
   }
 
   const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
@@ -447,20 +569,64 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     return true
   })
 
-  const filteredFornecedores = fornecedores.filter(f=>{
+  const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
     const q=searchForn.toLowerCase()
     return f.nome.toLowerCase().includes(q) || (f.cnpj||'').includes(q)
+  }
+  const fornecedorMasters = fornecedores.filter(f=>!f.fornecedor_master_id)
+  const fornecedorMasterIds = new Set(fornecedorMasters.map(m=>m.id))
+  const fornecedorRows:{fornecedor:Fornecedor;isSub:boolean}[] = []
+  fornecedorMasters.forEach(m=>{
+    const subs = fornecedores.filter(f=>f.fornecedor_master_id===m.id)
+    const subsMatching = subs.filter(matchFornecedor)
+    const masterMatches = matchFornecedor(m)
+    if(masterMatches||subsMatching.length>0) {
+      fornecedorRows.push({fornecedor:m,isSub:false})
+      ;(masterMatches?subs:subsMatching).forEach(s=>fornecedorRows.push({fornecedor:s,isSub:true}))
+    }
   })
-
-  const filteredNotasFiscais = filtered.filter(isNotaFiscal)
-  const listaOrcamentos = aba==='notas-fiscais' ? filteredNotasFiscais : filtered
-  const totalOrcamentos = aba==='notas-fiscais' ? data.filter(isNotaFiscal).length : data.length
+  fornecedores.filter(f=>f.fornecedor_master_id&&!fornecedorMasterIds.has(f.fornecedor_master_id)).filter(matchFornecedor).forEach(f=>fornecedorRows.push({fornecedor:f,isSub:false}))
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
   const totalPagos=data.filter(l=>l.pago).length
   const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
+  const obrasAtivas=obras.filter(o=>o.ativa)
+  const porObra=[
+    ...obrasAtivas.map(o=>{
+      const lancs=data.filter(l=>l.obra_id===o.id)
+      return {obra:o,total:lancs.reduce((s,l)=>s+l.valor_total,0),saldo:lancs.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:lancs.length}
+    }),
+    (()=>{
+      const semObra=data.filter(l=>!l.obra_id)
+      return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
+    })(),
+  ].filter(item=>item.qtd>0)
+
+  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
+  const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
+  const gruposFolha:Record<string,{valor:number;data:string}>={}
+  pagamentosFuncionarios.forEach(p=>{
+    const mes=(p.data_pagamento||'').slice(0,7)
+    if(!mes) return
+    if(!gruposFolha[mes]) gruposFolha[mes]={valor:0,data:p.data_pagamento}
+    gruposFolha[mes].valor+=p.valor
+    if(p.data_pagamento>gruposFolha[mes].data) gruposFolha[mes].data=p.data_pagamento
+  })
+  const itensFolha:ItemPagar[]=Object.entries(gruposFolha).map(([mes,g])=>({id:'folha-'+mes,tipo:'folha',nome:`Folha de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
+  const gruposMensais:Record<string,{valor:number;data:string}>={}
+  pagamentosMensais.forEach(p=>{
+    const mes=(p.data_pagamento||'').slice(0,7)
+    if(!mes) return
+    if(!gruposMensais[mes]) gruposMensais[mes]={valor:0,data:p.data_pagamento}
+    gruposMensais[mes].valor+=p.valor
+    if(p.data_pagamento>gruposMensais[mes].data) gruposMensais[mes].data=p.data_pagamento
+  })
+  const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
+  const contasAPagar=[...itensNF,...itensFolha,...itensMensais].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
+  const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
+
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -536,6 +702,36 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Quanto sai, por obra</span>
+                  <button onClick={()=>setAba('obras')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Gerenciar obras →</button>
+                </div>
+                {porObra.length===0?(
+                  <p style={{padding:'2rem',textAlign:'center',color:'#7D7D7D',fontSize:12}}>Nenhum lançamento vinculado a obra ainda. Cadastre uma obra e vincule os lançamentos a ela.</p>
+                ):(
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                        {th('Obra')}{th('Lançamentos')}{th('Total gasto')}{th('Falta pagar')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {porObra.map(item=>(
+                        <tr key={item.obra.id||'sem-obra'} style={{borderBottom:'1px solid #E2E6E4',cursor:item.obra.id?'pointer':'default'}}
+                          onClick={()=>{if(item.obra.id){setFObra(item.obra.id);setAba('lancamentos')}}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'9px 11px',fontWeight:600}}>{item.obra.nome}</td>
+                          <td style={{padding:'9px 11px',color:'#7D7D7D'}}>{item.qtd}</td>
+                          <td style={{padding:'9px 11px',fontWeight:700}}>{fmtR(item.total)}</td>
+                          <td style={{padding:'9px 11px'}}>{item.saldo>0?<span style={{color:'#777777',fontWeight:700}}>{fmtR(item.saldo)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div style={{height:16}}/>
+              <div style={s.card}>
+                <div style={s.toolbar}>
                   <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -571,6 +767,104 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             </div>
           )}
 
+          {role!=='entregador'&&aba==='pagar'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Contas a Pagar</h1><p style={s.p}>Tudo que já foi pago — notas fiscais, folha de pagamento e contas mensais, num lugar só</p></div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
+                <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
+                <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
+                <KPI l="Meses de folha" v={itensFolha.length} sv="agrupados por mês" c="#8BA59A"/>
+                <KPI l="Meses de contas fixas" v={itensMensais.length} sv="agrupados por mês" c="#748F84"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Histórico de pagamentos</span>
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Descrição')}{th('Valor pago')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :contasAPagar.length===0?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum pagamento registrado ainda</td></tr>
+                    :contasAPagar.map(item=>(
+                      <tr key={item.id} onClick={()=>{
+                        if(item.tipo==='nf'&&item.lancamentoId) openDetalhe(item.lancamentoId)
+                        else if(item.tipo==='folha') setAba('folha')
+                        else setAba('mensais')
+                      }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
+                        onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <td style={{padding:'11px'}}>
+                          <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
+                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?'Folha de pagamento':'Contas mensais'} · {fmtData(item.data)}</p>
+                        </td>
+                        <td style={{padding:'11px',textAlign:'right',fontWeight:700}}>{fmtR(item.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {contasAPagar.length} registro{contasAPagar.length!==1?'s':''} · clique numa linha pra ver o detalhe
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='obras'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Obras</h1><p style={s.p}>Cadastre cada obra e vincule os lançamentos a ela pra ter o gasto separado por obra</p></div>
+                <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
+                <KPI l="Total de obras" v={obras.length} sv="cadastradas" c={ACCENT_LT}/>
+                <KPI l="Ativas" v={obras.filter(o=>o.ativa).length} sv="em andamento" c="#8BA59A"/>
+                <KPI l="Pausadas" v={obras.filter(o=>!o.ativa).length} sv="finalizadas ou paradas" c="#7D7D7D"/>
+              </div>
+              <div style={s.card}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Obra')}{th('Endereço')}{th('Lançamentos')}{th('Total gasto')}{th('Status')}{th('Ações')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :obras.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhuma obra cadastrada ainda</td></tr>
+                    :obras.map(o=>{
+                      const lancs=data.filter(l=>l.obra_id===o.id)
+                      const totalObra=lancs.reduce((s,l)=>s+l.valor_total,0)
+                      return (
+                        <tr key={o.id} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
+                          onClick={()=>{setFObra(o.id);setAba('lancamentos')}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'10px 11px',fontWeight:600}}>{o.nome}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{o.endereco||'—'}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{lancs.length}</td>
+                          <td style={{padding:'10px 11px',fontWeight:700}}>{fmtR(totalObra)}</td>
+                          <td style={{padding:'10px 11px'}}><Badge label={o.ativa?'Ativa':'Pausada'} bg={o.ativa?'#E8F0EC':'#EEF0EE'} color={o.ativa?ACCENT_LT:'#7D7D7D'}/></td>
+                          <td style={{padding:'10px 11px'}} onClick={e=>e.stopPropagation()}>
+                            <div style={{display:'flex',gap:8}}>
+                              <button onClick={()=>openEditarObra(o)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
+                              <button onClick={()=>handleToggleObra(o)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}>{o.ativa?'Pausar':'Reativar'}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {obras.length} obra{obras.length!==1?'s':''} cadastrada{obras.length!==1?'s':''} · clique numa linha pra ver os lançamentos dela
+                </div>
+              </div>
+            </div>
+          )}
+
           {role!=='entregador'&&aba==='fornecedores'&&(
             <div>
               <div style={s.row}>
@@ -578,7 +872,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${filteredFornecedores.length} exibidos`} c={ACCENT_LT}/>
+                <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${fornecedorRows.length} exibidos`} c={ACCENT_LT}/>
                 <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#8BA59A"/>
               </div>
               <div style={s.card}>
@@ -595,11 +889,13 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                     </thead>
                     <tbody>
                       {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :filteredFornecedores.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
-                      :filteredFornecedores.map(f=>(
-                        <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'10px 11px',fontWeight:600}}>{f.nome}</td>
+                      :fornecedorRows.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
+                      :fornecedorRows.map(({fornecedor:f,isSub})=>(
+                        <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4',background:isSub?'#FAFBFA':'transparent'}}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background=isSub?'#FAFBFA':'')}>
+                          <td style={{padding:'10px 11px',fontWeight:isSub?500:700,paddingLeft:isSub?30:11,color:isSub?'#5A5A5A':'#374151'}}>
+                            {isSub&&<span style={{color:'#B7C0BC',marginRight:6}}>└</span>}{f.nome}
+                          </td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
                           <td style={{padding:'10px 11px'}}>
                             <div style={{display:'flex',gap:8}}>
@@ -615,7 +911,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   </table>
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {filteredFornecedores.length} fornecedor{filteredFornecedores.length!==1?'es':''} de {fornecedores.length} total
+                  {fornecedorRows.length} fornecedor{fornecedorRows.length!==1?'es':''} de {fornecedores.length} total
                 </div>
               </div>
             </div>
@@ -636,22 +932,53 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             />
           )}
 
-          {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
+          {role!=='entregador'&&aba==='folha'&&(
+            <FolhaPagamentoView
+              funcionarios={funcionarios}
+              pagamentos={pagamentosFuncionarios}
+              obras={obras}
+              searchFuncionario={searchFuncionario}
+              setSearchFuncionario={setSearchFuncionario}
+              viewFolha={viewFolha}
+              setViewFolha={setViewFolha}
+              onNovoFuncionario={openNovoFuncionario}
+              onPagar={abrirPagarFuncionario}
+              onHistorico={abrirHistoricoFuncionario}
+              onAtualizar={()=>load()}
+            />
+          )}
+
+          {role!=='entregador'&&aba==='lancamentos'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>{aba==='notas-fiscais'?'Notas fiscais':'Orçamentos'}</h1><p style={s.p}>{aba==='notas-fiscais'?'Documentos fiscais vinculados aos orçamentos':'Controle de pagamentos, entregas e documentos da obra'}</p></div>
-                <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
+                <div><h1 style={s.h1}>Orçamentos e Notas Fiscais</h1><p style={s.p}>Controle de pagamentos e entregas · Financeiro</p></div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={()=>{
+                    const linhas=[['Numero_Orcamento','NF_Numero','Empresa','CNPJ','Obra','Data','Valor_Total','Pago'].join(';')]
+                    data.forEach(l=>{
+                      const obraNome=obras.find(o=>o.id===l.obra_id)?.nome||''
+                      linhas.push([l.numero_orcamento||'',l.nf_numero||'',l.titulo,l.cnpj||'',obraNome,l.data,String(l.valor_total).replace('.',','),l.pago?'SIM':'NAO'].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';'))
+                    })
+                    const blob=new Blob(['\ufeff'+linhas.join('\n')],{type:'text/csv;charset=utf-8;'})
+                    const url=URL.createObjectURL(blob)
+                    const a=document.createElement('a')
+                    a.href=url;a.download=`lancamentos_sistema_${new Date().toISOString().slice(0,10)}.csv`
+                    document.body.appendChild(a);a.click();document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                  }} style={{...s.btnOut,padding:'.6rem 1rem'}}><Icon name="upload" size={14}/> Exportar CSV</button>
+                  <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
+                </div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total" v={totalOrcamentos} sv={`${listaOrcamentos.length} exibidos`} c={ACCENT_LT}/>
-                <KPI l="Valor total" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+lancamento.valor_total,0))} sv="soma dos contratos" c="#7D7D7D"/>
-                <KPI l="Saldo devedor" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+(lancamento.saldo_devedor||0),0))} sv="valores em aberto" c="#777777"/>
-                <KPI l="Pagos" v={listaOrcamentos.filter(lancamento=>lancamento.pago).length} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={listaOrcamentos.filter(lancamento=>lancamento.status_entrega==='pendente').length} sv="aguardando confirmação" c="#748F84"/>
+                <KPI l="Total" v={data.length} sv={`${filtered.length} exibidos`} c={ACCENT_LT}/>
+                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
+                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#8BA59A"/>
+                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#748F84"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>{aba==='notas-fiscais'?'Notas fiscais vinculadas':'Todos os orçamentos'}</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os lançamentos</span>
                   <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <label style={{fontSize:11,color:'#7D7D7D',fontWeight:600}}>De:</label>
@@ -671,25 +998,34 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
                     <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
                   </select>
+                  <select style={s.inp} value={fObra} onChange={e=>setFObra(e.target.value)}>
+                    <option value="">Todas as obras</option>
+                    {obras.map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                  </select>
+                  {fObra&&(
+                    <button onClick={()=>setFObra('')} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar obra</button>
+                  )}
                 </div>
                 <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor Pago')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor dos Itens')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :listaOrcamentos.length===0?<tr><td colSpan={14} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum registro'}</td></tr>
-                      :listaOrcamentos.map(l=>{
+                      {loading?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :filtered.length===0?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum registro</td></tr>
+                      :filtered.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
                         const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
+                        const obraDoLanc=obras.find(o=>o.id===l.obra_id)
                         return (
                           <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                             onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                             <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11,maxWidth:110,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{obraDoLanc?.nome||'—'}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.numero_orcamento||'—'}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.nf_numero||'—'}</td>
                             <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
@@ -710,7 +1046,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   </table>
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {listaOrcamentos.length} registro{listaOrcamentos.length!==1?'s':''} de {totalOrcamentos} total
+                  {filtered.length} registro{filtered.length!==1?'s':''} de {data.length} total
                 </div>
               </div>
             </div>
@@ -822,6 +1158,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {([
                     ['Empresa',detalhe.titulo],
+                    ['Obra',obras.find(o=>o.id===detalhe.obra_id)?.nome||'Sem obra vinculada'],
                     ['Nº do orçamento',detalhe.numero_orcamento||'—'],
                     ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
                     ['NF Nº',detalhe.nf_numero||'—'],
@@ -838,7 +1175,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:12}}>Valores</p>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:12,marginBottom:12}}>
                     <div>
-                      <p style={{fontSize:10,color:'#7D7D7D',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor Pago</p>
+                      <p style={{fontSize:10,color:'#7D7D7D',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Valor dos Itens</p>
                       <p style={{fontSize:14,fontWeight:700,color:'#626262'}}>{fmtR(detalhe.valor_produtos||0)}</p>
                     </div>
                     <div>
@@ -1016,6 +1353,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <FF lb="Nome da empresa *" full>
                 <FornecedorInput value={form.titulo||''} cnpj={form.cnpj||''} onChange={(nome,cnpj)=>{set('titulo',nome);set('cnpj',cnpj)}}/>
               </FF>
+              <FF lb="Obra">
+                <select style={s.fi} value={form.obra_id||''} onChange={e=>set('obra_id',e.target.value)}>
+                  <option value="">Sem obra / despesa geral</option>
+                  {obras.filter(o=>o.ativa).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              </FF>
               <FF lb="Nº do orçamento">
                 <input style={s.fi} value={form.numero_orcamento||''} placeholder="Ex.: ORC-001" onChange={e=>set('numero_orcamento',e.target.value)}/>
               </FF>
@@ -1183,12 +1526,63 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
-              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar.</p>
+              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>Revise os itens extraídos pela IA antes de salvar. Se a IA não conseguir ler algum campo, preencha manualmente.</p>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
+                <div>
+                  <label style={s.lb}>Número da NF</label>
+                  <input style={s.fi} value={nfNumeroTemp} onChange={e=>setNfNumeroTemp(e.target.value)} placeholder="Ex: 12345"/>
+                </div>
+                <div>
+                  <label style={s.lb}>Valor do frete</label>
+                  <input style={s.fi} value={rawFreteNF} placeholder="R$ 0,00" onChange={e=>{
+                    const d=e.target.value.replace(/\D/g,'')
+                    setRawFreteNF(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                  }}/>
+                </div>
+              </div>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalNFItens(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarNF} disabled={loadingAnexo} style={{...s.btnTeal,opacity:loadingAnexo?0.6:1}}>{loadingAnexo?'Salvando...':'Salvar NF e itens'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalObra&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalObra(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{obraEdit?'Editar Obra':'Nova Obra'}</h3>
+              <button onClick={()=>setModalObra(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome da obra *" full><input style={s.fi} value={formObra.nome} onChange={e=>setFormObra(p=>({...p,nome:e.target.value}))} placeholder="Ex: Alojamento 01"/></FF>
+              <FF lb="Endereço" full><input style={s.fi} value={formObra.endereco} onChange={e=>setFormObra(p=>({...p,endereco:e.target.value}))} placeholder="Opcional"/></FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalObra(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarObra} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(obraEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalMensal&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalMensal(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>Nova Conta Mensal</h3>
+              <button onClick={()=>setModalMensal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome da conta *" full><input style={s.fi} value={formMensal.titulo||''} onChange={e=>setM('titulo',e.target.value)} placeholder="Ex: Conta de Água"/></FF>
+              <FF lb="Dia de vencimento *" full><input type="number" min={1} max={31} style={s.fi} value={formMensal.dia_vencimento||''} onChange={e=>setM('dia_vencimento',parseInt(e.target.value)||null)} placeholder="Ex: 10"/></FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalMensal(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSaveMensal} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':'Cadastrar'}</button>
             </div>
           </div>
         </div>
@@ -1211,10 +1605,187 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <input style={s.fi} value={formFornecedor.cnpj?fmtCNPJ(formFornecedor.cnpj):''} maxLength={18} placeholder="00.000.000/0000-00"
                   onChange={e=>setFormFornecedor(p=>({...p,cnpj:e.target.value.replace(/\D/g,'')}))}/>
               </div>
+              <div>
+                <label style={s.lb}>Fornecedor master (opcional)</label>
+                <select style={s.fi} value={formFornecedor.masterId} onChange={e=>setFormFornecedor(p=>({...p,masterId:e.target.value}))}>
+                  <option value="">Nenhum — este é um fornecedor independente</option>
+                  {fornecedores.filter(f=>!f.fornecedor_master_id&&f.id!==fornecedorEdit?.id).map(f=>(
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+                <p style={{fontSize:11,color:'#969696',margin:'6px 0 0'}}>Escolha um master pra agrupar este fornecedor como sub-item dele (ex: BLINK IGREJA dentro de BLINK - MASTER).</p>
+              </div>
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagarConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarConta(null)}>
+          <div style={{...s.modal,width:420}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarConta.titulo}</h3>
+              <button onClick={()=>setModalPagarConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div><label style={s.lb}>Valor pago *</label>
+                <input style={s.fi} value={valorPagarConta} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setValorPagarConta(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+              </div>
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={dataPagarConta} onChange={e=>setDataPagarConta(e.target.value)}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagarConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleRegistrarPagamentoConta} disabled={saving||!valorPagarConta||!dataPagarConta} style={{...s.btnGrn,opacity:(saving||!valorPagarConta||!dataPagarConta)?0.6:1}}>
+                {saving?'Salvando...':'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalHistoricoConta&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoConta(null)}>
+          <div style={{...s.modal,width:500}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoConta.titulo} — Histórico</h3>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              {historicoConta.length===0?(
+                <p style={{fontSize:13,color:'#7D7D7D',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+              ):(
+                <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
+                  {historicoConta.map(p=>(
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
+                      <div>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)}</p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                      </div>
+                      <button onClick={()=>handleExcluirPagamentoConta(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777'}}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{const c=modalHistoricoConta;setModalHistoricoConta(null);abrirPagarConta(c)}} style={s.btnGrn}>
+                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
+              </button>
+              <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFuncionario(false)}>
+          <div style={{...s.modal,width:480}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{funcionarioEdit?'Editar Funcionário':'Novo Funcionário'}</h3>
+              <button onClick={()=>setModalFuncionario(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome *" full><input style={s.fi} value={formFuncionario.nome} onChange={e=>setFormFuncionario(p=>({...p,nome:e.target.value}))} placeholder="Ex: João da Silva"/></FF>
+              <FF lb="Cargo"><input style={s.fi} value={formFuncionario.cargo} onChange={e=>setFormFuncionario(p=>({...p,cargo:e.target.value}))} placeholder="Ex: Pedreiro"/></FF>
+              <FF lb="Salário base *">
+                <input style={s.fi} value={formFuncionario.salarioBase} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setFormFuncionario(p=>({...p,salarioBase:d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):''}))
+                }}/>
+              </FF>
+              <FF lb="Obra" full>
+                <select style={s.fi} value={formFuncionario.obraId} onChange={e=>setFormFuncionario(p=>({...p,obraId:e.target.value}))}>
+                  <option value="">Sem obra vinculada</option>
+                  {obras.filter(o=>o.ativa).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              </FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalFuncionario(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarFuncionario} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(funcionarioEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalPagarFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalPagarFuncionario(null)}>
+          <div style={{...s.modal,width:420}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="dollar" size={16}/>{modalPagarFuncionario.nome}</h3>
+              <button onClick={()=>setModalPagarFuncionario(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
+              <div><label style={s.lb}>Tipo *</label>
+                <select style={s.fi} value={tipoPagarFuncionario} onChange={e=>setTipoPagarFuncionario(e.target.value as any)}>
+                  <option value="salario">Salário</option>
+                  <option value="adiantamento">Adiantamento</option>
+                  <option value="vale">Vale</option>
+                  <option value="outro">Outro</option>
+                </select>
+              </div>
+              <div><label style={s.lb}>Valor *</label>
+                <input style={s.fi} value={valorPagarFuncionario} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setValorPagarFuncionario(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                }}/>
+              </div>
+              <div><label style={s.lb}>Data do pagamento *</label>
+                <input type="date" style={s.fi} value={dataPagarFuncionario} onChange={e=>setDataPagarFuncionario(e.target.value)}/>
+              </div>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalPagarFuncionario(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleRegistrarPagamentoFuncionario} disabled={saving||!valorPagarFuncionario||!dataPagarFuncionario} style={{...s.btnGrn,opacity:(saving||!valorPagarFuncionario||!dataPagarFuncionario)?0.6:1}}>
+                {saving?'Salvando...':'Registrar pagamento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalHistoricoFuncionario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalHistoricoFuncionario(null)}>
+          <div style={{...s.modal,width:500}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{modalHistoricoFuncionario.nome} — Histórico</h3>
+              <button onClick={()=>setModalHistoricoFuncionario(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              {historicoFuncionario.length===0?(
+                <p style={{fontSize:13,color:'#7D7D7D',textAlign:'center',padding:'2rem 0'}}>Nenhum pagamento registrado ainda.</p>
+              ):(
+                <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
+                  {historicoFuncionario.map(p=>(
+                    <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
+                      <div>
+                        <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)} <span style={{fontSize:11,fontWeight:600,color:'#7D7D7D',textTransform:'capitalize'}}>· {p.tipo}</span></p>
+                        <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                      </div>
+                      <button onClick={()=>handleExcluirPagamentoFuncionario(p.id)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777'}}>
+                        <Icon name="trash" size={15}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{const f=modalHistoricoFuncionario;setModalHistoricoFuncionario(null);abrirPagarFuncionario(f)}} style={s.btnGrn}>
+                <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
+              </button>
+              <button onClick={()=>setModalHistoricoFuncionario(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>
