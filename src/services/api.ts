@@ -8,6 +8,7 @@ const SUPA_HEADERS = {
   Authorization: `Bearer ${SUPA_KEY}`,
   'Content-Type': 'application/json',
 }
+const DATA_PROXY = '/api/data'
 
 const LOCAL_LANCAMENTOS_KEY = 'servis.lancamentos.v1'
 const LOCAL_FORNECEDORES_KEY = 'servis.fornecedores.v1'
@@ -43,11 +44,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 async function supabaseRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!SUPA_URL || !SUPA_KEY) throw new Error('Supabase não configurado no frontend')
-  const response = await fetch(`${SUPA_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: { ...SUPA_HEADERS, ...(options.headers || {}) },
-  })
+  const useProxy = !SUPA_URL || !SUPA_KEY
+  const response = await fetch(
+    useProxy ? `${DATA_PROXY}?path=${encodeURIComponent(path)}` : `${SUPA_URL}/rest/v1/${path}`,
+    {
+      ...options,
+      headers: useProxy ? { ...(options.headers || {}) } : { ...SUPA_HEADERS, ...(options.headers || {}) },
+      cache: 'no-store',
+    },
+  )
   if (!response.ok) {
     let detail = ''
     try { detail = await response.text() } catch {}
@@ -308,9 +313,16 @@ export const api = {
   },
 
   uploadArquivo: async (file: File): Promise<string> => {
-    if (!SUPA_URL || !SUPA_KEY) throw new Error('Armazenamento de arquivos não configurado')
     const ext = file.name.split('.').pop() || 'pdf'
     const nome = `${Date.now()}.${ext}`
+    if (!SUPA_URL || !SUPA_KEY) {
+      const form = new FormData()
+      form.append('file', file, file.name)
+      const response = await fetch('/api/storage', { method: 'POST', body: form })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok || !data.url) throw new Error(data.detail || 'Armazenamento de arquivos não configurado')
+      return data.url
+    }
     const response = await fetch(`${SUPA_URL}/storage/v1/object/notas-fiscais/${nome}`, { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }, body: file })
     if (!response.ok) throw new Error('Falha ao enviar arquivo para o armazenamento')
     return `${SUPA_URL}/storage/v1/object/public/notas-fiscais/${nome}`

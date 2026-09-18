@@ -573,7 +573,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     return true
   })
   const listaOrcamentos = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
-  const totalOrcamentos = data.filter(aba==='notas-fiscais' ? isNotaFiscal : lancamento=>!isNotaFiscal(lancamento)).length
 
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
@@ -703,13 +702,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <div><h1 style={s.h1}>Visão Geral</h1><p style={s.p}>Resumo financeiro · Servis Empreendimentos</p></div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total" v={data.length} sv="lançamentos" c={ACCENT_LT}/>
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
                 <KPI l="Valor pago" v={fmtR(totalPago)} sv="valor já quitado" c="#8BA59A"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
                 <KPI l="Em tratativa" v={totalTratativa} sv="orçamentos em negociação" c="#748F84"/>
               </div>
-              <div className="overview-grid">
+              <div className="overview-grid overview-grid-chart-focus">
                 <div style={s.card}>
                   <div style={s.toolbar}>
                     <div style={{display:'grid',gap:3,flex:1}}>
@@ -991,33 +989,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
           {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>{aba==='notas-fiscais'?'Notas Fiscais':'Orçamentos'}</h1><p style={s.p}>{aba==='notas-fiscais'?'Documentos fiscais vinculados aos orçamentos':'Controle de pagamentos, entregas e documentos da obra'}</p></div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>{
-                    const linhas=[['Numero_Orcamento','NF_Numero','Empresa','CNPJ','Obra','Data','Valor_Total','Pago'].join(';')]
-                    const exportData=listaOrcamentos
-                    exportData.forEach(l=>{
-                      const obraNome=obras.find(o=>o.id===l.obra_id)?.nome||''
-                      linhas.push([l.numero_orcamento||'',l.nf_numero||'',l.titulo,l.cnpj||'',obraNome,l.data,String(l.valor_total).replace('.',','),l.pago?'SIM':'NAO'].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';'))
-                    })
-                    const blob=new Blob(['\ufeff'+linhas.join('\n')],{type:'text/csv;charset=utf-8;'})
-                    const url=URL.createObjectURL(blob)
-                    const a=document.createElement('a')
-                    a.href=url;a.download=`lancamentos_sistema_${new Date().toISOString().slice(0,10)}.csv`
-                    document.body.appendChild(a);a.click();document.body.removeChild(a)
-                    URL.revokeObjectURL(url)
-                  }} style={{...s.btnOut,padding:'.6rem 1rem'}}><Icon name="upload" size={14}/> Exportar CSV</button>
-                  <button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>
-                </div>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total" v={totalOrcamentos} sv={`${listaOrcamentos.length} exibidos`} c={ACCENT_LT}/>
-                <KPI l="Valor total" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+lancamento.valor_total,0))} sv="soma dos contratos" c="#7D7D7D"/>
-                <KPI l="Saldo devedor" v={fmtR(listaOrcamentos.reduce((total,lancamento)=>total+(lancamento.saldo_devedor||0),0))} sv="valores em aberto" c="#777777"/>
-                <KPI l="Pagos" v={listaOrcamentos.filter(lancamento=>lancamento.pago).length} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={listaOrcamentos.filter(lancamento=>lancamento.status_entrega==='pendente').length} sv="aguardando confirmação" c="#748F84"/>
-              </div>
               <div style={s.card} className="budget-card">
                 <div className="budget-toolbar">
                   <div className="budget-toolbar-title">
