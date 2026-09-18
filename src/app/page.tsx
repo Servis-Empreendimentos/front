@@ -13,7 +13,7 @@ function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
 function isNotaFiscal(lancamento: Lancamento) {
-  return Boolean(lancamento.nf_numero || lancamento.arquivo_url || lancamento.status_processo === 'nf_recebida')
+  return Boolean(lancamento.arquivo_url)
 }
 
 function addDiasCorridos(dias: number): string {
@@ -273,7 +273,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,valor_frete:vFreteNF||detalhe.valor_frete})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
-      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('')
+      setModalNFItens(false);setModal(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('')
+      setAba('notas-fiscais');load()
       showToast('NF e itens salvos!')
     } catch (err:any) {showToast('Erro ao salvar NF: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
@@ -571,8 +572,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(fDataFim && l.data > fDataFim) return false
     return true
   })
-  const listaOrcamentos = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered
-  const totalOrcamentos = aba==='notas-fiscais' ? data.filter(isNotaFiscal).length : data.length
+  const listaOrcamentos = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
+  const totalOrcamentos = data.filter(aba==='notas-fiscais' ? isNotaFiscal : lancamento=>!isNotaFiscal(lancamento)).length
 
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
@@ -960,7 +961,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={()=>{
                     const linhas=[['Numero_Orcamento','NF_Numero','Empresa','CNPJ','Obra','Data','Valor_Total','Pago'].join(';')]
-                    const exportData=aba==='notas-fiscais'?data.filter(isNotaFiscal):data
+                    const exportData=listaOrcamentos
                     exportData.forEach(l=>{
                       const obraNome=obras.find(o=>o.id===l.obra_id)?.nome||''
                       linhas.push([l.numero_orcamento||'',l.nf_numero||'',l.titulo,l.cnpj||'',obraNome,l.data,String(l.valor_total).replace('.',','),l.pago?'SIM':'NAO'].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';'))
@@ -984,7 +985,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>{aba==='notas-fiscais'?'Notas fiscais vinculadas':'Todos os orçamentos'}</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>{aba==='notas-fiscais'?'Notas fiscais anexadas':'Orçamentos sem NF anexada'}</span>
                   <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <label style={{fontSize:11,color:'#7D7D7D',fontWeight:600}}>De:</label>
@@ -1043,7 +1044,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                             <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#777777',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
                             <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#8BA59A"/>:<Icon name="x" size={14} color="#777777"/>}</td>
                             <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="clipboard" size={15}/></a>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="receipt" size={15}/></a>:<span style={{color:'#C4CECA'}}>—</span>}</td>
+                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="receipt" size={15}/></a>:<span style={{color:'#B48662',fontSize:10,fontWeight:700,whiteSpace:'nowrap'}} title="Anexe a nota fiscal no detalhe do orçamento">Pendente anexar</span>}</td>
                             <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.criado_por}</td>
                           </tr>
                         )

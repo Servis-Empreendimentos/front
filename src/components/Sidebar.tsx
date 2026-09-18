@@ -109,8 +109,7 @@ export default function Sidebar({
             <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
             <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
 
-            <NavGroup icon="fileText" label="Orçamentos" open={orcamentosAberto} onToggle={()=>setOrcamentosAberto(v=>!v)}>
-              <NavItem sub icon="fileText" label="Todos os orçamentos" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+            <NavGroup icon="fileText" label="Orçamentos" open={orcamentosAberto} onToggle={()=>{setAba('lancamentos');setOrcamentosAberto(v=>!v)}}>
               <NavItem sub icon="receipt" label="Notas Fiscais" active={aba==='notas-fiscais'} onClick={()=>setAba('notas-fiscais')}/>
             </NavGroup>
 
