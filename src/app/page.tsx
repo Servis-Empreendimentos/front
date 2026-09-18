@@ -643,6 +643,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     })(),
   ].filter(item=>item.qtd>0||item.obra.id)
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
+  const porObraComLancamento=porObra.filter(item=>item.total>0)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
 
   type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
@@ -783,19 +784,24 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                       <span style={{fontSize:11,color:'#969696'}}>Comparativo por obra</span>
                     </div>
                   </div>
-                  <div className="overview-chart" role="img" aria-label="Gráfico de valor total, pago e saldo devedor por obra">
-                    {porObra.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Sem dados para exibir</span>:porObra.map(item=>(
+                  <div className="overview-chart" role="img" aria-label="Gráfico de valor pago e saldo devedor por obra, em relação ao total">
+                    {porObraComLancamento.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Nenhuma obra com lançamento ainda.</span>:porObraComLancamento.map(item=>(
                       <div className="overview-chart-row" key={item.obra.id||'sem-obra'}>
                         <div className="overview-chart-label" title={item.obra.nome}>{item.obra.nome}</div>
                         <div className="overview-chart-bars">
-                          <span className="overview-bar overview-bar-total" style={{width:`${Math.max(5,(item.total/maxTotalObra)*100)}%`}} title={`Total: ${fmtR(item.total)}`}/>
-                          <span className="overview-bar overview-bar-paid" style={{width:`${item.total?Math.max(3,(item.pago/item.total)*100):0}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
+                          <div className="overview-track" style={{width:`${Math.max(6,(item.total/maxTotalObra)*100)}%`}}>
+                            <span className="overview-seg-pago" style={{width:`${(item.pago/item.total)*100}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
+                            <span className="overview-seg-saldo" style={{width:`${(item.saldo/item.total)*100}%`}} title={`Saldo: ${fmtR(item.saldo)}`}/>
+                          </div>
                         </div>
-                        <strong>{fmtR(item.saldo)}</strong>
+                        <div className="overview-chart-values">
+                          <strong>{fmtR(item.total)}</strong>
+                          <span className={item.saldo>0?'overview-chart-debt':'overview-chart-ok'}>{item.saldo>0?`Saldo: ${fmtR(item.saldo)}`:'Quitado'}</span>
+                        </div>
                       </div>
                     ))}
                   </div>
-                  <div className="overview-chart-legend"><span><i className="legend-total"/> Total</span><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo</span></div>
+                  <div className="overview-chart-legend"><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo devedor</span></div>
                 </div>
               </div>
               <div style={{height:16}}/>

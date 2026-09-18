@@ -205,30 +205,32 @@ tbody td { border-bottom-color: var(--line) !important; }
 }
 .overview-chart-bars {
   position: relative;
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: center;
   min-width: 0;
   height: 30px;
-  padding: 5px 0;
-  border-radius: 99px;
-  background: #F0F4F1;
-  overflow: hidden;
 }
-.overview-bar {
-  display: block;
-  min-width: 0;
-  height: 8px;
+.overview-track {
+  display: flex;
+  height: 14px;
+  min-width: 6%;
   border-radius: 99px;
+  background: #EDF1EE;
+  overflow: hidden;
   transition: width 180ms var(--ease-out);
 }
-.overview-bar-total { background: #C9D8D1; }
-.overview-bar-paid { margin-top: -1px; background: var(--brand-dark); }
-.overview-chart-row strong {
-  color: #777777;
-  font-size: 12px;
-  font-weight: 700;
+.overview-seg-pago { display: block; height: 100%; background: var(--brand-dark); }
+.overview-seg-saldo { display: block; height: 100%; background: #C99A4B; }
+.overview-chart-values {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
   white-space: nowrap;
 }
+.overview-chart-values strong { color: #374151; font-size: 12px; font-weight: 700; }
+.overview-chart-values span { font-size: 10.5px; font-weight: 600; }
+.overview-chart-debt { color: #C99A4B; }
+.overview-chart-ok { color: #8BA59A; }
 .overview-chart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -240,9 +242,8 @@ tbody td { border-bottom-color: var(--line) !important; }
 }
 .overview-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .overview-chart-legend i { width: 10px; height: 10px; border-radius: 50%; }
-.legend-total { background: #C9D8D1; }
 .legend-paid { background: var(--brand-dark); }
-.legend-debt { background: #777777; }
+.legend-debt { background: #C99A4B; }
 
 @media (max-width: 1100px) {
   .workspace-bar { margin-top: 0; }
