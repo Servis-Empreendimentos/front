@@ -245,6 +245,14 @@ const localPagamentosFunc = () => readLocal<PagamentoFuncionario[]>(LOCAL_PAGAME
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
 
+function mergeLocalLancamentos(remote: Lancamento[], local: Lancamento[]) {
+  const idsRemotos = new Set(remote.map(item => item.id))
+  const somenteLocais = local.filter(item => !idsRemotos.has(item.id))
+  return [...remote, ...somenteLocais].sort((a, b) =>
+    (b.data || '').localeCompare(a.data || '') || (b.criado_em || '').localeCompare(a.criado_em || ''),
+  )
+}
+
 export const api = {
   categorias: async () => safeRead<any[]>('/api/categorias', 'categorias?order=nome.asc', []),
 
@@ -254,9 +262,17 @@ export const api = {
     if (f.status_processo) { backend.set('status_processo', f.status_processo); supabase.set('status_processo', `eq.${f.status_processo}`) }
     if (f.recorrente) { backend.set('recorrente', f.recorrente); supabase.set('recorrente', `eq.${f.recorrente}`) }
     if (f.obra_id) { backend.set('obra_id', f.obra_id); supabase.set('obra_id', `eq.${f.obra_id}`) }
-    const fallback = localLancamentos().filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id)).sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b.criado_em||'').localeCompare(a.criado_em||''))
+    const locais = localLancamentos()
+    const fallback = locais.filter(item => (!f.status_processo || item.status_processo === f.status_processo) && (!f.recorrente || String(item.recorrente) === f.recorrente) && (!f.obra_id || item.obra_id === f.obra_id)).sort((a,b)=>(b.data||'').localeCompare(a.data||'')||(b.criado_em||'').localeCompare(a.criado_em||''))
     const remote = await safeRead<Lancamento[] | null>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`, null)
-    if (remote !== null) return API_BASE ? remote : remote.map(item => ({ ...item, parcelas: [], itens: [] }))
+    if (remote !== null) {
+      const combinado = mergeLocalLancamentos(remote, locais).filter(item =>
+        (!f.status_processo || item.status_processo === f.status_processo) &&
+        (!f.recorrente || String(item.recorrente) === f.recorrente) &&
+        (!f.obra_id || item.obra_id === f.obra_id),
+      )
+      return API_BASE ? combinado : combinado.map(item => ({ ...item, parcelas: [], itens: [] }))
+    }
     return fallback
   },
 
@@ -337,6 +353,10 @@ export const api = {
       const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
       const lanc = data[0]
       if (!lanc) throw new Error('O banco não retornou o orçamento criado')
+      writeLocal(LOCAL_LANCAMENTOS_KEY, [
+        { ...lanc, parcelas: parcelas || [], itens: itens || [] },
+        ...localLancamentos().filter(item => item.id !== lanc.id),
+      ])
       if (itens?.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map((item: ItemLancamento) => ({ lancamento_id: lanc.id, tipo: 'orcamento', nome: item.nome, quantidade: item.quantidade, unidade_medida: item.unidade_medida || 'Un', valor_unitario: item.valor_unitario || 0, valor_total: item.valor_total || 0 }))) })
       if (parcelas?.length) await supabaseRequest('parcelas', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(parcelas.map((p: Parcela) => ({ ...p, lancamento_id: lanc.id }))) })
       return lanc

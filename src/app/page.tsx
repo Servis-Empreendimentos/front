@@ -596,19 +596,22 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
-  const totalPagos=data.filter(l=>l.pago).length
-  const totalPendente=data.filter(l=>l.status_entrega==='pendente').length
-  const obrasAtivas=obras.filter(o=>o.ativa)
+  const valorPagoLancamento=(l:Lancamento)=>Math.max(0,l.valor_total-(l.saldo_devedor ?? (l.pago?0:l.valor_total)))
+  const totalPago=data.reduce((s,l)=>s+valorPagoLancamento(l),0)
+  const totalTratativa=data.filter(l=>l.status_processo==='em_tratativa').length
+  const obrasVisiveis=obras
   const porObra=[
-    ...obrasAtivas.map(o=>{
+    ...obrasVisiveis.map(o=>{
       const lancs=data.filter(l=>l.obra_id===o.id)
-      return {obra:o,total:lancs.reduce((s,l)=>s+l.valor_total,0),saldo:lancs.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:lancs.length}
+      return {obra:o,total:lancs.reduce((s,l)=>s+l.valor_total,0),pago:lancs.reduce((s,l)=>s+valorPagoLancamento(l),0),saldo:lancs.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:lancs.length}
     }),
     (()=>{
       const semObra=data.filter(l=>!l.obra_id)
-      return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
+      return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),pago:semObra.reduce((s,l)=>s+valorPagoLancamento(l),0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
     })(),
-  ].filter(item=>item.qtd>0)
+  ].filter(item=>item.qtd>0||item.obra.id)
+  const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
+  const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
 
   type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
   const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
@@ -702,72 +705,104 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total" v={data.length} sv="lançamentos" c={ACCENT_LT}/>
                 <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
+                <KPI l="Valor pago" v={fmtR(totalPago)} sv="valor já quitado" c="#8BA59A"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
-                <KPI l="Pagos" v={totalPagos} sv="lançamentos quitados" c="#8BA59A"/>
-                <KPI l="Entregas pendentes" v={totalPendente} sv="aguardando confirmação" c="#748F84"/>
+                <KPI l="Em tratativa" v={totalTratativa} sv="orçamentos em negociação" c="#748F84"/>
               </div>
-              <div style={s.card}>
-                <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Quanto sai, por obra</span>
-                  <button onClick={()=>setAba('obras')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Gerenciar obras →</button>
+              <div className="overview-grid">
+                <div style={s.card}>
+                  <div style={s.toolbar}>
+                    <div style={{display:'grid',gap:3,flex:1}}>
+                      <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Resumo por obra</span>
+                      <span style={{fontSize:11,color:'#969696'}}>Total contratado, valor pago e saldo devedor</span>
+                    </div>
+                    <button onClick={()=>setAba('obras')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Gerenciar obras →</button>
+                  </div>
+                  {porObra.length===0?(
+                    <p style={{padding:'2rem',textAlign:'center',color:'#7D7D7D',fontSize:12}}>Nenhuma obra ou lançamento cadastrado ainda.</p>
+                  ):(
+                    <div className="overview-table-wrap">
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                        <thead>
+                          <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                            {th('Obra')}{th('Lançamentos')}{th('Valor total')}{th('Valor pago')}{th('Saldo devedor')}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {porObra.map(item=>(
+                            <tr key={item.obra.id||'sem-obra'} style={{borderBottom:'1px solid #E2E6E4',cursor:item.obra.id?'pointer':'default'}}
+                              onClick={()=>{if(item.obra.id){setFObra(item.obra.id);setAba('lancamentos')}}}
+                              onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                              <td style={{padding:'11px',fontWeight:700}}>{item.obra.nome}</td>
+                              <td style={{padding:'11px',color:'#7D7D7D'}}>{item.qtd}</td>
+                              <td style={{padding:'11px',fontWeight:700}}>{fmtR(item.total)}</td>
+                              <td style={{padding:'11px',fontWeight:700,color:ACCENT_LT}}>{fmtR(item.pago)}</td>
+                              <td style={{padding:'11px',fontWeight:700,color:item.saldo>0?'#777777':'#A6B0AA'}}>{item.saldo>0?fmtR(item.saldo):'Quitado'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
-                {porObra.length===0?(
-                  <p style={{padding:'2rem',textAlign:'center',color:'#7D7D7D',fontSize:12}}>Nenhum lançamento vinculado a obra ainda. Cadastre uma obra e vincule os lançamentos a ela.</p>
-                ):(
-                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                    <thead>
-                      <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Obra')}{th('Lançamentos')}{th('Total gasto')}{th('Falta pagar')}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {porObra.map(item=>(
-                        <tr key={item.obra.id||'sem-obra'} style={{borderBottom:'1px solid #E2E6E4',cursor:item.obra.id?'pointer':'default'}}
-                          onClick={()=>{if(item.obra.id){setFObra(item.obra.id);setAba('lancamentos')}}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'9px 11px',fontWeight:600}}>{item.obra.nome}</td>
-                          <td style={{padding:'9px 11px',color:'#7D7D7D'}}>{item.qtd}</td>
-                          <td style={{padding:'9px 11px',fontWeight:700}}>{fmtR(item.total)}</td>
-                          <td style={{padding:'9px 11px'}}>{item.saldo>0?<span style={{color:'#777777',fontWeight:700}}>{fmtR(item.saldo)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                <div className="overview-chart-card" style={s.card}>
+                  <div style={s.toolbar}>
+                    <div style={{display:'grid',gap:3}}>
+                      <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Gráfico financeiro</span>
+                      <span style={{fontSize:11,color:'#969696'}}>Comparativo por obra</span>
+                    </div>
+                  </div>
+                  <div className="overview-chart" role="img" aria-label="Gráfico de valor total, pago e saldo devedor por obra">
+                    {porObra.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Sem dados para exibir</span>:porObra.map(item=>(
+                      <div className="overview-chart-row" key={item.obra.id||'sem-obra'}>
+                        <div className="overview-chart-label" title={item.obra.nome}>{item.obra.nome}</div>
+                        <div className="overview-chart-bars">
+                          <span className="overview-bar overview-bar-total" style={{width:`${Math.max(5,(item.total/maxTotalObra)*100)}%`}} title={`Total: ${fmtR(item.total)}`}/>
+                          <span className="overview-bar overview-bar-paid" style={{width:`${item.total?Math.max(3,(item.pago/item.total)*100):0}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
+                        </div>
+                        <strong>{fmtR(item.saldo)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="overview-chart-legend"><span><i className="legend-total"/> Total</span><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo</span></div>
+                </div>
               </div>
               <div style={{height:16}}/>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Lançamentos recentes</span>
+                  <div style={{display:'grid',gap:3,flex:1}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Orçamentos em tratativa</span>
+                    <span style={{fontSize:11,color:'#969696'}}>Somente negociações que ainda estão em andamento</span>
+                  </div>
+                  <button onClick={()=>{setFPipe('em_tratativa');setAba('lancamentos')}} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver em Orçamentos →</button>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
                     <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                      {th('Empresa')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}
+                      {th('Empresa')}{th('Obra')}{th('Data')}{th('Total')}{th('Saldo devedor')}
                     </tr>
                   </thead>
                   <tbody>
-                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                    :data.slice(0,8).map(l=>{
-                      const step=PIPELINE.find(p=>p.id===l.status_processo)
-                      const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
+                    {loading?<tr><td colSpan={5} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :tratativas.length===0?<tr><td colSpan={5} style={{textAlign:'center',padding:'2.5rem',color:'#7D7D7D'}}>Nenhum orçamento em tratativa no momento.</td></tr>
+                    :tratativas.map(l=>{
+                      const obraDoLanc=obras.find(o=>o.id===l.obra_id)
                       const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'8px 11px',fontWeight:500,maxWidth:180,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                          <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                          <td style={{padding:'8px 11px',color:'#7D7D7D'}}>{fmtData(l.data)}</td>
-                          <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#777777',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                          <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#8BA59A"/>:<Icon name="x" size={14} color="#777777"/>}</td>
+                          <td style={{padding:'10px 11px',fontWeight:600,maxWidth:220,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{obraDoLanc?.nome||'Sem obra'}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
+                          <td style={{padding:'10px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
+                          <td style={{padding:'10px 11px',fontWeight:700,color:temSaldo?'#777777':'#A6B0AA'}}>{temSaldo?fmtR(l.saldo_devedor!):'Quitado'}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
                 <div style={{padding:'.6rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  <button onClick={()=>setAba('lancamentos')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Ver todos os lançamentos →</button>
+                  {tratativas.length} orçamento{tratativas.length!==1?'s':''} em tratativa
                 </div>
               </div>
             </div>
@@ -983,46 +1018,62 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <KPI l="Pagos" v={listaOrcamentos.filter(lancamento=>lancamento.pago).length} sv="lançamentos quitados" c="#8BA59A"/>
                 <KPI l="Entregas pendentes" v={listaOrcamentos.filter(lancamento=>lancamento.status_entrega==='pendente').length} sv="aguardando confirmação" c="#748F84"/>
               </div>
-              <div style={s.card}>
-                <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>{aba==='notas-fiscais'?'Notas fiscais anexadas':'Orçamentos sem NF anexada'}</span>
-                  <input style={{...s.inp,width:160}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
-                  <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <label style={{fontSize:11,color:'#7D7D7D',fontWeight:600}}>De:</label>
+              <div style={s.card} className="budget-card">
+                <div className="budget-toolbar">
+                  <div className="budget-toolbar-title">
+                    <span>{aba==='notas-fiscais'?'Notas fiscais anexadas':'Orçamentos sem NF anexada'}</span>
+                    <small>{listaOrcamentos.length} registro{listaOrcamentos.length!==1?'s':''} encontrado{listaOrcamentos.length!==1?'s':''}</small>
+                  </div>
+                  <label className="budget-filter budget-filter-search">
+                    <span>Buscar empresa ou orçamento</span>
+                    <input style={s.inp} placeholder="Digite para buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                  </label>
+                  <label className="budget-filter">
+                    <span>Data inicial</span>
                     <input type="date" style={s.inp} value={fDataIni} onChange={e=>setFDataIni(e.target.value)}/>
-                  </div>
-                  <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <label style={{fontSize:11,color:'#7D7D7D',fontWeight:600}}>Até:</label>
+                  </label>
+                  <label className="budget-filter">
+                    <span>Data final</span>
                     <input type="date" style={s.inp} value={fDataFim} onChange={e=>setFDataFim(e.target.value)}/>
-                  </div>
-                  {(fDataIni||fDataFim)&&(
-                    <button onClick={()=>{setFDataIni('');setFDataFim('')}} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar datas</button>
-                  )}
-                  <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
-                    <option value="">Todas as etapas</option>
-                    {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
-                  <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
-                    <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
-                  </select>
-                  <select style={s.inp} value={fObra} onChange={e=>setFObra(e.target.value)}>
-                    <option value="">Todas as obras</option>
-                    {obras.map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
-                  </select>
-                  {fObra&&(
-                    <button onClick={()=>setFObra('')} style={{...s.btnOut,padding:'4px 8px',fontSize:11}}>Limpar obra</button>
+                  </label>
+                  <label className="budget-filter">
+                    <span>Etapa</span>
+                    <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
+                      <option value="">Todas as etapas</option>
+                      {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="budget-filter">
+                    <span>Tipo</span>
+                    <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
+                      <option value="">Todos</option><option value="true">Mensais</option><option value="false">Avulsos</option>
+                    </select>
+                  </label>
+                  <label className="budget-filter budget-filter-obra">
+                    <span>Obra</span>
+                    <select style={s.inp} value={fObra} onChange={e=>setFObra(e.target.value)}>
+                      <option value="">Todas as obras</option>
+                      {obras.map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                    </select>
+                  </label>
+                  {(fDataIni||fDataFim||fPipe||fRec||fObra||search)&&(
+                    <button onClick={()=>{setFDataIni('');setFDataFim('');setFPipe('');setFRec('');setFObra('');setSearch('')}} style={{...s.btnOut,padding:'8px 12px',fontSize:11,alignSelf:'end'}}>Limpar filtros</button>
                   )}
                 </div>
-                <div style={{overflowX:'auto',maxHeight:440,overflowY:'auto'}}>
-                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <div className="budget-table-wrap">
+                  <table className="budget-table" style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <colgroup>
+                      <col style={{width:'22%'}}/><col style={{width:'13%'}}/><col style={{width:'12%'}}/><col style={{width:'18%'}}/>
+                      <col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'15%'}}/>
+                    </colgroup>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('NF Nº')}{th('Etapa')}{th('Data')}{th('Valor dos Itens')}{th('Frete')}{th('Desconto')}{th('Total')}{th('Saldo Dev.')}{th('Pgto')}{th('Proposta')}{th('NF')}{th('Lançado por')}
+                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo devedor')}{th('Nota fiscal')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :listaOrcamentos.length===0?<tr><td colSpan={15} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum registro'}</td></tr>
+                      {loading?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :listaOrcamentos.length===0?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum orçamento pendente'}</td></tr>
                       :listaOrcamentos.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
@@ -1031,29 +1082,23 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                         return (
                           <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                             onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                            <td style={{padding:'8px 11px',fontWeight:500,maxWidth:130,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{l.titulo}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11,maxWidth:110,overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}}>{obraDoLanc?.nome||'—'}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.numero_orcamento||'—'}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.nf_numero||'—'}</td>
-                            <td style={{padding:'8px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
-                            <td style={{padding:'8px 11px',fontWeight:500}}>{l.valor_produtos?fmtR(l.valor_produtos):'—'}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D'}}>{l.valor_frete?fmtR(l.valor_frete):'—'}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.tem_desconto&&l.valor_desconto?<span style={{color:'#7D7D7D',fontWeight:600,fontSize:11}}>-{fmtR(l.valor_desconto)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                            <td style={{padding:'8px 11px',textAlign:'right'}}>{temSaldo?<span style={{color:'#777777',fontWeight:700,fontSize:11}}>{fmtR(l.saldo_devedor!)}</span>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.pago?<Icon name="check" size={14} color="#8BA59A"/>:<Icon name="x" size={14} color="#777777"/>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.proposta_url?<a href={l.proposta_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="clipboard" size={15}/></a>:<span style={{color:'#C4CECA'}}>—</span>}</td>
-                            <td style={{padding:'8px 11px',textAlign:'center'}}>{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:ACCENT_LT,display:'inline-flex'}}><Icon name="receipt" size={15}/></a>:<span style={{color:'#B48662',fontSize:10,fontWeight:700,whiteSpace:'nowrap'}} title="Anexe a nota fiscal no detalhe do orçamento">Pendente anexar</span>}</td>
-                            <td style={{padding:'8px 11px',color:'#7D7D7D',fontSize:11}}>{l.criado_por}</td>
+                            <td className="budget-cell budget-cell-primary" title={l.titulo}>{l.titulo}</td>
+                            <td className="budget-cell budget-cell-muted" title={obraDoLanc?.nome||'Sem obra'}>{obraDoLanc?.nome||'Sem obra'}</td>
+                            <td className="budget-cell budget-cell-muted">{l.numero_orcamento||'—'}</td>
+                            <td className="budget-cell">{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
+                            <td className="budget-cell budget-cell-muted budget-cell-nowrap">{fmtData(l.data)}</td>
+                            <td className="budget-cell budget-cell-money">{fmtR(l.valor_total)}</td>
+                            <td className="budget-cell budget-cell-money">{temSaldo?fmtR(l.saldo_devedor!):<span className="budget-empty">Quitado</span>}</td>
+                            <td className="budget-cell">{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="budget-nf-ok"><Icon name="receipt" size={14}/> {l.nf_numero?`NF ${l.nf_numero}`:'Anexada'}</a>:<span className="budget-nf-pending">Pendente anexar</span>}</td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
-                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {listaOrcamentos.length} registro{listaOrcamentos.length!==1?'s':''} de {totalOrcamentos} total
+                <div className="budget-card-footer">
+                  <span>{listaOrcamentos.length} registro{listaOrcamentos.length!==1?'s':''} nesta visão</span>
+                  <span>Clique numa linha para abrir os detalhes completos</span>
                 </div>
               </div>
             </div>
