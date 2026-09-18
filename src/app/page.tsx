@@ -385,6 +385,20 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setModal(false);showToast('Excluído!');load()
   }
 
+  const handleVincularObra=async(obraId:string)=>{
+    if(!detalhe) return
+    setSaving(true)
+    try {
+      await api.atualizarLancamento(detalhe.id,{obra_id:obraId||null})
+      const atualizado=await api.buscar(detalhe.id)
+      setDetalhe(atualizado)
+      showToast(obraId?'Orçamento vinculado à obra!':'Vínculo com obra removido!')
+      load()
+    } catch (err:any) {
+      showToast('Erro ao vincular obra: '+(err?.message||'desconhecido'),false)
+    } finally {setSaving(false)}
+  }
+
   const handleMarcarItemEntregue=async(item:ItemLancamento,data_entrega:string)=>{
     if(!detalhe) return
     await api.atualizarItem(item.id!,{entregue:true,data_entrega})
@@ -577,7 +591,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(fDataFim && l.data > fDataFim) return false
     return true
   })
-  const listaOrcamentos = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
+  const listaOrcamentosBase = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
+  const listaOrcamentos = [...listaOrcamentosBase].sort((a,b)=>{
+    const semObraA=!a.obra_id ? 0 : 1
+    const semObraB=!b.obra_id ? 0 : 1
+    return semObraA-semObraB || (b.data||'').localeCompare(a.data||'') || (b.criado_em||'').localeCompare(a.criado_em||'')
+  })
 
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
@@ -1186,7 +1205,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 24px',marginBottom:16}}>
                   {([
                     ['Empresa',detalhe.titulo],
-                    ['Obra',obras.find(o=>o.id===detalhe.obra_id)?.nome||'Sem obra vinculada'],
                     ['Nº do orçamento',detalhe.numero_orcamento||'—'],
                     ['CNPJ',detalhe.cnpj?fmtCNPJ(detalhe.cnpj):'—'],
                     ['NF Nº',detalhe.nf_numero||'—'],
@@ -1197,6 +1215,18 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   ] as [string,string][]).map(([k,v])=>(
                     <div key={k}><p style={{fontSize:10,fontWeight:600,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>{k}</p><p style={{fontSize:14,fontWeight:500}}>{v}</p></div>
                   ))}
+                  <div>
+                    <p style={{fontSize:10,fontWeight:600,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:2}}>Obra</p>
+                    <select
+                      style={{...s.fi,fontSize:13,padding:'7px 9px'}}
+                      value={detalhe.obra_id||''}
+                      onChange={e=>handleVincularObra(e.target.value)}
+                      disabled={saving}
+                    >
+                      <option value="">Sem obra vinculada</option>
+                      {obras.filter(o=>o.ativa||o.id===detalhe.obra_id).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                    </select>
+                  </div>
                 </div>
 
                 <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,padding:'14px 16px',marginBottom:16}}>

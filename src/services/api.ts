@@ -1,13 +1,6 @@
 const configuredApiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
 // O frontend publicado não deve tentar acessar localhost do computador do visitante.
 const API_BASE = process.env.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(configuredApiBase) ? '' : configuredApiBase
-const SUPA_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '')
-const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_KEY || ''
-const SUPA_HEADERS = {
-  apikey: SUPA_KEY,
-  Authorization: `Bearer ${SUPA_KEY}`,
-  'Content-Type': 'application/json',
-}
 const DATA_PROXY = '/api/data'
 
 const LOCAL_LANCAMENTOS_KEY = 'servis.lancamentos.v1'
@@ -51,12 +44,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 async function supabaseRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const useProxy = !SUPA_URL || !SUPA_KEY
   const response = await fetch(
-    useProxy ? `${DATA_PROXY}?path=${encodeURIComponent(path)}` : `${SUPA_URL}/rest/v1/${path}`,
+    `${DATA_PROXY}?path=${encodeURIComponent(path)}`,
     {
       ...options,
-      headers: useProxy ? { ...(options.headers || {}) } : { ...SUPA_HEADERS, ...(options.headers || {}) },
+      headers: { ...(options.headers || {}) },
       cache: 'no-store',
     },
   )
@@ -70,14 +62,7 @@ async function supabaseRequest<T>(path: string, options: RequestInit = {}): Prom
 }
 
 async function readRemote<T>(backendPath: string, supabasePath: string, options: RequestOptions = {}): Promise<T> {
-  try {
-    return await supabaseRequest<T>(supabasePath, options)
-  } catch (supabaseError) {
-    if (API_BASE) {
-      try { return await request<T>(backendPath, options) } catch {}
-    }
-    throw supabaseError
-  }
+  return supabaseRequest<T>(supabasePath, options)
 }
 
 function readLocal<T>(key: string, fallback: T): T {
@@ -265,18 +250,13 @@ export const api = {
   },
 
   buscar: async (id: string) => {
-    try {
-      const [lancamentos, parcelas, itens] = await Promise.all([
-        supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),
-        supabaseRequest<Parcela[]>(`parcelas?lancamento_id=eq.${encodeURIComponent(id)}&order=numero.asc`),
-        supabaseRequest<ItemLancamento[]>(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
-      ])
-      if (!lancamentos[0]) throw new Error('Lançamento não encontrado no banco')
-      return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] }
-    } catch (supabaseError) {
-      if (API_BASE) return request<Lancamento>(`/api/lancamentos/${id}`)
-      throw supabaseError
-    }
+    const [lancamentos, parcelas, itens] = await Promise.all([
+      supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),
+      supabaseRequest<Parcela[]>(`parcelas?lancamento_id=eq.${encodeURIComponent(id)}&order=numero.asc`),
+      supabaseRequest<ItemLancamento[]>(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
+    ])
+    if (!lancamentos[0]) throw new Error('Lançamento não encontrado no banco')
+    return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] }
   },
 
   atualizarLancamento: async (id: string, body: Record<string, unknown>) => {
@@ -290,19 +270,13 @@ export const api = {
   },
 
   uploadArquivo: async (file: File): Promise<string> => {
-    const ext = file.name.split('.').pop() || 'pdf'
-    const nome = `${Date.now()}.${ext}`
-    if (!SUPA_URL || !SUPA_KEY) {
-      const form = new FormData()
-      form.append('file', file, file.name)
-      const response = await fetch('/api/storage', { method: 'POST', body: form })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok || !data.url) throw new Error(data.detail || 'Armazenamento de arquivos não configurado')
-      return data.url
-    }
-    const response = await fetch(`${SUPA_URL}/storage/v1/object/notas-fiscais/${nome}`, { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` }, body: file })
+    const form = new FormData()
+    form.append('file', file, file.name)
+    const response = await fetch('/api/storage', { method: 'POST', body: form })
+    const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error('Falha ao enviar arquivo para o armazenamento')
-    return `${SUPA_URL}/storage/v1/object/public/notas-fiscais/${nome}`
+    if (!data.url) throw new Error(data.detail || 'Armazenamento de arquivos não configurado')
+    return data.url
   },
 
   lerDocumento: async (file: File, prompt: string) => {
@@ -331,36 +305,17 @@ export const api = {
   criar: async (payload: any) => {
     const { parcelas, itens, categoria_nome, ...bodySemFilhos } = payload
     const body = { ...bodySemFilhos, pago_por: 'Servis Empreendimentos' }
-    try {
-      if (API_BASE) {
-        try {
-          return await request<Lancamento>('/api/lancamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, parcelas, itens }) })
-        } catch {
-          // Continua no Supabase: o backend antigo pode não estar publicado.
-        }
-      }
-      const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
-      const lanc = data[0]
-      if (!lanc) throw new Error('O banco não retornou o orçamento criado')
-      if (itens?.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map((item: ItemLancamento) => ({ lancamento_id: lanc.id, tipo: 'orcamento', nome: item.nome, quantidade: item.quantidade, unidade_medida: item.unidade_medida || 'Un', valor_unitario: item.valor_unitario || 0, valor_total: item.valor_total || 0 }))) })
-      if (parcelas?.length) await supabaseRequest('parcelas', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(parcelas.map((p: Parcela) => ({ ...p, lancamento_id: lanc.id }))) })
-      return lanc
-    } catch (error) { throw error }
+    const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
+    const lanc = data[0]
+    if (!lanc) throw new Error('O banco não retornou o orçamento criado')
+    if (itens?.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map((item: ItemLancamento) => ({ lancamento_id: lanc.id, tipo: 'orcamento', nome: item.nome, quantidade: item.quantidade, unidade_medida: item.unidade_medida || 'Un', valor_unitario: item.valor_unitario || 0, valor_total: item.valor_total || 0 }))) })
+    if (parcelas?.length) await supabaseRequest('parcelas', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(parcelas.map((p: Parcela) => ({ ...p, lancamento_id: lanc.id }))) })
+    return lanc
   },
 
   salvarItensNF: async (lancamento_id: string, itens: ItemLancamento[]) => {
-    try {
-      if (API_BASE) {
-        try {
-          await request('/api/itens-lancamento/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lancamento_id, itens }) })
-          return
-        } catch {
-          // Continua no Supabase: o backend antigo pode não estar publicado.
-        }
-      }
-      await supabaseRequest(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(lancamento_id)}&tipo=eq.nf`, { method: 'DELETE' })
-      if (itens.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map(i => ({ lancamento_id, tipo: 'nf', nome: i.nome, quantidade: i.quantidade, unidade_medida: i.unidade_medida || 'Un', valor_unitario: i.valor_unitario || 0, valor_total: i.valor_total || 0 }))) })
-    } catch (error) { throw error }
+    await supabaseRequest(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(lancamento_id)}&tipo=eq.nf`, { method: 'DELETE' })
+    if (itens.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map(i => ({ lancamento_id, tipo: 'nf', nome: i.nome, quantidade: i.quantidade, unidade_medida: i.unidade_medida || 'Un', valor_unitario: i.valor_unitario || 0, valor_total: i.valor_total || 0 }))) })
   },
 
   atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {
