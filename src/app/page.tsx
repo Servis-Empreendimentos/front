@@ -122,7 +122,7 @@ export default function Home() {
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
-  useEffect(()=>{ api.limparCacheLocal() },[])
+
 
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
