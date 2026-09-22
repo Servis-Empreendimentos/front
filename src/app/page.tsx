@@ -66,8 +66,6 @@ export default function Home() {
   const [modalHistoricoFuncionario,setModalHistoricoFuncionario]=useState<Funcionario|null>(null)
   const [historicoFuncionario,setHistoricoFuncionario]=useState<PagamentoFuncionario[]>([])
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
-  const [mesesAbertos,setMesesAbertos]=useState<Set<string>>(new Set())
-  const toggleMes=(mes:string)=>setMesesAbertos(prev=>{const next=new Set(prev);if(next.has(mes)) next.delete(mes); else next.add(mes); return next})
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -107,7 +105,7 @@ export default function Home() {
   const [pagParcialParc,setPagParcialParc]=useState('')
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
-  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;masterId:string}>({nome:'',cnpj:'',masterId:''})
+  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;segmento:string;masterId:string}>({nome:'',cnpj:'',segmento:'',masterId:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
   const [dataPagarConta,setDataPagarConta]=useState('')
@@ -124,7 +122,7 @@ export default function Home() {
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
-
+  useEffect(()=>{ api.limparCacheLocal() },[])
 
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
@@ -146,15 +144,6 @@ export default function Home() {
     }
     finally {if(!silent) setLoading(false)}
   },[fPipe,fRec,fObra])
-
-  // Limpa qualquer resíduo de dados salvos localmente por versões antigas do
-  // sistema (antes do proxy /api/data existir), que podiam inflar totais
-  // silenciosamente em PCs específicos. Roda uma vez, sozinho, ao abrir o site.
-  useEffect(()=>{
-    try {
-      ;['servis.lancamentos.v1','servis.fornecedores.v1','servis.obras.v1','servis.funcionarios.v1','servis.pagamentos-funcionario.v1'].forEach(k=>window.localStorage.removeItem(k))
-    } catch {}
-  },[])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
@@ -434,12 +423,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
-    setFormFornecedor({nome:'',cnpj:'',masterId:''})
+    setFormFornecedor({nome:'',cnpj:'',segmento:'',masterId:''})
     setModalFornecedor(true)
   }
   const openEditarFornecedor=(f:Fornecedor)=>{
     setFornecedorEdit(f)
-    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',masterId:f.fornecedor_master_id||''})
+    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',segmento:f.segmento||'',masterId:f.fornecedor_master_id||''})
     setModalFornecedor(true)
   }
   const handleSalvarFornecedor=async()=>{
@@ -447,10 +436,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSaving(true)
     try {
       if(fornecedorEdit) {
-        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null,fornecedor_master_id:formFornecedor.masterId||null})
+        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null,segmento:formFornecedor.segmento.trim()||null,fornecedor_master_id:formFornecedor.masterId||null})
         showToast('Fornecedor atualizado!')
       } else {
-        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined,formFornecedor.masterId||null)
+        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined,formFornecedor.masterId||null,formFornecedor.segmento.trim()||undefined)
         showToast('Fornecedor cadastrado!')
       }
       setModalFornecedor(false);load()
@@ -612,7 +601,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
     const q=searchForn.toLowerCase()
-    return f.nome.toLowerCase().includes(q) || (f.cnpj||'').includes(q)
+    return f.nome.toLowerCase().includes(q) || (f.cnpj||'').includes(q) || (f.segmento||'').toLowerCase().includes(q)
   }
   const fornecedorMasters = fornecedores.filter(f=>!f.fornecedor_master_id)
   const fornecedorMasterIds = new Set(fornecedorMasters.map(m=>m.id))
@@ -645,7 +634,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     })(),
   ].filter(item=>item.qtd>0||item.obra.id)
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
-  const porObraComLancamento=porObra.filter(item=>item.total>0)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
 
   type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
@@ -670,28 +658,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
   const contasAPagar=[...itensNF,...itensFolha,...itensMensais].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
-
-  const porMesFornecedor:Record<string,Record<string,number>>={}
-  data.filter(l=>l.pago).forEach(l=>{
-    const mes=(l.data_pagamento||l.data||'').slice(0,7)
-    if(!mes) return
-    if(!porMesFornecedor[mes]) porMesFornecedor[mes]={}
-    porMesFornecedor[mes][l.titulo]=(porMesFornecedor[mes][l.titulo]||0)+l.valor_total
-  })
-  Object.entries(gruposFolha).forEach(([mes,g])=>{
-    if(!porMesFornecedor[mes]) porMesFornecedor[mes]={}
-    porMesFornecedor[mes]['Folha de Pagamento']=(porMesFornecedor[mes]['Folha de Pagamento']||0)+g.valor
-  })
-  Object.entries(gruposMensais).forEach(([mes,g])=>{
-    if(!porMesFornecedor[mes]) porMesFornecedor[mes]={}
-    porMesFornecedor[mes]['Contas Mensais']=(porMesFornecedor[mes]['Contas Mensais']||0)+g.valor
-  })
-  const mesesPagar=Object.entries(porMesFornecedor).map(([mes,fornecedores])=>({
-    mes,
-    label:mesLabel(mes),
-    total:Object.values(fornecedores).reduce((s,v)=>s+v,0),
-    fornecedores:Object.entries(fornecedores).map(([nome,valor])=>({nome,valor})).sort((a,b)=>b.valor-a.valor),
-  })).sort((a,b)=>b.mes.localeCompare(a.mes))
 
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
@@ -808,24 +774,19 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                       <span style={{fontSize:11,color:'#969696'}}>Comparativo por obra</span>
                     </div>
                   </div>
-                  <div className="overview-chart" role="img" aria-label="Gráfico de valor pago e saldo devedor por obra, em relação ao total">
-                    {porObraComLancamento.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Nenhuma obra com lançamento ainda.</span>:porObraComLancamento.map(item=>(
+                  <div className="overview-chart" role="img" aria-label="Gráfico de valor total, pago e saldo devedor por obra">
+                    {porObra.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Sem dados para exibir</span>:porObra.map(item=>(
                       <div className="overview-chart-row" key={item.obra.id||'sem-obra'}>
                         <div className="overview-chart-label" title={item.obra.nome}>{item.obra.nome}</div>
                         <div className="overview-chart-bars">
-                          <div className="overview-track" style={{width:`${Math.max(6,(item.total/maxTotalObra)*100)}%`}}>
-                            <span className="overview-seg-pago" style={{width:`${(item.pago/item.total)*100}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
-                            <span className="overview-seg-saldo" style={{width:`${(item.saldo/item.total)*100}%`}} title={`Saldo: ${fmtR(item.saldo)}`}/>
-                          </div>
+                          <span className="overview-bar overview-bar-total" style={{width:`${Math.max(5,(item.total/maxTotalObra)*100)}%`}} title={`Total: ${fmtR(item.total)}`}/>
+                          <span className="overview-bar overview-bar-paid" style={{width:`${item.total?Math.max(3,(item.pago/item.total)*100):0}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
                         </div>
-                        <div className="overview-chart-values">
-                          <strong>{fmtR(item.total)}</strong>
-                          <span className={item.saldo>0?'overview-chart-debt':'overview-chart-ok'}>{item.saldo>0?`Saldo: ${fmtR(item.saldo)}`:'Quitado'}</span>
-                        </div>
+                        <strong>{fmtR(item.saldo)}</strong>
                       </div>
                     ))}
                   </div>
-                  <div className="overview-chart-legend"><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo devedor</span></div>
+                  <div className="overview-chart-legend"><span><i className="legend-total"/> Total</span><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo</span></div>
                 </div>
               </div>
               <div style={{height:16}}/>
@@ -872,53 +833,46 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
           {role!=='entregador'&&aba==='pagar'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Contas a Pagar</h1><p style={s.p}>Tudo que já foi pago, organizado por mês e por fornecedor</p></div>
-                <button onClick={()=>setMesesAbertos(mesesAbertos.size?new Set():new Set(mesesPagar.map(m=>m.mes)))} style={{...s.btnOut,padding:'.55rem 1rem'}}>{mesesAbertos.size?'Recolher tudo':'Expandir tudo'}</button>
+                <div><h1 style={s.h1}>Contas a Pagar</h1><p style={s.p}>Tudo que já foi pago — notas fiscais, folha de pagamento e contas mensais, num lugar só</p></div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
-                <KPI l="Meses com pagamento" v={mesesPagar.length} sv="meses registrados" c="#7D7D7D"/>
+                <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
+                <KPI l="Meses de folha" v={itensFolha.length} sv="agrupados por mês" c="#8BA59A"/>
+                <KPI l="Meses de contas fixas" v={itensMensais.length} sv="agrupados por mês" c="#748F84"/>
               </div>
-              <div style={{display:'grid',gap:12}}>
-                {mesesPagar.length===0?(
-                  <div style={s.card}><p style={{padding:'3rem',textAlign:'center',color:'#7D7D7D'}}>Nenhum pagamento registrado ainda</p></div>
-                ):mesesPagar.map(mesItem=>{
-                  const aberto=mesesAbertos.has(mesItem.mes)
-                  return (
-                    <div key={mesItem.mes} style={s.card}>
-                      <div onClick={()=>toggleMes(mesItem.mes)} style={{...s.toolbar,cursor:'pointer',userSelect:'none'}}>
-                        <span style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:20,height:20,borderRadius:6,background:'#EDF1EE',color:'#7D7D7D',fontSize:11,transform:aberto?'rotate(90deg)':'none',transition:'transform .15s'}}>▶</span>
-                        <div style={{display:'grid',gap:2,flex:1}}>
-                          <span style={{fontSize:13,fontWeight:800,color:'#374151',textTransform:'capitalize'}}>{mesItem.label}</span>
-                          <span style={{fontSize:11,color:'#969696'}}>{mesItem.fornecedores.length} fornecedor{mesItem.fornecedores.length!==1?'es':''}</span>
-                        </div>
-                        <strong style={{fontSize:14,color:'#374151'}}>{fmtR(mesItem.total)}</strong>
-                      </div>
-                      {aberto&&(
-                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                          <thead>
-                            <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                              {th('Fornecedor')}{th('Valor pago no mês')}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {mesItem.fornecedores.map(f=>(
-                              <tr key={f.nome} onClick={()=>{
-                                if(f.nome==='Folha de Pagamento') setAba('folha')
-                                else if(f.nome==='Contas Mensais') setAba('mensais')
-                                else { setSearch(f.nome); setAba('lancamentos') }
-                              }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
-                                onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                                <td style={{padding:'10px 11px',fontWeight:600,color:'#374151'}}>{f.nome}</td>
-                                <td style={{padding:'10px 11px',textAlign:'right',fontWeight:700}}>{fmtR(f.valor)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  )
-                })}
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Histórico de pagamentos</span>
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Descrição')}{th('Valor pago')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :contasAPagar.length===0?<tr><td colSpan={2} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum pagamento registrado ainda</td></tr>
+                    :contasAPagar.map(item=>(
+                      <tr key={item.id} onClick={()=>{
+                        if(item.tipo==='nf'&&item.lancamentoId) openDetalhe(item.lancamentoId)
+                        else if(item.tipo==='folha') setAba('folha')
+                        else setAba('mensais')
+                      }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
+                        onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                        <td style={{padding:'11px'}}>
+                          <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
+                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?'Folha de pagamento':'Contas mensais'} · {fmtData(item.data)}</p>
+                        </td>
+                        <td style={{padding:'11px',textAlign:'right',fontWeight:700}}>{fmtR(item.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {contasAPagar.length} registro{contasAPagar.length!==1?'s':''} · clique numa linha pra ver o detalhe
+                </div>
               </div>
             </div>
           )}
@@ -987,18 +941,18 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <div style={s.card}>
                 <div style={s.toolbar}>
                   <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
-                  <input style={{...s.inp,width:220}} placeholder="Buscar por nome ou CNPJ..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
+                  <input style={{...s.inp,width:220}} placeholder="Buscar nome, CNPJ ou segmento..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
                 </div>
                 <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead style={{position:'sticky',top:0,zIndex:2}}>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Nome')}{th('CNPJ')}{th('Ações')}
+                      {th('Nome')}{th('CNPJ')}{th('Segmento')}{th('Ações')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :fornecedorRows.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
+                      {loading?<tr><td colSpan={4} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :fornecedorRows.length===0?<tr><td colSpan={4} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
                       :fornecedorRows.map(({fornecedor:f,isSub})=>(
                         <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4',background:isSub?'#FAFBFA':'transparent'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background=isSub?'#FAFBFA':'')}>
@@ -1006,6 +960,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                             {isSub&&<span style={{color:'#B7C0BC',marginRight:6}}>└</span>}{f.nome}
                           </td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.segmento||'—'}</td>
                           <td style={{padding:'10px 11px'}}>
                             <div style={{display:'flex',gap:8}}>
                               <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
@@ -1708,6 +1663,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <label style={s.lb}>CNPJ</label>
                 <input style={s.fi} value={formFornecedor.cnpj?fmtCNPJ(formFornecedor.cnpj):''} maxLength={18} placeholder="00.000.000/0000-00"
                   onChange={e=>setFormFornecedor(p=>({...p,cnpj:e.target.value.replace(/\D/g,'')}))}/>
+              </div>
+              <div>
+                <label style={s.lb}>Segmento</label>
+                <input style={s.fi} value={formFornecedor.segmento} placeholder="Ex: Materiais elétricos, locação, serviços..."
+                  onChange={e=>setFormFornecedor(p=>({...p,segmento:e.target.value}))}/>
               </div>
               <div>
                 <label style={s.lb}>Fornecedor master (opcional)</label>
