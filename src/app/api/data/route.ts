@@ -8,6 +8,7 @@ const TABLES = new Set([
   'parcelas',
   'itens_lancamento',
   'fornecedores',
+  'inventario',
   'obras',
   'funcionarios',
   'pagamentos_funcionario',

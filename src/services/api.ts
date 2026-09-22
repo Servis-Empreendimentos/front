@@ -196,6 +196,20 @@ export type Fornecedor = {
   criado_em?: string
 }
 
+export type InventarioItem = {
+  id: string
+  nome: string
+  categoria?: string | null
+  unidade: string
+  quantidade: number
+  estoque_minimo: number
+  localizacao?: string | null
+  observacoes?: string | null
+  ativo?: boolean
+  criado_em?: string
+  atualizado_em?: string
+}
+
 export const PIPELINE = [
   { id: 'orcamento_aprovado', label: 'Orçamento recebido', icon: '📋' },
   { id: 'em_tratativa', label: 'Em tratativa', icon: '🤝' },
@@ -363,6 +377,21 @@ export const api = {
 
   excluirFornecedor: async (id: string) => {
     await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+
+  listarInventario: async (): Promise<InventarioItem[]> => readRemote<InventarioItem[]>('/api/inventario', 'inventario?order=nome.asc'),
+
+  criarInventario: async (payload: Omit<InventarioItem, 'id' | 'criado_em' | 'atualizado_em'>) => {
+    const data = await supabaseRequest<InventarioItem[]>('inventario', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) })
+    return data[0]
+  },
+
+  atualizarInventario: async (id: string, body: Partial<Omit<InventarioItem, 'id' | 'criado_em' | 'atualizado_em'>>) => {
+    await supabaseRequest(`inventario?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ...body, atualizado_em: new Date().toISOString() }) })
+  },
+
+  excluirInventario: async (id: string) => {
+    await supabaseRequest(`inventario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   listarObras: async (): Promise<Obra[]> => readRemote<Obra[]>('/api/obras', 'obras?order=nome.asc'),

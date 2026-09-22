@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -33,12 +33,13 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'obras'|'folha'|'pagar'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
   const [pagamentosMensais,setPagamentosMensais]=useState<PagamentoContaMensal[]>([])
   const [fornecedores,setFornecedores]=useState<Fornecedor[]>([])
+  const [inventario,setInventario]=useState<InventarioItem[]>([])
   const [obras,setObras]=useState<Obra[]>([])
   const [funcionarios,setFuncionarios]=useState<Funcionario[]>([])
   const [pagamentosFuncionarios,setPagamentosFuncionarios]=useState<PagamentoFuncionario[]>([])
@@ -106,6 +107,10 @@ export default function Home() {
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
   const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;segmento:string;masterId:string}>({nome:'',cnpj:'',segmento:'',masterId:''})
+  const [modalInventario,setModalInventario]=useState(false)
+  const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
+  const [searchInventario,setSearchInventario]=useState('')
+  const [formInventario,setFormInventario]=useState({nome:'',categoria:'',unidade:'Un',quantidade:'',estoqueMinimo:'',localizacao:'',observacoes:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
   const [dataPagarConta,setDataPagarConta]=useState('')
@@ -127,19 +132,20 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,pagMensais,listaObras,listaFuncionarios,listaPagamentosFuncionarios]=await Promise.all([
+      const [lista,mensais,categorias,forns,listaInventario,pagMensais,listaObras,listaFuncionarios,listaPagamentosFuncionarios]=await Promise.all([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
         api.listarFornecedores(),
+        api.listarInventario(),
         api.listarPagamentosMensais(),
         api.listarObras(),
         api.listarFuncionarios(),
         api.listarPagamentosFuncionarios(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
+      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setInventario(listaInventario);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
     } catch {
-      setData([]);setCats([]);setFornecedores([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
+      setData([]);setCats([]);setFornecedores([]);setInventario([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
       if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
     }
     finally {if(!silent) setLoading(false)}
@@ -457,6 +463,45 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     }
   }
 
+  const openNovoInventario=()=>{
+    setInventarioEdit(null)
+    setFormInventario({nome:'',categoria:'',unidade:'Un',quantidade:'',estoqueMinimo:'',localizacao:'',observacoes:''})
+    setModalInventario(true)
+  }
+  const openEditarInventario=(item:InventarioItem)=>{
+    setInventarioEdit(item)
+    setFormInventario({nome:item.nome,categoria:item.categoria||'',unidade:item.unidade||'Un',quantidade:String(item.quantidade),estoqueMinimo:String(item.estoque_minimo),localizacao:item.localizacao||'',observacoes:item.observacoes||''})
+    setModalInventario(true)
+  }
+  const handleSalvarInventario=async()=>{
+    if(!formInventario.nome.trim()) return showToast('Informe o nome do item',false)
+    const quantidade=Number(formInventario.quantidade.replace(',','.'))
+    const estoque_minimo=Number(formInventario.estoqueMinimo.replace(',','.'))
+    if(!Number.isFinite(quantidade)||quantidade<0) return showToast('Informe uma quantidade válida',false)
+    if(!Number.isFinite(estoque_minimo)||estoque_minimo<0) return showToast('Informe um estoque mínimo válido',false)
+    setSaving(true)
+    try {
+      const payload={nome:formInventario.nome.trim(),categoria:formInventario.categoria.trim()||null,unidade:formInventario.unidade,quantidade,estoque_minimo,localizacao:formInventario.localizacao.trim()||null,observacoes:formInventario.observacoes.trim()||null,ativo:true}
+      if(inventarioEdit) {
+        await api.atualizarInventario(inventarioEdit.id,payload)
+        showToast('Item atualizado!')
+      } else {
+        await api.criarInventario(payload)
+        showToast('Item cadastrado!')
+      }
+      setModalInventario(false);load()
+    } catch (err:any) {
+      showToast('Erro ao salvar item: '+(err?.message||'desconhecido'),false)
+    } finally {setSaving(false)}
+  }
+  const handleExcluirInventario=async(item:InventarioItem)=>{
+    if(!confirm(`Excluir o item "${item.nome}" do inventário?`)) return
+    try {
+      await api.excluirInventario(item.id)
+      showToast('Item excluído!');load()
+    } catch (err:any) { showToast('Erro ao excluir item: '+(err?.message||'desconhecido'),false) }
+  }
+
   const openNovaObra=()=>{
     setObraEdit(null)
     setFormObra({nome:'',endereco:''})
@@ -616,6 +661,14 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     }
   })
   fornecedores.filter(f=>f.fornecedor_master_id&&!fornecedorMasterIds.has(f.fornecedor_master_id)).filter(matchFornecedor).forEach(f=>fornecedorRows.push({fornecedor:f,isSub:false}))
+
+  const inventarioFiltrado=inventario.filter(item=>{
+    if(!searchInventario) return true
+    const q=searchInventario.toLowerCase()
+    return [item.nome,item.categoria,item.localizacao].some(value=>value?.toLowerCase().includes(q))
+  })
+  const inventarioBaixo=inventario.filter(item=>item.quantidade<=item.estoque_minimo)
+  const inventarioSemEstoque=inventario.filter(item=>item.quantidade<=0)
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
@@ -976,6 +1029,67 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
                   {fornecedorRows.length} fornecedor{fornecedorRows.length!==1?'es':''} de {fornecedores.length} total
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role!=='entregador'&&aba==='inventario'&&(
+            <div>
+              <div style={s.row}>
+                <div><h1 style={s.h1}>Inventário</h1><p style={s.p}>Controle materiais, quantidades e pontos de reposição</p></div>
+                <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo item</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
+                <KPI l="Itens cadastrados" v={inventario.length} sv="no inventário" c={ACCENT_LT}/>
+                <KPI l="Estoque baixo" v={inventarioBaixo.length} sv="precisam de atenção" c="#B48662"/>
+                <KPI l="Sem estoque" v={inventarioSemEstoque.length} sv="quantidade zerada" c="#777777"/>
+                <KPI l="Exibidos" v={inventarioFiltrado.length} sv="após a busca" c="#8BA59A"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Itens do inventário</span>
+                  <input style={{...s.inp,width:260}} placeholder="Buscar item, categoria ou local..." value={searchInventario} onChange={e=>setSearchInventario(e.target.value)}/>
+                </div>
+                <div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:760}}>
+                    <thead>
+                      <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                        {th('Item')}{th('Categoria')}{th('Unid.')}{th('Quantidade')}{th('Mínimo')}{th('Localização')}{th('Ações')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loading?<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :inventarioFiltrado.length===0?<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum item cadastrado no inventário</td></tr>
+                      :inventarioFiltrado.map(item=>{
+                        const baixo=item.quantidade<=item.estoque_minimo
+                        return (
+                          <tr key={item.id} style={{borderBottom:'1px solid #E2E6E4',background:baixo?'#FFF9F4':'transparent'}}>
+                            <td style={{padding:'11px',fontWeight:700}}>
+                              <div style={{display:'flex',alignItems:'center',gap:7}}>
+                                {baixo&&<span title={item.quantidade<=0?'Sem estoque':'Estoque abaixo do mínimo'} style={{width:7,height:7,borderRadius:'50%',background:item.quantidade<=0?'#B48662':'#D1A06F',display:'inline-block'}}/>}
+                                {item.nome}
+                              </div>
+                            </td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.categoria||'—'}</td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.unidade}</td>
+                            <td style={{padding:'11px',fontWeight:700,color:baixo?'#B48662':'#626262'}}>{item.quantidade}</td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.estoque_minimo}</td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.localizacao||'—'}</td>
+                            <td style={{padding:'11px'}}>
+                              <div style={{display:'flex',gap:8}}>
+                                <button onClick={()=>openEditarInventario(item)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
+                                {role==='gestora'&&<button onClick={()=>handleExcluirInventario(item)} style={{...s.btnRed,padding:'4px 10px',fontSize:11}}><Icon name="trash" size={12}/> Excluir</button>}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
+                  {inventarioFiltrado.length} item{inventarioFiltrado.length!==1?'ns':''} exibido{inventarioFiltrado.length!==1?'s':''} · ponto laranja indica estoque baixo
                 </div>
               </div>
             </div>
@@ -1683,6 +1797,34 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div style={s.mfoot}>
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalInventario&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalInventario(false)}>
+          <div style={{...s.modal,width:560}}>
+            <div style={s.mhdr}>
+              <h3 style={{fontSize:15,fontWeight:700}}>{inventarioEdit?'Editar item':'Novo item de inventário'}</h3>
+              <button onClick={()=>setModalInventario(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={s.fg}>
+              <FF lb="Nome do item *" full><input style={s.fi} value={formInventario.nome} onChange={e=>setFormInventario(p=>({...p,nome:e.target.value}))} placeholder="Ex: Cimento CP-II 50kg"/></FF>
+              <FF lb="Categoria"><input style={s.fi} value={formInventario.categoria} onChange={e=>setFormInventario(p=>({...p,categoria:e.target.value}))} placeholder="Ex: Material elétrico"/></FF>
+              <FF lb="Unidade *">
+                <select style={s.fi} value={formInventario.unidade} onChange={e=>setFormInventario(p=>({...p,unidade:e.target.value}))}>
+                  {['Un','Kg','g','Rolo','M','m²','m³','L','Cx','Pacote','Saco','Par'].map(unidade=><option key={unidade} value={unidade}>{unidade}</option>)}
+                </select>
+              </FF>
+              <FF lb="Quantidade atual *"><input type="number" min={0} step="any" style={s.fi} value={formInventario.quantidade} onChange={e=>setFormInventario(p=>({...p,quantidade:e.target.value}))} placeholder="0"/></FF>
+              <FF lb="Estoque mínimo *"><input type="number" min={0} step="any" style={s.fi} value={formInventario.estoqueMinimo} onChange={e=>setFormInventario(p=>({...p,estoqueMinimo:e.target.value}))} placeholder="0"/></FF>
+              <FF lb="Localização"><input style={s.fi} value={formInventario.localizacao} onChange={e=>setFormInventario(p=>({...p,localizacao:e.target.value}))} placeholder="Ex: Almoxarifado A"/></FF>
+              <FF lb="Observações" full><textarea style={{...s.fi,minHeight:76,resize:'vertical'}} value={formInventario.observacoes} onChange={e=>setFormInventario(p=>({...p,observacoes:e.target.value}))} placeholder="Informações adicionais sobre o item"/></FF>
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalInventario(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              <button onClick={handleSalvarInventario} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(inventarioEdit?'Salvar alterações':'Cadastrar item')}</button>
             </div>
           </div>
         </div>
