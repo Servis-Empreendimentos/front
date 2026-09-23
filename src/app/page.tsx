@@ -110,7 +110,7 @@ export default function Home() {
   const [modalInventario,setModalInventario]=useState(false)
   const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
   const [searchInventario,setSearchInventario]=useState('')
-  const [formInventario,setFormInventario]=useState({nome:'',categoria:'',unidade:'Un',quantidade:'',estoqueMinimo:'',localizacao:'',observacoes:''})
+  const [formInventario,setFormInventario]=useState({nome:'',tipo:'Equipamento',categoria:'',patrimonio:'',marcaModelo:'',numeroSerie:'',status:'Disponível',obraId:'',unidade:'Un',quantidade:'1',estoqueMinimo:'0',localizacao:'',observacoes:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
   const [dataPagarConta,setDataPagarConta]=useState('')
@@ -132,7 +132,7 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
-      const [lista,mensais,categorias,forns,listaInventario,pagMensais,listaObras,listaFuncionarios,listaPagamentosFuncionarios]=await Promise.all([
+      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios]=await Promise.allSettled([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
@@ -143,7 +143,17 @@ export default function Home() {
         api.listarFuncionarios(),
         api.listarPagamentosFuncionarios(),
       ])
-      setData(lista);setContasMensais(mensais);setCats(categorias);setFornecedores(forns);setInventario(listaInventario);setPagamentosMensais(pagMensais);setObras(listaObras);setFuncionarios(listaFuncionarios);setPagamentosFuncionarios(listaPagamentosFuncionarios)
+      if(rLista.status==='rejected') throw rLista.reason
+      const optional=(result:any,fallback:any[])=>result.status==='fulfilled'?result.value:fallback
+      setData(rLista.value)
+      setContasMensais(optional(rMensais,[]))
+      setCats(optional(rCategorias,[]))
+      setFornecedores(optional(rForns,[]))
+      setInventario(optional(rInventario,[]))
+      setPagamentosMensais(optional(rPagMensais,[]))
+      setObras(optional(rObras,[]))
+      setFuncionarios(optional(rFuncionarios,[]))
+      setPagamentosFuncionarios(optional(rPagamentosFuncionarios,[]))
     } catch {
       setData([]);setCats([]);setFornecedores([]);setInventario([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
       if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
@@ -465,12 +475,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoInventario=()=>{
     setInventarioEdit(null)
-    setFormInventario({nome:'',categoria:'',unidade:'Un',quantidade:'',estoqueMinimo:'',localizacao:'',observacoes:''})
+    setFormInventario({nome:'',tipo:'Equipamento',categoria:'',patrimonio:'',marcaModelo:'',numeroSerie:'',status:'Disponível',obraId:'',unidade:'Un',quantidade:'1',estoqueMinimo:'0',localizacao:'',observacoes:''})
     setModalInventario(true)
   }
   const openEditarInventario=(item:InventarioItem)=>{
     setInventarioEdit(item)
-    setFormInventario({nome:item.nome,categoria:item.categoria||'',unidade:item.unidade||'Un',quantidade:String(item.quantidade),estoqueMinimo:String(item.estoque_minimo),localizacao:item.localizacao||'',observacoes:item.observacoes||''})
+    setFormInventario({nome:item.nome,tipo:item.tipo||'Equipamento',categoria:item.categoria||'',patrimonio:item.patrimonio||'',marcaModelo:item.marca_modelo||'',numeroSerie:item.numero_serie||'',status:item.status||'Disponível',obraId:item.obra_id||'',unidade:item.unidade||'Un',quantidade:String(item.quantidade),estoqueMinimo:String(item.estoque_minimo),localizacao:item.localizacao||'',observacoes:item.observacoes||''})
     setModalInventario(true)
   }
   const handleSalvarInventario=async()=>{
@@ -481,7 +491,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!Number.isFinite(estoque_minimo)||estoque_minimo<0) return showToast('Informe um estoque mínimo válido',false)
     setSaving(true)
     try {
-      const payload={nome:formInventario.nome.trim(),categoria:formInventario.categoria.trim()||null,unidade:formInventario.unidade,quantidade,estoque_minimo,localizacao:formInventario.localizacao.trim()||null,observacoes:formInventario.observacoes.trim()||null,ativo:true}
+      const payload={nome:formInventario.nome.trim(),tipo:formInventario.tipo,categoria:formInventario.categoria.trim()||null,patrimonio:formInventario.patrimonio.trim()||null,marca_modelo:formInventario.marcaModelo.trim()||null,numero_serie:formInventario.numeroSerie.trim()||null,status:formInventario.status,obra_id:formInventario.obraId||null,unidade:formInventario.unidade,quantidade,estoque_minimo,localizacao:formInventario.localizacao.trim()||null,observacoes:formInventario.observacoes.trim()||null,ativo:true}
       if(inventarioEdit) {
         await api.atualizarInventario(inventarioEdit.id,payload)
         showToast('Item atualizado!')
@@ -665,10 +675,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const inventarioFiltrado=inventario.filter(item=>{
     if(!searchInventario) return true
     const q=searchInventario.toLowerCase()
-    return [item.nome,item.categoria,item.localizacao].some(value=>value?.toLowerCase().includes(q))
+    return [item.nome,item.tipo,item.categoria,item.patrimonio,item.marca_modelo,item.numero_serie,item.status,item.localizacao].some(value=>value?.toLowerCase().includes(q))
   })
-  const inventarioBaixo=inventario.filter(item=>item.quantidade<=item.estoque_minimo)
-  const inventarioSemEstoque=inventario.filter(item=>item.quantidade<=0)
+  const inventarioMaquinas=inventario.filter(item=>(item.tipo||'Equipamento')==='Máquina')
+  const inventarioEquipamentos=inventario.filter(item=>(item.tipo||'Equipamento')==='Equipamento')
+  const inventarioEmUso=inventario.filter(item=>item.status==='Em uso')
+  const inventarioManutencao=inventario.filter(item=>item.status==='Em manutenção')
 
   const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
   const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
@@ -1037,44 +1049,40 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
           {role!=='entregador'&&aba==='inventario'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Inventário</h1><p style={s.p}>Controle materiais, quantidades e pontos de reposição</p></div>
-                <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo item</button>
+                <div><h1 style={s.h1}>Inventário de máquinas e equipamentos</h1><p style={s.p}>Controle patrimônio, localização, uso e manutenção dos ativos</p></div>
+                <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo ativo</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Itens cadastrados" v={inventario.length} sv="no inventário" c={ACCENT_LT}/>
-                <KPI l="Estoque baixo" v={inventarioBaixo.length} sv="precisam de atenção" c="#B48662"/>
-                <KPI l="Sem estoque" v={inventarioSemEstoque.length} sv="quantidade zerada" c="#777777"/>
-                <KPI l="Exibidos" v={inventarioFiltrado.length} sv="após a busca" c="#8BA59A"/>
+                <KPI l="Total de ativos" v={inventario.length} sv="máquinas e equipamentos" c={ACCENT_LT}/>
+                <KPI l="Máquinas" v={inventarioMaquinas.length} sv="ativos cadastrados" c="#8BA59A"/>
+                <KPI l="Em uso" v={inventarioEmUso.length} sv="em operação" c="#748F84"/>
+                <KPI l="Em manutenção" v={inventarioManutencao.length} sv="precisam de atenção" c="#B48662"/>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Itens do inventário</span>
-                  <input style={{...s.inp,width:260}} placeholder="Buscar item, categoria ou local..." value={searchInventario} onChange={e=>setSearchInventario(e.target.value)}/>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Máquinas e equipamentos <span style={{fontWeight:500,letterSpacing:0}}>· {inventarioEquipamentos.length} equipamentos</span></span>
+                  <input style={{...s.inp,width:300}} placeholder="Buscar nome, patrimônio, série ou local..." value={searchInventario} onChange={e=>setSearchInventario(e.target.value)}/>
                 </div>
                 <div style={{overflowX:'auto'}}>
-                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:760}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:1040}}>
                     <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Item')}{th('Categoria')}{th('Unid.')}{th('Quantidade')}{th('Mínimo')}{th('Localização')}{th('Ações')}
+                        {th('Tipo')}{th('Máquina / equipamento')}{th('Patrimônio')}{th('Marca / modelo')}{th('Nº de série')}{th('Status')}{th('Obra / localização')}{th('Ações')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :inventarioFiltrado.length===0?<tr><td colSpan={7} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum item cadastrado no inventário</td></tr>
+                      {loading?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :inventarioFiltrado.length===0?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhuma máquina ou equipamento cadastrado</td></tr>
                       :inventarioFiltrado.map(item=>{
-                        const baixo=item.quantidade<=item.estoque_minimo
+                        const status=item.status||'Disponível'
                         return (
-                          <tr key={item.id} style={{borderBottom:'1px solid #E2E6E4',background:baixo?'#FFF9F4':'transparent'}}>
-                            <td style={{padding:'11px',fontWeight:700}}>
-                              <div style={{display:'flex',alignItems:'center',gap:7}}>
-                                {baixo&&<span title={item.quantidade<=0?'Sem estoque':'Estoque abaixo do mínimo'} style={{width:7,height:7,borderRadius:'50%',background:item.quantidade<=0?'#B48662':'#D1A06F',display:'inline-block'}}/>}
-                                {item.nome}
-                              </div>
-                            </td>
-                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.categoria||'—'}</td>
-                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.unidade}</td>
-                            <td style={{padding:'11px',fontWeight:700,color:baixo?'#B48662':'#626262'}}>{item.quantidade}</td>
-                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.estoque_minimo}</td>
+                          <tr key={item.id} style={{borderBottom:'1px solid #E2E6E4'}}>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.tipo||'Equipamento'}</td>
+                            <td style={{padding:'11px',fontWeight:700}}>{item.nome}<span style={{display:'block',fontSize:10,fontWeight:500,color:'#969696',marginTop:2}}>{item.categoria||'Sem categoria'} · Qtd. {item.quantidade} {item.unidade}</span></td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.patrimonio||'—'}</td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.marca_modelo||'—'}</td>
+                            <td style={{padding:'11px',color:'#7D7D7D'}}>{item.numero_serie||'—'}</td>
+                            <td style={{padding:'11px'}}><Badge label={status} bg={status==='Em manutenção'?'#FFF1E5':status==='Em uso'?'#E8F0EC':'#F1F5F3'} color={status==='Em manutenção'?'#B48662':status==='Em uso'?ACCENT_LT:'#7D7D7D'}/></td>
                             <td style={{padding:'11px',color:'#7D7D7D'}}>{item.localizacao||'—'}</td>
                             <td style={{padding:'11px'}}>
                               <div style={{display:'flex',gap:8}}>
@@ -1089,7 +1097,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   </table>
                 </div>
                 <div style={{padding:'.5rem 1.1rem',borderTop:'1px solid #E2E6E4',fontSize:11,color:'#7D7D7D',background:'#FAFBFA'}}>
-                  {inventarioFiltrado.length} item{inventarioFiltrado.length!==1?'ns':''} exibido{inventarioFiltrado.length!==1?'s':''} · ponto laranja indica estoque baixo
+                  {inventarioFiltrado.length} ativo{inventarioFiltrado.length!==1?'s':''} exibido{inventarioFiltrado.length!==1?'s':''} · edite um ativo para atualizar status e localização
                 </div>
               </div>
             </div>
@@ -1810,8 +1818,31 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <button onClick={()=>setModalInventario(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={s.fg}>
-              <FF lb="Nome do item *" full><input style={s.fi} value={formInventario.nome} onChange={e=>setFormInventario(p=>({...p,nome:e.target.value}))} placeholder="Ex: Cimento CP-II 50kg"/></FF>
-              <FF lb="Categoria"><input style={s.fi} value={formInventario.categoria} onChange={e=>setFormInventario(p=>({...p,categoria:e.target.value}))} placeholder="Ex: Material elétrico"/></FF>
+              <FF lb="Nome da máquina/equipamento *" full><input style={s.fi} value={formInventario.nome} onChange={e=>setFormInventario(p=>({...p,nome:e.target.value}))} placeholder="Ex: Betoneira 400L"/></FF>
+              <FF lb="Tipo *">
+                <select style={s.fi} value={formInventario.tipo} onChange={e=>setFormInventario(p=>({...p,tipo:e.target.value}))}>
+                  <option value="Máquina">Máquina</option>
+                  <option value="Equipamento">Equipamento</option>
+                </select>
+              </FF>
+              <FF lb="Categoria"><input style={s.fi} value={formInventario.categoria} onChange={e=>setFormInventario(p=>({...p,categoria:e.target.value}))} placeholder="Ex: Terraplenagem, elétrica, transporte"/></FF>
+              <FF lb="Nº de patrimônio"><input style={s.fi} value={formInventario.patrimonio} onChange={e=>setFormInventario(p=>({...p,patrimonio:e.target.value}))} placeholder="Ex: PAT-0001"/></FF>
+              <FF lb="Marca / modelo"><input style={s.fi} value={formInventario.marcaModelo} onChange={e=>setFormInventario(p=>({...p,marcaModelo:e.target.value}))} placeholder="Ex: Bosch GSH 500"/></FF>
+              <FF lb="Nº de série"><input style={s.fi} value={formInventario.numeroSerie} onChange={e=>setFormInventario(p=>({...p,numeroSerie:e.target.value}))} placeholder="Ex: SN123456"/></FF>
+              <FF lb="Status *">
+                <select style={s.fi} value={formInventario.status} onChange={e=>setFormInventario(p=>({...p,status:e.target.value}))}>
+                  <option value="Disponível">Disponível</option>
+                  <option value="Em uso">Em uso</option>
+                  <option value="Em manutenção">Em manutenção</option>
+                  <option value="Inativo">Inativo</option>
+                </select>
+              </FF>
+              <FF lb="Obra vinculada">
+                <select style={s.fi} value={formInventario.obraId} onChange={e=>setFormInventario(p=>({...p,obraId:e.target.value}))}>
+                  <option value="">Sem obra vinculada</option>
+                  {obras.filter(o=>o.ativa).map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
+                </select>
+              </FF>
               <FF lb="Unidade *">
                 <select style={s.fi} value={formInventario.unidade} onChange={e=>setFormInventario(p=>({...p,unidade:e.target.value}))}>
                   {['Un','Kg','g','Rolo','M','m²','m³','L','Cx','Pacote','Saco','Par'].map(unidade=><option key={unidade} value={unidade}>{unidade}</option>)}
@@ -1819,8 +1850,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               </FF>
               <FF lb="Quantidade atual *"><input type="number" min={0} step="any" style={s.fi} value={formInventario.quantidade} onChange={e=>setFormInventario(p=>({...p,quantidade:e.target.value}))} placeholder="0"/></FF>
               <FF lb="Estoque mínimo *"><input type="number" min={0} step="any" style={s.fi} value={formInventario.estoqueMinimo} onChange={e=>setFormInventario(p=>({...p,estoqueMinimo:e.target.value}))} placeholder="0"/></FF>
-              <FF lb="Localização"><input style={s.fi} value={formInventario.localizacao} onChange={e=>setFormInventario(p=>({...p,localizacao:e.target.value}))} placeholder="Ex: Almoxarifado A"/></FF>
-              <FF lb="Observações" full><textarea style={{...s.fi,minHeight:76,resize:'vertical'}} value={formInventario.observacoes} onChange={e=>setFormInventario(p=>({...p,observacoes:e.target.value}))} placeholder="Informações adicionais sobre o item"/></FF>
+              <FF lb="Localização"><input style={s.fi} value={formInventario.localizacao} onChange={e=>setFormInventario(p=>({...p,localizacao:e.target.value}))} placeholder="Ex: Almoxarifado A, galpão 2"/></FF>
+              <FF lb="Observações" full><textarea style={{...s.fi,minHeight:76,resize:'vertical'}} value={formInventario.observacoes} onChange={e=>setFormInventario(p=>({...p,observacoes:e.target.value}))} placeholder="Condição, acessórios ou informações adicionais"/></FF>
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalInventario(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
