@@ -199,7 +199,13 @@ export type Fornecedor = {
 export type InventarioItem = {
   id: string
   nome: string
+  tipo?: 'Máquina' | 'Equipamento' | string | null
   categoria?: string | null
+  patrimonio?: string | null
+  marca_modelo?: string | null
+  numero_serie?: string | null
+  status?: 'Disponível' | 'Em uso' | 'Em manutenção' | 'Inativo' | string | null
+  obra_id?: string | null
   unidade: string
   quantidade: number
   estoque_minimo: number
