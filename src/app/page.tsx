@@ -493,7 +493,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!confirm(`Excluir o fornecedor "${f.nome}"?`)) return
     try {
       await api.excluirFornecedor(f.id)
-      showToast('Fornecedor excluído!');load()
+      setModalFornecedor(false);setFornecedorEdit(null);showToast('Fornecedor excluído!');load()
     } catch (err:any) {
       showToast('Erro ao excluir: '+(err?.message||''),false)
     }
@@ -1038,28 +1038,20 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                      {th('Nome')}{th('CNPJ')}{th('Segmento')}{th('Ações')}
+                      {th('Nome')}{th('CNPJ')}{th('Segmento')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={4} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :fornecedorRows.length===0?<tr><td colSpan={4} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
+                      {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :fornecedorRows.length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum fornecedor cadastrado</td></tr>
                       :fornecedorRows.map(({fornecedor:f,isSub})=>(
-                        <tr key={f.id} style={{borderBottom:'1px solid #E2E6E4',background:isSub?'#FAFBFA':'transparent'}}
+                        <tr key={f.id} onClick={()=>openEditarFornecedor(f)} style={{borderBottom:'1px solid #E2E6E4',background:isSub?'#FAFBFA':'transparent',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background=isSub?'#FAFBFA':'')}>
                           <td style={{padding:'10px 11px',fontWeight:isSub?500:700,paddingLeft:isSub?30:11,color:isSub?'#5A5A5A':'#374151'}}>
                             {isSub&&<span style={{color:'#B7C0BC',marginRight:6}}>└</span>}{f.nome}
                           </td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.cnpj?fmtCNPJ(f.cnpj):'—'}</td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{f.segmento||'—'}</td>
-                          <td style={{padding:'10px 11px'}}>
-                            <div style={{display:'flex',gap:8}}>
-                              <button onClick={()=>openEditarFornecedor(f)} style={{...s.btnOut,padding:'4px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
-                              {role==='gestora'&&(
-                                <button onClick={()=>handleExcluirFornecedor(f)} style={{...s.btnRed,padding:'4px 10px',fontSize:11}}><Icon name="trash" size={12}/> Excluir</button>
-                              )}
-                            </div>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1856,6 +1848,9 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               </div>
             </div>
             <div style={s.mfoot}>
+              {fornecedorEdit&&role==='gestora'&&(
+                <button onClick={()=>handleExcluirFornecedor(fornecedorEdit)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13,marginRight:'auto'}}><Icon name="trash" size={13}/> Excluir fornecedor</button>
+              )}
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
             </div>
