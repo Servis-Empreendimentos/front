@@ -106,7 +106,7 @@ export default function Home() {
   const [pagParcialParc,setPagParcialParc]=useState('')
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
-  const [formFornecedor,setFormFornecedor]=useState<{nome:string;cnpj:string;segmento:string;masterId:string}>({nome:'',cnpj:'',segmento:'',masterId:''})
+  const [formFornecedor,setFormFornecedor]=useState({nome:'',cnpj:'',segmento:'',tipos:'',razao_social:'',contato:'',email:'',site:'',telefone:'',celular:'',cep:'',endereco:'',numero:'',bairro:'',complemento:'',estado:'',cidade:'',observacoes:'',avaliacao:'',banco:'',agencia:'',conta_corrente:'',pix:'',masterId:''})
   const [modalInventario,setModalInventario]=useState(false)
   const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
   const [searchInventario,setSearchInventario]=useState('')
@@ -439,23 +439,49 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFornecedor=()=>{
     setFornecedorEdit(null)
-    setFormFornecedor({nome:'',cnpj:'',segmento:'',masterId:''})
+    setFormFornecedor({nome:'',cnpj:'',segmento:'',tipos:'',razao_social:'',contato:'',email:'',site:'',telefone:'',celular:'',cep:'',endereco:'',numero:'',bairro:'',complemento:'',estado:'',cidade:'',observacoes:'',avaliacao:'',banco:'',agencia:'',conta_corrente:'',pix:'',masterId:''})
     setModalFornecedor(true)
   }
   const openEditarFornecedor=(f:Fornecedor)=>{
     setFornecedorEdit(f)
-    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',segmento:f.segmento||'',masterId:f.fornecedor_master_id||''})
+    setFormFornecedor({nome:f.nome,cnpj:f.cnpj||'',segmento:f.segmento||'',tipos:f.tipos||'',razao_social:f.razao_social||'',contato:f.contato||'',email:f.email||'',site:f.site||'',telefone:f.telefone||'',celular:f.celular||'',cep:f.cep||'',endereco:f.endereco||'',numero:f.numero||'',bairro:f.bairro||'',complemento:f.complemento||'',estado:f.estado||'',cidade:f.cidade||'',observacoes:f.observacoes||'',avaliacao:f.avaliacao||'',banco:f.banco||'',agencia:f.agencia||'',conta_corrente:f.conta_corrente||'',pix:f.pix||'',masterId:f.fornecedor_master_id||''})
     setModalFornecedor(true)
   }
   const handleSalvarFornecedor=async()=>{
     if(!formFornecedor.nome.trim()) return showToast('Informe o nome do fornecedor',false)
     setSaving(true)
     try {
+      const payload={
+        nome:formFornecedor.nome.trim(),
+        cnpj:formFornecedor.cnpj||null,
+        segmento:formFornecedor.segmento.trim()||null,
+        tipos:formFornecedor.tipos.trim()||null,
+        razao_social:formFornecedor.razao_social.trim()||null,
+        contato:formFornecedor.contato.trim()||null,
+        email:formFornecedor.email.trim()||null,
+        site:formFornecedor.site.trim()||null,
+        telefone:formFornecedor.telefone.trim()||null,
+        celular:formFornecedor.celular.trim()||null,
+        cep:formFornecedor.cep.trim()||null,
+        endereco:formFornecedor.endereco.trim()||null,
+        numero:formFornecedor.numero.trim()||null,
+        bairro:formFornecedor.bairro.trim()||null,
+        complemento:formFornecedor.complemento.trim()||null,
+        estado:formFornecedor.estado.trim()||null,
+        cidade:formFornecedor.cidade.trim()||null,
+        observacoes:formFornecedor.observacoes.trim()||null,
+        avaliacao:formFornecedor.avaliacao.trim()||null,
+        banco:formFornecedor.banco.trim()||null,
+        agencia:formFornecedor.agencia.trim()||null,
+        conta_corrente:formFornecedor.conta_corrente.trim()||null,
+        pix:formFornecedor.pix.trim()||null,
+        fornecedor_master_id:formFornecedor.masterId||null,
+      }
       if(fornecedorEdit) {
-        await api.atualizarFornecedor(fornecedorEdit.id,{nome:formFornecedor.nome.trim(),cnpj:formFornecedor.cnpj||null,segmento:formFornecedor.segmento.trim()||null,fornecedor_master_id:formFornecedor.masterId||null})
+        await api.atualizarFornecedor(fornecedorEdit.id,payload)
         showToast('Fornecedor atualizado!')
       } else {
-        await api.criarFornecedor(formFornecedor.nome.trim(),formFornecedor.cnpj||undefined,formFornecedor.masterId||null,formFornecedor.segmento.trim()||undefined)
+        await api.criarFornecedor(payload)
         showToast('Fornecedor cadastrado!')
       }
       setModalFornecedor(false);load()
@@ -1771,13 +1797,13 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
       {modalFornecedor&&(
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalFornecedor(false)}>
-          <div style={{...s.modal,width:440}}>
+          <div style={{...s.modal,width:780,maxWidth:'calc(100vw - 2rem)'}}>
             <div style={s.mhdr}>
               <h3 style={{fontSize:15,fontWeight:700}}>{fornecedorEdit?'Editar Fornecedor':'Novo Fornecedor'}</h3>
               <button onClick={()=>setModalFornecedor(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
-            <div style={{padding:'1.5rem',display:'grid',gap:14}}>
-              <div>
+            <div style={{padding:'1.5rem',display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,maxHeight:'70vh',overflowY:'auto'}}>
+              <div style={{gridColumn:'1/-1'}}>
                 <label style={s.lb}>Nome da empresa *</label>
                 <input style={s.fi} value={formFornecedor.nome} onChange={e=>setFormFornecedor(p=>({...p,nome:e.target.value}))} placeholder="Ex: Materiais São José"/>
               </div>
@@ -1791,6 +1817,33 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <input style={s.fi} value={formFornecedor.segmento} placeholder="Ex: Materiais elétricos, locação, serviços..."
                   onChange={e=>setFormFornecedor(p=>({...p,segmento:e.target.value}))}/>
               </div>
+              <div>
+                <label style={s.lb}>Tipos</label>
+                <input style={s.fi} value={formFornecedor.tipos} placeholder="Ex: Material, serviço, transporte"
+                  onChange={e=>setFormFornecedor(p=>({...p,tipos:e.target.value}))}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={s.lb}>Razão social</label>
+                <input style={s.fi} value={formFornecedor.razao_social} onChange={e=>setFormFornecedor(p=>({...p,razao_social:e.target.value}))}/>
+              </div>
+              <div><label style={s.lb}>Contato</label><input style={s.fi} value={formFornecedor.contato} onChange={e=>setFormFornecedor(p=>({...p,contato:e.target.value}))}/></div>
+              <div><label style={s.lb}>E-mail</label><input type="email" style={s.fi} value={formFornecedor.email} onChange={e=>setFormFornecedor(p=>({...p,email:e.target.value}))}/></div>
+              <div><label style={s.lb}>Site</label><input style={s.fi} value={formFornecedor.site} onChange={e=>setFormFornecedor(p=>({...p,site:e.target.value}))}/></div>
+              <div><label style={s.lb}>Telefone</label><input style={s.fi} value={formFornecedor.telefone} onChange={e=>setFormFornecedor(p=>({...p,telefone:e.target.value}))}/></div>
+              <div><label style={s.lb}>Celular</label><input style={s.fi} value={formFornecedor.celular} onChange={e=>setFormFornecedor(p=>({...p,celular:e.target.value}))}/></div>
+              <div><label style={s.lb}>CEP</label><input style={s.fi} value={formFornecedor.cep} onChange={e=>setFormFornecedor(p=>({...p,cep:e.target.value}))}/></div>
+              <div><label style={s.lb}>Endereço</label><input style={s.fi} value={formFornecedor.endereco} onChange={e=>setFormFornecedor(p=>({...p,endereco:e.target.value}))}/></div>
+              <div><label style={s.lb}>Número</label><input style={s.fi} value={formFornecedor.numero} onChange={e=>setFormFornecedor(p=>({...p,numero:e.target.value}))}/></div>
+              <div><label style={s.lb}>Bairro</label><input style={s.fi} value={formFornecedor.bairro} onChange={e=>setFormFornecedor(p=>({...p,bairro:e.target.value}))}/></div>
+              <div><label style={s.lb}>Complemento</label><input style={s.fi} value={formFornecedor.complemento} onChange={e=>setFormFornecedor(p=>({...p,complemento:e.target.value}))}/></div>
+              <div><label style={s.lb}>Estado</label><input style={s.fi} value={formFornecedor.estado} onChange={e=>setFormFornecedor(p=>({...p,estado:e.target.value}))}/></div>
+              <div><label style={s.lb}>Cidade</label><input style={s.fi} value={formFornecedor.cidade} onChange={e=>setFormFornecedor(p=>({...p,cidade:e.target.value}))}/></div>
+              <div style={{gridColumn:'1/-1'}}><label style={s.lb}>Observações</label><textarea style={{...s.fi,minHeight:64,resize:'vertical' as const}} value={formFornecedor.observacoes} onChange={e=>setFormFornecedor(p=>({...p,observacoes:e.target.value}))}/></div>
+              <div><label style={s.lb}>Avaliação</label><input style={s.fi} value={formFornecedor.avaliacao} onChange={e=>setFormFornecedor(p=>({...p,avaliacao:e.target.value}))}/></div>
+              <div><label style={s.lb}>Banco</label><input style={s.fi} value={formFornecedor.banco} onChange={e=>setFormFornecedor(p=>({...p,banco:e.target.value}))}/></div>
+              <div><label style={s.lb}>Agência</label><input style={s.fi} value={formFornecedor.agencia} onChange={e=>setFormFornecedor(p=>({...p,agencia:e.target.value}))}/></div>
+              <div><label style={s.lb}>Conta corrente</label><input style={s.fi} value={formFornecedor.conta_corrente} onChange={e=>setFormFornecedor(p=>({...p,conta_corrente:e.target.value}))}/></div>
+              <div><label style={s.lb}>PIX</label><input style={s.fi} value={formFornecedor.pix} onChange={e=>setFormFornecedor(p=>({...p,pix:e.target.value}))}/></div>
               <div>
                 <label style={s.lb}>Fornecedor master (opcional)</label>
                 <select style={s.fi} value={formFornecedor.masterId} onChange={e=>setFormFornecedor(p=>({...p,masterId:e.target.value}))}>

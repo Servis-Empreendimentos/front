@@ -192,6 +192,26 @@ export type Fornecedor = {
   nome: string
   cnpj?: string | null
   segmento?: string | null
+  tipos?: string | null
+  razao_social?: string | null
+  contato?: string | null
+  email?: string | null
+  site?: string | null
+  telefone?: string | null
+  celular?: string | null
+  cep?: string | null
+  endereco?: string | null
+  numero?: string | null
+  bairro?: string | null
+  complemento?: string | null
+  estado?: string | null
+  cidade?: string | null
+  observacoes?: string | null
+  avaliacao?: string | null
+  banco?: string | null
+  agencia?: string | null
+  conta_corrente?: string | null
+  pix?: string | null
   fornecedor_master_id?: string | null
   criado_em?: string
 }
@@ -369,15 +389,18 @@ export const api = {
     return api.criarFornecedor(nome, cnpj, null, segmento)
   },
 
-  criarFornecedor: async (nome: string, cnpj?: string, fornecedorMasterId?: string | null, segmento?: string) => {
+  criarFornecedor: async (nomeOrPayload: string | Partial<Fornecedor>, cnpj?: string, fornecedorMasterId?: string | null, segmento?: string) => {
+    const body = typeof nomeOrPayload === 'string'
+      ? { nome: nomeOrPayload, cnpj: cnpj || null, segmento: segmento || null, fornecedor_master_id: fornecedorMasterId || null }
+      : nomeOrPayload
     return await readRemote<Fornecedor>(
       '/api/fornecedores',
       'fornecedores',
-      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome, cnpj: cnpj || null, segmento: segmento || null, fornecedor_master_id: fornecedorMasterId || null }) },
+      { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) },
     ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
-  atualizarFornecedor: async (id: string, body: { nome?: string; cnpj?: string | null; segmento?: string | null; fornecedor_master_id?: string | null }) => {
+  atualizarFornecedor: async (id: string, body: Partial<Omit<Fornecedor, 'id' | 'criado_em'>>) => {
     await readRemote(`/api/fornecedores/${id}`, `fornecedores?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
