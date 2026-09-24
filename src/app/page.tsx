@@ -547,10 +547,19 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSugestoesSegmentos([])
     setModalSegmentos(true)
     try {
-      const response=await fetch('/api/fornecedores/segmentos',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fornecedores})})
-      const result=await response.json().catch(()=>({}))
-      if(!response.ok) throw new Error(result?.detail||'Não foi possível revisar os segmentos')
-      setSugestoesSegmentos(Array.isArray(result?.suggestions)?result.suggestions:[])
+      const tamanhoLote=12
+      const lotes=Array.from({length:Math.ceil(fornecedores.length/tamanhoLote)},(_,indice)=>fornecedores.slice(indice*tamanhoLote,(indice+1)*tamanhoLote))
+      const respostas=await Promise.allSettled(lotes.map(async lote=>{
+        const response=await fetch('/api/fornecedores/segmentos',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fornecedores:lote})})
+        const result=await response.json().catch(()=>({}))
+        if(!response.ok) throw new Error(result?.detail||'Não foi possível revisar um lote')
+        return Array.isArray(result?.suggestions)?result.suggestions:[]
+      }))
+      const sugestoes=respostas.filter((resposta): resposta is PromiseFulfilledResult<SugestaoSegmento[]>=>resposta.status==='fulfilled').flatMap(resposta=>resposta.value)
+      const lotesComErro=respostas.filter(resposta=>resposta.status==='rejected').length
+      if(!sugestoes.length&&lotesComErro===lotes.length) throw new Error('A revisão demorou para responder. Tente novamente.')
+      setSugestoesSegmentos(Array.from(new Map(sugestoes.map(item=>[item.fornecedor_id,item])).values()))
+      if(lotesComErro>0) showToast(`Revisão parcial: ${lotesComErro} lote(s) demoraram. Clique novamente para revisar o restante.`)
     } catch(err:any) {
       setModalSegmentos(false)
       showToast('Erro na revisão: '+(err?.message||'tente novamente'),false)
