@@ -16,6 +16,18 @@ function isNotaFiscal(lancamento: Lancamento) {
   return Boolean(lancamento.arquivo_url)
 }
 
+type AnaliseConcorrentes = {
+  resumo: string
+  grupos: Array<{
+    titulo: string
+    confianca: 'alta'|'media'|'baixa'
+    criterio: string
+    alerta: string
+    fornecedor_ids: string[]
+  }>
+  sem_concorrencia_clara: string[]
+}
+
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
 }
@@ -107,6 +119,9 @@ export default function Home() {
   const [modalFornecedor,setModalFornecedor]=useState(false)
   const [fornecedorEdit,setFornecedorEdit]=useState<Fornecedor|null>(null)
   const [formFornecedor,setFormFornecedor]=useState({nome:'',cnpj:'',segmento:'',tipos:'',razao_social:'',contato:'',email:'',site:'',telefone:'',celular:'',cep:'',endereco:'',numero:'',bairro:'',complemento:'',estado:'',cidade:'',observacoes:'',avaliacao:'',banco:'',agencia:'',conta_corrente:'',pix:'',masterId:''})
+  const [modalConcorrentes,setModalConcorrentes]=useState(false)
+  const [analiseConcorrentes,setAnaliseConcorrentes]=useState<AnaliseConcorrentes|null>(null)
+  const [loadingConcorrentes,setLoadingConcorrentes]=useState(false)
   const [modalInventario,setModalInventario]=useState(false)
   const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
   const [searchInventario,setSearchInventario]=useState('')
@@ -497,6 +512,20 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } catch (err:any) {
       showToast('Erro ao excluir: '+(err?.message||''),false)
     }
+  }
+  const handleAnalisarConcorrentes=async()=>{
+    if(fornecedores.length<2) return showToast('Cadastre pelo menos dois fornecedores para comparar',false)
+    setLoadingConcorrentes(true)
+    setModalConcorrentes(true)
+    try {
+      const response=await fetch('/api/fornecedores/concorrentes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fornecedores})})
+      const result=await response.json().catch(()=>({}))
+      if(!response.ok) throw new Error(result?.detail||'Não foi possível analisar os concorrentes')
+      setAnaliseConcorrentes(result)
+    } catch(err:any) {
+      setModalConcorrentes(false)
+      showToast('Erro na análise: '+(err?.message||'tente novamente'),false)
+    } finally { setLoadingConcorrentes(false) }
   }
 
   const openNovoInventario=()=>{
@@ -1023,7 +1052,10 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             <div>
               <div style={s.row}>
                 <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
-                <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  <button onClick={handleAnalisarConcorrentes} disabled={loadingConcorrentes} style={{...s.btnOut,opacity:loadingConcorrentes?0.65:1}}><Icon name="search" size={14}/> {loadingConcorrentes?'Analisando...':'Analisar concorrentes com IA'}</button>
+                  <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
+                </div>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${fornecedorRows.length} exibidos`} c={ACCENT_LT}/>
@@ -1853,6 +1885,72 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               )}
               <button onClick={()=>setModalFornecedor(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
               <button onClick={handleSalvarFornecedor} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(fornecedorEdit?'Salvar alterações':'Cadastrar')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalConcorrentes&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalConcorrentes(false)}>
+          <div style={{...s.modal,width:820,maxWidth:'calc(100vw - 2rem)',maxHeight:'88vh'}}>
+            <div style={s.mhdr}>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="sparkles" size={16} color={ACCENT}/> Potenciais concorrentes</h3>
+                <p style={{fontSize:11,color:'#7D7D7D',margin:'4px 0 0'}}>Análise sugerida por IA — confirme antes de tomar decisões comerciais.</p>
+              </div>
+              <button onClick={()=>setModalConcorrentes(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem',overflowY:'auto',maxHeight:'72vh'}}>
+              {loadingConcorrentes?(
+                <div style={{padding:'3rem 1rem',textAlign:'center',color:'#7D7D7D'}}>
+                  <Icon name="sparkles" size={28} color={ACCENT}/>
+                  <p style={{fontWeight:700,color:'#4B5563',margin:'14px 0 6px'}}>Analisando fornecedores...</p>
+                  <p style={{fontSize:12,margin:0}}>A IA está comparando segmentos, tipos e atividades aparentes.</p>
+                </div>
+              ):analiseConcorrentes?(
+                <>
+                  <div style={{background:'#F3F7F5',border:'1px solid #DCE8E2',borderRadius:12,padding:'1rem 1.1rem',marginBottom:16}}>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',color:ACCENT,marginBottom:6}}>Resumo da análise</div>
+                    <div style={{fontSize:13,color:'#374151',lineHeight:1.5}}>{analiseConcorrentes.resumo||'A IA não encontrou um resumo.'}</div>
+                  </div>
+                  {analiseConcorrentes.grupos.length===0?(
+                    <div style={{padding:'2rem 1rem',textAlign:'center',color:'#7D7D7D',border:'1px dashed #D9E0DC',borderRadius:10}}>Nenhum grupo de potenciais concorrentes foi identificado com segurança suficiente.</div>
+                  ):analiseConcorrentes.grupos.map((grupo,index)=>(
+                    <div key={`${grupo.titulo}-${index}`} style={{border:'1px solid #E2E6E4',borderRadius:12,padding:'1rem 1.1rem',marginBottom:12}}>
+                      <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'flex-start',marginBottom:8}}>
+                        <div>
+                          <div style={{fontWeight:800,color:'#374151',fontSize:14}}>{grupo.titulo}</div>
+                          <div style={{fontSize:11,color:'#7D7D7D',marginTop:4}}>{grupo.criterio}</div>
+                        </div>
+                        <span style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:'.06em',padding:'5px 8px',borderRadius:999,whiteSpace:'nowrap',background:grupo.confianca==='alta'?'#E7F3EC':grupo.confianca==='media'?'#F5F0DF':'#F5E9E4',color:grupo.confianca==='alta'?'#397052':grupo.confianca==='media'?'#8A6A25':'#9A5B42'}}>
+                          Confiança {grupo.confianca}
+                        </span>
+                      </div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:7,margin:'10px 0'}}>
+                        {grupo.fornecedor_ids.map(id=>{
+                          const fornecedor=fornecedores.find(item=>item.id===id)
+                          return fornecedor?<span key={id} style={{background:'#F7F9F8',border:'1px solid #E1E8E4',borderRadius:7,padding:'7px 9px',fontSize:12,color:'#4B5563',fontWeight:600}}>{fornecedor.nome}</span>:null
+                        })}
+                      </div>
+                      <div style={{fontSize:11,color:'#8A6A25',background:'#FCF8EC',borderRadius:7,padding:'8px 9px'}}><strong>Confirme:</strong> {grupo.alerta}</div>
+                    </div>
+                  ))}
+                  {analiseConcorrentes.sem_concorrencia_clara.length>0&&(
+                    <div style={{marginTop:16,padding:'1rem 1.1rem',background:'#FAFBFA',borderRadius:10,border:'1px solid #E2E6E4'}}>
+                      <div style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',color:'#7D7D7D',marginBottom:8}}>Sem concorrência clara</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
+                        {analiseConcorrentes.sem_concorrencia_clara.map(id=>{
+                          const fornecedor=fornecedores.find(item=>item.id===id)
+                          return fornecedor?<span key={id} style={{fontSize:12,color:'#6B7280'}}>{fornecedor.nome}</span>:null
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ):null}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalConcorrentes(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>
