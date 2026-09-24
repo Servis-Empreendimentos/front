@@ -837,14 +837,6 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       <div style={s.content}>
         <main style={s.main}>
 
-          <div className="workspace-bar">
-            <div>
-              <p className="workspace-eyebrow">Central de operações</p>
-              <p className="workspace-sync"><span className="workspace-sync-dot"/>Dados sincronizados automaticamente</p>
-            </div>
-            <span className="workspace-date">{new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</span>
-          </div>
-
           {role==='entregador'&&(
             <div>
               <div style={s.row}>
