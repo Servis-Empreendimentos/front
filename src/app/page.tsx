@@ -18,6 +18,7 @@ function isNotaFiscal(lancamento: Lancamento) {
 
 type AnaliseConcorrentes = {
   resumo: string
+  origem?: 'ia'|'segmento'
   grupos: Array<{
     titulo: string
     confianca: 'alta'|'media'|'baixa'
@@ -1912,6 +1913,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <div style={{background:'#F3F7F5',border:'1px solid #DCE8E2',borderRadius:12,padding:'1rem 1.1rem',marginBottom:16}}>
                     <div style={{fontSize:10,fontWeight:800,textTransform:'uppercase',letterSpacing:'.08em',color:ACCENT,marginBottom:6}}>Resumo da análise</div>
                     <div style={{fontSize:13,color:'#374151',lineHeight:1.5}}>{analiseConcorrentes.resumo||'A IA não encontrou um resumo.'}</div>
+                    <div style={{fontSize:10,color:'#7D7D7D',marginTop:8}}>{analiseConcorrentes.origem==='ia'?'Refinado pela IA com revisão por segmento.':'Triagem automática por segmento; a IA detalhada não respondeu a tempo.'}</div>
                   </div>
                   {analiseConcorrentes.grupos.length===0?(
                     <div style={{padding:'2rem 1rem',textAlign:'center',color:'#7D7D7D',border:'1px dashed #D9E0DC',borderRadius:10}}>Nenhum grupo de potenciais concorrentes foi identificado com segurança suficiente.</div>
