@@ -27,6 +27,14 @@ function cleanSupplier(item: any) {
   }
 }
 
+function isRealSupplier(item: ReturnType<typeof cleanSupplier>) {
+  const text = [item.nome, item.segmento, item.tipos, item.razao_social]
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  return !(/\bALUGUEL\b|\bFUNCIONARIOS?\b|\bFOLHA\s+DE\s+PAGAMENTO\b|\bADIANTAMENTO\s+SALARIAL\b|\bVALE\s+ALIMENTACAO\b/i.test(text))
+}
+
 function keyFor(item: any) {
   const value = String(item.segmento || item.tipos || '').toUpperCase().trim()
   return value || 'SEM SEGMENTO'
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
   catch { return NextResponse.json({ detail: 'Envie uma lista válida de fornecedores.' }, { status: 400 }) }
 
   const fornecedores = Array.isArray(body?.fornecedores)
-    ? body.fornecedores.map(cleanSupplier).filter((item: any) => item.id && item.nome).slice(0, MAX_SUPPLIERS)
+    ? body.fornecedores.map(cleanSupplier).filter((item: any) => item.id && item.nome && isRealSupplier(item)).slice(0, MAX_SUPPLIERS)
     : []
 
   if (fornecedores.length < 2) {

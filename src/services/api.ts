@@ -216,6 +216,25 @@ export type Fornecedor = {
   criado_em?: string
 }
 
+const NON_SUPPLIER_TERMS = [
+  /\bALUGUEL\b/i,
+  /\bFUNCIONARIOS?\b/i,
+  /\bFOLHA\s+DE\s+PAGAMENTO\b/i,
+  /\bADIANTAMENTO\s+SALARIAL\b/i,
+  /\bVALE\s+ALIMENTACAO\b/i,
+]
+
+export const isFornecedorReal = (fornecedor: Partial<Fornecedor>) => {
+  const texto = [fornecedor.nome, fornecedor.segmento, fornecedor.tipos, fornecedor.razao_social]
+    .filter(Boolean)
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  return !NON_SUPPLIER_TERMS.some(term => term.test(texto))
+}
+
+export const filtrarFornecedoresReais = (fornecedores: Fornecedor[]) => fornecedores.filter(isFornecedorReal)
+
 export type InventarioItem = {
   id: string
   nome: string
@@ -374,12 +393,13 @@ export const api = {
   buscarFornecedores: async (termo: string): Promise<Fornecedor[]> => {
     if (!termo || termo.length < 2) return []
     const query = `fornecedores?or=(nome.ilike.*${encodeURIComponent(termo)}*,cnpj.ilike.*${encodeURIComponent(termo)}*,segmento.ilike.*${encodeURIComponent(termo)}*)&order=nome.asc&limit=8`
-    return readRemote<Fornecedor[]>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, query)
+    return readRemote<Fornecedor[]>(`/api/fornecedores?q=${encodeURIComponent(termo)}`, query).then(filtrarFornecedoresReais)
   },
 
-  listarFornecedores: async (): Promise<Fornecedor[]> => readRemote<Fornecedor[]>('/api/fornecedores', 'fornecedores?order=nome.asc'),
+  listarFornecedores: async (): Promise<Fornecedor[]> => readRemote<Fornecedor[]>('/api/fornecedores', 'fornecedores?order=nome.asc').then(filtrarFornecedoresReais),
 
   salvarFornecedor: async (nome: string, cnpj?: string, segmento?: string) => {
+    if (!isFornecedorReal({ nome, segmento })) return null
     const existentes = await api.buscarFornecedores(nome)
     if (existentes.length) {
       if (cnpj && !existentes[0].cnpj) await api.atualizarFornecedor(existentes[0].id, { cnpj })
@@ -393,6 +413,7 @@ export const api = {
     const body = typeof nomeOrPayload === 'string'
       ? { nome: nomeOrPayload, cnpj: cnpj || null, segmento: segmento || null, fornecedor_master_id: fornecedorMasterId || null }
       : nomeOrPayload
+    if (!isFornecedorReal(body)) throw new Error('Aluguel e funcionários devem ser cadastrados em suas áreas próprias, não como fornecedor.')
     return await readRemote<Fornecedor>(
       '/api/fornecedores',
       'fornecedores',

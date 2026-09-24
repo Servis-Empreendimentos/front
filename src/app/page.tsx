@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -177,7 +177,7 @@ export default function Home() {
       setData(rLista.value)
       setContasMensais(optional(rMensais,[]))
       setCats(optional(rCategorias,[]))
-      setFornecedores(optional(rForns,[]))
+      setFornecedores(filtrarFornecedoresReais(optional(rForns,[])))
       setInventario(optional(rInventario,[]))
       setPagamentosMensais(optional(rPagMensais,[]))
       setObras(optional(rObras,[]))
