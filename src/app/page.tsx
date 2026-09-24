@@ -1034,9 +1034,9 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                   <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em',flex:1}}>Todos os fornecedores</span>
                   <input style={{...s.inp,width:220}} placeholder="Buscar nome, CNPJ ou segmento..." value={searchForn} onChange={e=>setSearchForn(e.target.value)}/>
                 </div>
-                <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+                <div>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                    <thead style={{position:'sticky',top:0,zIndex:2}}>
+                    <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
                       {th('Nome')}{th('CNPJ')}{th('Segmento')}{th('Ações')}
                       </tr>
