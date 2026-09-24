@@ -29,6 +29,15 @@ type AnaliseConcorrentes = {
   sem_concorrencia_clara: string[]
 }
 
+type SugestaoSegmento = {
+  fornecedor_id: string
+  nome: string
+  segmento_atual: string
+  segmento_sugerido: string
+  confianca: 'alta'|'media'
+  motivo: string
+}
+
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
 }
@@ -123,6 +132,10 @@ export default function Home() {
   const [modalConcorrentes,setModalConcorrentes]=useState(false)
   const [analiseConcorrentes,setAnaliseConcorrentes]=useState<AnaliseConcorrentes|null>(null)
   const [loadingConcorrentes,setLoadingConcorrentes]=useState(false)
+  const [modalSegmentos,setModalSegmentos]=useState(false)
+  const [sugestoesSegmentos,setSugestoesSegmentos]=useState<SugestaoSegmento[]>([])
+  const [loadingSegmentos,setLoadingSegmentos]=useState(false)
+  const [salvandoSegmento,setSalvandoSegmento]=useState<string|null>(null)
   const [modalInventario,setModalInventario]=useState(false)
   const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
   const [searchInventario,setSearchInventario]=useState('')
@@ -528,6 +541,33 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       showToast('Erro na análise: '+(err?.message||'tente novamente'),false)
     } finally { setLoadingConcorrentes(false) }
   }
+  const handleRevisarSegmentos=async()=>{
+    if(fornecedores.length<1) return showToast('Nenhum fornecedor cadastrado para revisar',false)
+    setLoadingSegmentos(true)
+    setSugestoesSegmentos([])
+    setModalSegmentos(true)
+    try {
+      const response=await fetch('/api/fornecedores/segmentos',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fornecedores})})
+      const result=await response.json().catch(()=>({}))
+      if(!response.ok) throw new Error(result?.detail||'Não foi possível revisar os segmentos')
+      setSugestoesSegmentos(Array.isArray(result?.suggestions)?result.suggestions:[])
+    } catch(err:any) {
+      setModalSegmentos(false)
+      showToast('Erro na revisão: '+(err?.message||'tente novamente'),false)
+    } finally { setLoadingSegmentos(false) }
+  }
+  const handleAceitarSegmento=async(sugestao:SugestaoSegmento)=>{
+    setSalvandoSegmento(sugestao.fornecedor_id)
+    try {
+      await api.atualizarFornecedor(sugestao.fornecedor_id,{segmento:sugestao.segmento_sugerido})
+      setSugestoesSegmentos(lista=>lista.filter(item=>item.fornecedor_id!==sugestao.fornecedor_id))
+      setFornecedores(lista=>lista.map(item=>item.id===sugestao.fornecedor_id?{...item,segmento:sugestao.segmento_sugerido}:item))
+      showToast(`Segmento de ${sugestao.nome} corrigido!`)
+    } catch(err:any) {
+      showToast('Erro ao salvar segmento: '+(err?.message||''),false)
+    } finally { setSalvandoSegmento(null) }
+  }
+  const handleIgnorarSegmento=(id:string)=>setSugestoesSegmentos(lista=>lista.filter(item=>item.fornecedor_id!==id))
 
   const openNovoInventario=()=>{
     setInventarioEdit(null)
@@ -1054,6 +1094,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               <div style={s.row}>
                 <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  <button onClick={handleRevisarSegmentos} disabled={loadingSegmentos} style={{...s.btnOut,opacity:loadingSegmentos?0.65:1}}><Icon name="sparkles" size={14}/> {loadingSegmentos?'Revisando...':'Revisar segmentos com IA'}</button>
                   <button onClick={handleAnalisarConcorrentes} disabled={loadingConcorrentes} style={{...s.btnOut,opacity:loadingConcorrentes?0.65:1}}><Icon name="search" size={14}/> {loadingConcorrentes?'Analisando...':'Analisar concorrentes com IA'}</button>
                   <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
                 </div>
@@ -1953,6 +1994,62 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalConcorrentes(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalSegmentos&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalSegmentos(false)}>
+          <div style={{...s.modal,width:760,maxWidth:'calc(100vw - 2rem)',maxHeight:'88vh'}}>
+            <div style={s.mhdr}>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="sparkles" size={16} color={ACCENT}/> Revisão de segmentos</h3>
+                <p style={{fontSize:11,color:'#7D7D7D',margin:'4px 0 0'}}>A IA sugere correções; nada é alterado sem sua aprovação.</p>
+              </div>
+              <button onClick={()=>setModalSegmentos(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem',overflowY:'auto',maxHeight:'72vh'}}>
+              {loadingSegmentos?(
+                <div style={{padding:'3rem 1rem',textAlign:'center',color:'#7D7D7D'}}>
+                  <Icon name="sparkles" size={28} color={ACCENT}/>
+                  <p style={{fontWeight:700,color:'#4B5563',margin:'14px 0 6px'}}>Revisando os segmentos cadastrados...</p>
+                  <p style={{fontSize:12,margin:0}}>A IA está procurando classificações genéricas ou incompatíveis.</p>
+                </div>
+              ):sugestoesSegmentos.length===0?(
+                <div style={{padding:'2.5rem 1rem',textAlign:'center',color:'#7D7D7D',border:'1px dashed #D9E0DC',borderRadius:10}}>
+                  <Icon name="checkCircle" size={28} color={ACCENT}/>
+                  <p style={{fontWeight:700,color:'#4B5563',margin:'12px 0 6px'}}>Nenhuma correção sugerida</p>
+                  <p style={{fontSize:12,margin:0}}>Os segmentos parecem adequados ou não há informações suficientes para sugerir uma mudança.</p>
+                </div>
+              ):(
+                <>
+                  <div style={{background:'#FFF9EA',border:'1px solid #F0E2B8',borderRadius:10,padding:'10px 12px',fontSize:12,color:'#7A6123',marginBottom:14}}>Revise o motivo de cada sugestão. Clique em <strong>Corrigir</strong> somente quando a nova classificação estiver correta.</div>
+                  {sugestoesSegmentos.map(sugestao=>(
+                    <div key={sugestao.fornecedor_id} style={{border:'1px solid #E2E6E4',borderRadius:12,padding:'1rem 1.1rem',marginBottom:10}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                        <div>
+                          <div style={{fontWeight:800,color:'#374151',fontSize:13}}>{sugestao.nome}</div>
+                          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:8,fontSize:12}}>
+                            <span style={{padding:'5px 8px',borderRadius:6,background:'#F5F7F6',color:'#6B7280'}}>Atual: <strong>{sugestao.segmento_atual}</strong></span>
+                            <span style={{color:'#9AA39F'}}>→</span>
+                            <span style={{padding:'5px 8px',borderRadius:6,background:'#EAF3EE',color:'#397052'}}>Sugestão: <strong>{sugestao.segmento_sugerido}</strong></span>
+                            <span style={{fontSize:10,fontWeight:800,textTransform:'uppercase',color:sugestao.confianca==='alta'?'#397052':'#8A6A25'}}>Confiança {sugestao.confianca}</span>
+                          </div>
+                          <div style={{fontSize:11,color:'#7D7D7D',marginTop:9,lineHeight:1.45}}>{sugestao.motivo}</div>
+                        </div>
+                        <div style={{display:'flex',gap:7,flexShrink:0}}>
+                          <button onClick={()=>handleIgnorarSegmento(sugestao.fornecedor_id)} style={{...s.btnOut,padding:'5px 9px',fontSize:11}}>Ignorar</button>
+                          <button onClick={()=>handleAceitarSegmento(sugestao)} disabled={salvandoSegmento===sugestao.fornecedor_id} style={{...s.btnTeal,padding:'5px 9px',fontSize:11,opacity:salvandoSegmento===sugestao.fornecedor_id?0.65:1}}>{salvandoSegmento===sugestao.fornecedor_id?'Salvando...':'Corrigir'}</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>setModalSegmentos(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
         </div>
