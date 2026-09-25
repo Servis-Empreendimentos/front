@@ -38,6 +38,52 @@ type SugestaoSegmento = {
   motivo: string
 }
 
+type HoleriteColaborador = {
+  nome: string
+  cpf?: string
+  matricula?: string
+  cargo?: string
+  salario_base: number
+  vencimentos_total: number
+  descontos_total: number
+  valor_liquido: number
+  adiantamento?: number
+  inss?: number
+  irrf?: number
+}
+
+type ImportacaoHolerite = {
+  empresa: string
+  competenciaMes: string
+  competenciaInicio: string
+  competenciaFim: string
+  dataPagamento: string
+  colaboradores: HoleriteColaborador[]
+  totalVencimentos: number
+  totalDescontos: number
+  totalLiquido: number
+}
+
+function normalizarNomePessoa(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function numeroDoDocumento(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const texto = String(value ?? '').trim()
+  if (!texto) return 0
+  const normalizado = texto.includes(',') ? texto.replace(/\./g, '').replace(',', '.') : texto.replace(/[^\d.-]/g, '')
+  const numero = Number(normalizado)
+  return Number.isFinite(numero) ? numero : 0
+}
+
+function dataIsoDoDocumento(value: unknown) {
+  const texto = String(value ?? '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return texto
+  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : ''
+}
+
 function addDiasCorridos(dias: number): string {
   const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
 }
@@ -88,6 +134,11 @@ export default function Home() {
   const [tipoPagarFuncionario,setTipoPagarFuncionario]=useState<'salario'|'adiantamento'|'vale'|'outro'>('salario')
   const [modalHistoricoFuncionario,setModalHistoricoFuncionario]=useState<Funcionario|null>(null)
   const [historicoFuncionario,setHistoricoFuncionario]=useState<PagamentoFuncionario[]>([])
+  const [modalImportarHolerite,setModalImportarHolerite]=useState(false)
+  const [importandoHolerite,setImportandoHolerite]=useState(false)
+  const [salvandoHolerite,setSalvandoHolerite]=useState(false)
+  const [holeriteFile,setHoleriteFile]=useState<File|null>(null)
+  const [holeriteImport,setHoleriteImport]=useState<ImportacaoHolerite|null>(null)
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -149,6 +200,7 @@ export default function Home() {
   const orcIARef=useRef<HTMLInputElement>(null)
   const propostaDetRef=useRef<HTMLInputElement>(null)
   const nfDetRef=useRef<HTMLInputElement>(null)
+  const holeriteRef=useRef<HTMLInputElement>(null)
 
   const HOJE = new Date().toISOString().slice(0,10)
 
@@ -695,6 +747,107 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } finally {setSaving(false)}
   }
 
+  const abrirImportacaoHolerite=()=>{
+    setHoleriteFile(null)
+    setHoleriteImport(null)
+    setModalImportarHolerite(true)
+  }
+
+  const handleLerHolerite=async(file:File)=>{
+    setHoleriteFile(file)
+    setHoleriteImport(null)
+    setImportandoHolerite(true)
+    try {
+      const dados=await lerDocIA(file,`Leia este PDF de folha de pagamento. Cada página normalmente corresponde a um demonstrativo de um colaborador. Não duplique páginas nem colaboradores.
+Retorne APENAS JSON válido neste formato:
+{"empresa":"","competencia_inicio":"YYYY-MM-DD","competencia_fim":"YYYY-MM-DD","data_pagamento":"YYYY-MM-DD ou vazio","colaboradores":[{"matricula":"","nome":"","cpf":"somente números","cargo":"","salario_base":0,"vencimentos_total":0,"descontos_total":0,"valor_liquido":0,"adiantamento":0,"inss":0,"irrf":0}],"totais":{"vencimentos":0,"descontos":0,"liquido":0}}
+Regras: extraia todos os colaboradores de todas as páginas; use os totais do demonstrativo; valor_liquido é o valor efetivamente pago ao colaborador; não some o adiantamento novamente, pois ele já está nos descontos; números devem ser decimais sem símbolo de moeda. Se não houver data de pagamento explícita, deixe data_pagamento vazio.`)
+      const raw=Array.isArray(dados?.colaboradores)?dados.colaboradores:[]
+      const colaboradores:HoleriteColaborador[]=raw.map((item:any)=>({
+        nome:String(item?.nome||'').trim(),
+        cpf:String(item?.cpf||'').replace(/\D/g,''),
+        matricula:String(item?.matricula||'').trim(),
+        cargo:String(item?.cargo||'').trim(),
+        salario_base:numeroDoDocumento(item?.salario_base ?? item?.salarioBase),
+        vencimentos_total:numeroDoDocumento(item?.vencimentos_total ?? item?.vencimentos),
+        descontos_total:numeroDoDocumento(item?.descontos_total ?? item?.descontos),
+        valor_liquido:numeroDoDocumento(item?.valor_liquido ?? item?.liquido ?? item?.valor_pago),
+        adiantamento:numeroDoDocumento(item?.adiantamento),
+        inss:numeroDoDocumento(item?.inss),
+        irrf:numeroDoDocumento(item?.irrf),
+      })).filter(item=>item.nome)
+      if(!colaboradores.length) throw new Error('Nenhum colaborador foi identificado no holerite.')
+      const inicio=dataIsoDoDocumento(dados?.competencia_inicio)
+      const fim=dataIsoDoDocumento(dados?.competencia_fim)
+      const competenciaFim=fim||inicio
+      const competenciaMes=competenciaFim.slice(0,7)
+      const totalVencimentos=colaboradores.reduce((total,item)=>total+item.vencimentos_total,0)
+      const totalDescontos=colaboradores.reduce((total,item)=>total+item.descontos_total,0)
+      const totalLiquido=colaboradores.reduce((total,item)=>total+item.valor_liquido,0)
+      setHoleriteImport({
+        empresa:String(dados?.empresa||'').trim(),
+        competenciaMes,
+        competenciaInicio:inicio,
+        competenciaFim:competenciaFim,
+        dataPagamento:dataIsoDoDocumento(dados?.data_pagamento)||competenciaFim,
+        colaboradores,
+        totalVencimentos,
+        totalDescontos,
+        totalLiquido,
+      })
+      showToast(`${colaboradores.length} colaborador${colaboradores.length!==1?'es':''} identificado${colaboradores.length!==1?'s':''}. Revise antes de salvar.`)
+    } catch(err:any) {
+      setHoleriteImport(null)
+      showToast(err?.message||'Não foi possível ler o holerite.',false)
+    } finally {setImportandoHolerite(false)}
+  }
+
+  const handleSalvarHolerite=async()=>{
+    if(!holeriteImport) return
+    setSalvandoHolerite(true)
+    try {
+      const porNome=new Map(funcionarios.map(item=>[normalizarNomePessoa(item.nome),item]))
+      const pagamentosExistentes=new Set(pagamentosFuncionarios.filter(item=>item.tipo==='salario'&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)).map(item=>item.funcionario_id))
+      let novos=0
+      let atualizados=0
+      let pagamentosNovos=0
+      let pagamentosIgnorados=0
+      for(const colaborador of holeriteImport.colaboradores){
+        const chave=normalizarNomePessoa(colaborador.nome)
+        let funcionario=porNome.get(chave)
+        if(funcionario){
+          const salarioMudou=Math.abs((funcionario.salario_base||0)-colaborador.salario_base)>0.009
+          const cargoMudou=Boolean(colaborador.cargo&&colaborador.cargo!==funcionario.cargo)
+          if(salarioMudou||cargoMudou){
+            await api.atualizarFuncionario(funcionario.id,{nome:colaborador.nome,cargo:colaborador.cargo||funcionario.cargo||null,salario_base:colaborador.salario_base||funcionario.salario_base})
+            funcionario={...funcionario,nome:colaborador.nome,cargo:colaborador.cargo||funcionario.cargo,salario_base:colaborador.salario_base||funcionario.salario_base}
+            porNome.set(chave,funcionario)
+            atualizados++
+          }
+        } else {
+          funcionario=await api.criarFuncionario({nome:colaborador.nome,cargo:colaborador.cargo||null,salario_base:colaborador.salario_base,obra_id:null})
+          porNome.set(chave,funcionario)
+          novos++
+        }
+        if(colaborador.valor_liquido>0){
+          if(pagamentosExistentes.has(funcionario.id)) pagamentosIgnorados++
+          else {
+            await api.registrarPagamentoFuncionario(funcionario.id,colaborador.valor_liquido,holeriteImport.dataPagamento||holeriteImport.competenciaFim,'salario')
+            pagamentosExistentes.add(funcionario.id)
+            pagamentosNovos++
+          }
+        }
+      }
+      setModalImportarHolerite(false)
+      setHoleriteFile(null)
+      setHoleriteImport(null)
+      await load()
+      showToast(`Folha de ${mesLabel(holeriteImport.competenciaMes)} criada em Contas a Pagar: ${fmtR(holeriteImport.totalLiquido)}. ${pagamentosNovos} pagamento(s) lançado(s)${pagamentosIgnorados?`; ${pagamentosIgnorados} já existente(s) não duplicado(s)`:''}.`)
+    } catch(err:any) {
+      showToast('Erro ao salvar a folha: '+(err?.message||'desconhecido'),false)
+    } finally {setSalvandoHolerite(false)}
+  }
+
   const abrirHistoricoFuncionario=async(f:Funcionario)=>{
     setModalHistoricoFuncionario(f)
     const h=await api.listarPagamentosDoFuncionario(f.id)
@@ -1221,6 +1374,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
               viewFolha={viewFolha}
               setViewFolha={setViewFolha}
               onNovoFuncionario={openNovoFuncionario}
+              onImportarHolerite={abrirImportacaoHolerite}
               onPagar={abrirPagarFuncionario}
               onHistorico={abrirHistoricoFuncionario}
               onAtualizar={()=>load()}
@@ -2166,6 +2320,68 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
                 <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
               </button>
               <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalImportarHolerite&&(
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&!salvandoHolerite&&setModalImportarHolerite(false)}>
+          <div style={{...s.modal,width:820,maxWidth:'calc(100vw - 2rem)',maxHeight:'90vh'}}>
+            <div style={s.mhdr}>
+              <div>
+                <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="upload" size={16}/> Importar folha de pagamento</h3>
+                <p style={{fontSize:11,color:'#7D7D7D',margin:'4px 0 0'}}>Leia um PDF com vários holerites e gere os pagamentos por competência.</p>
+              </div>
+              <button onClick={()=>!salvandoHolerite&&setModalImportarHolerite(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem',overflowY:'auto',maxHeight:'72vh'}}>
+              <input ref={holeriteRef} type="file" accept="application/pdf,.pdf" style={{display:'none'}} onChange={e=>{const file=e.target.files?.[0];if(file)handleLerHolerite(file);e.currentTarget.value='' }}/>
+              {!holeriteImport?(
+                <div style={{padding:'2.3rem 1.2rem',textAlign:'center',background:'linear-gradient(135deg,#E8EFEC,#F4F7F5)',border:'1.5px dashed '+ACCENT_LT,borderRadius:12}}>
+                  <span style={{width:50,height:50,borderRadius:15,background:'#fff',color:ACCENT_LT,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name="receipt" size={24} color={ACCENT_LT}/></span>
+                  <p style={{fontSize:15,fontWeight:800,color:'#4B5563',margin:'14px 0 7px'}}>Selecione o PDF dos holerites</p>
+                  <p style={{fontSize:12,color:'#7D7D7D',lineHeight:1.55,maxWidth:510,margin:'0 auto 16px'}}>A leitura identifica os colaboradores, cargo, salário base, vencimentos, descontos e valor líquido. O valor da folha em Contas a Pagar será a soma dos valores líquidos.</p>
+                  <button onClick={()=>holeriteRef.current?.click()} disabled={importandoHolerite} style={{...s.btnTeal,opacity:importandoHolerite?0.6:1}}><Icon name="upload" size={14} color="#fff"/> {importandoHolerite?'Lendo holerites...':'Selecionar PDF'}</button>
+                  {holeriteFile&&<p style={{fontSize:11,color:'#7D7D7D',margin:'12px 0 0'}}>{holeriteFile.name}</p>}
+                </div>
+              ):(
+                <>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:10,marginBottom:14}}>
+                    <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Competência</p><strong style={{fontSize:14,color:'#4B5563'}}>{mesLabel(holeriteImport.competenciaMes)}</strong></div>
+                    <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Colaboradores</p><strong style={{fontSize:14,color:'#4B5563'}}>{holeriteImport.colaboradores.length}</strong></div>
+                    <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Vencimentos</p><strong style={{fontSize:14,color:'#4B5563'}}>{fmtR(holeriteImport.totalVencimentos)}</strong></div>
+                    <div style={{background:'#E8F0EC',border:'1px solid #CFE0D7',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:ACCENT_LT,fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Folha a pagar</p><strong style={{fontSize:14,color:ACCENT_LT}}>{fmtR(holeriteImport.totalLiquido)}</strong></div>
+                  </div>
+                  <div style={{background:'#F9FBFA',border:'1px solid #E2EAE6',borderRadius:9,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#626262',lineHeight:1.5}}>
+                    <strong>Será criado em Contas a Pagar:</strong> Folha de {mesLabel(holeriteImport.competenciaMes)} · {fmtR(holeriteImport.totalLiquido)}. Os descontos totalizam {fmtR(holeriteImport.totalDescontos)} e o adiantamento já está dentro desses descontos, portanto não será somado novamente.
+                  </div>
+                  <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>
+                      <span>Colaborador</span><span>Cargo</span><span>Salário base</span><span>Valor líquido</span><span>Situação</span>
+                    </div>
+                    {holeriteImport.colaboradores.map(colaborador=>{
+                      const existente=funcionarios.find(item=>normalizarNomePessoa(item.nome)===normalizarNomePessoa(colaborador.nome))
+                      const jaLancado=Boolean(existente&&pagamentosFuncionarios.some(item=>item.funcionario_id===existente.id&&item.tipo==='salario'&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)))
+                      return <div key={`${colaborador.cpf||colaborador.nome}-${holeriteImport.competenciaMes}`} style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,alignItems:'center',padding:'11px 12px',borderBottom:'1px solid #E2E6E4',fontSize:12}}>
+                        <div><strong style={{color:'#4B5563'}}>{colaborador.nome}</strong><small style={{display:'block',color:'#969696',marginTop:3}}>{colaborador.cpf?`CPF ${colaborador.cpf}`:colaborador.matricula?`Matrícula ${colaborador.matricula}`:''}</small></div>
+                        <span style={{color:'#7D7D7D'}}>{colaborador.cargo||'—'}</span>
+                        <span style={{color:'#626262'}}>{fmtR(colaborador.salario_base)}</span>
+                        <strong style={{color:ACCENT_LT}}>{fmtR(colaborador.valor_liquido)}</strong>
+                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}</span>
+                      </div>
+                    })}
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,marginTop:12,fontSize:11,color:'#969696'}}>
+                    <span>{holeriteImport.empresa||'Empresa não identificada'} · pagamento considerado em {fmtData(holeriteImport.dataPagamento)}</span>
+                    <button onClick={()=>holeriteRef.current?.click()} disabled={importandoHolerite||salvandoHolerite} style={{...s.btnOut,padding:'.45rem .7rem',fontSize:11}}>Escolher outro PDF</button>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>!salvandoHolerite&&setModalImportarHolerite(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
+              {holeriteImport&&<button onClick={handleSalvarHolerite} disabled={salvandoHolerite||importandoHolerite} style={{...s.btnTeal,opacity:salvandoHolerite?0.6:1}}>{salvandoHolerite?'Salvando folha...':`Confirmar folha de ${mesLabel(holeriteImport.competenciaMes)}`}</button>}
             </div>
           </div>
         </div>

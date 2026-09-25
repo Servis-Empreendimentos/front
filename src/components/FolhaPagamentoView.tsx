@@ -16,6 +16,7 @@ type Props = {
   viewFolha: FolhaView
   setViewFolha: (value: FolhaView) => void
   onNovoFuncionario: () => void
+  onImportarHolerite: () => void
   onPagar: (funcionario: Funcionario, dataSugerida?: string) => void
   onHistorico: (funcionario: Funcionario) => void
   onAtualizar: () => void
@@ -43,6 +44,7 @@ export default function FolhaPagamentoView({
   viewFolha,
   setViewFolha,
   onNovoFuncionario,
+  onImportarHolerite,
   onPagar,
   onHistorico,
   onAtualizar,
@@ -84,7 +86,10 @@ export default function FolhaPagamentoView({
           <h1 style={s.h1}>Folha de pagamento</h1>
           <p style={s.p}>Funcionários, salários e adiantamentos — cada um vinculado à obra em que está atuando.</p>
         </div>
-        <button onClick={onNovoFuncionario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar funcionário</button>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          <button onClick={onImportarHolerite} style={s.btnOut}><Icon name="upload" size={14}/> Importar holerite</button>
+          <button onClick={onNovoFuncionario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar funcionário</button>
+        </div>
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
