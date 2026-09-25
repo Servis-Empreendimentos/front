@@ -62,7 +62,8 @@ export default function FolhaPagamentoView({
   const ativos = funcionarios.filter(f => f.ativo)
   const pagamentosDoMes = pagamentos.filter(p => p.data_pagamento.startsWith(mesAtual))
   const funcionariosPagosNoMes = new Set(pagamentosDoMes.map(p => p.funcionario_id))
-  const totalPagoMes = pagamentosDoMes.reduce((total, p) => total + p.valor, 0)
+  const totalAdiantamentoMes = pagamentosDoMes.filter(p => p.tipo === 'adiantamento').reduce((total, p) => total + p.valor, 0)
+  const totalFolhaMes = pagamentosDoMes.filter(p => p.tipo === 'salario').reduce((total, p) => total + p.valor, 0)
   const totalFolhaBase = ativos.reduce((total, f) => total + f.salario_base, 0)
   const semPagamentoNoMes = ativos.filter(f => !funcionariosPagosNoMes.has(f.id)).length
 
@@ -84,7 +85,7 @@ export default function FolhaPagamentoView({
         <div>
           <p className="workspace-eyebrow" style={{ marginBottom: 7 }}>Financeiro</p>
           <h1 style={s.h1}>Folha de pagamento</h1>
-          <p style={s.p}>Funcionários, salários e adiantamentos — cada um vinculado à obra em que está atuando.</p>
+          <p style={s.p}>Importe adiantamentos e folhas mensais separadamente — cada pagamento fica vinculado ao colaborador e à competência correta.</p>
         </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
           <button onClick={onImportarHolerite} style={s.btnOut}><Icon name="upload" size={14}/> Importar holerite</button>
@@ -95,7 +96,8 @@ export default function FolhaPagamentoView({
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
         <KPI l="Funcionários ativos" v={ativos.length} sv="na folha" c={ACCENT_LT}/>
         <KPI l="Folha base mensal" v={fmtR(totalFolhaBase)} sv="soma dos salários" c="#7D7D7D"/>
-        <KPI l="Pago neste mês" v={fmtR(totalPagoMes)} sv={mesAtualNome} c="#8BA59A"/>
+        <KPI l="Adiantamentos" v={fmtR(totalAdiantamentoMes)} sv={mesAtualNome} c="#8BA59A"/>
+        <KPI l="Folha mensal" v={fmtR(totalFolhaMes)} sv={mesAtualNome} c="#748F84"/>
         <KPI l="Sem pagamento este mês" v={semPagamentoNoMes} sv="ainda pendente" c="#748F84"/>
       </div>
 

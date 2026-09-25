@@ -173,6 +173,8 @@ export type Funcionario = {
   nome: string
   cargo?: string | null
   salario_base: number
+  adiantamento_padrao?: number
+  descontos_padrao?: number
   obra_id?: string | null
   ativo: boolean
   criado_em?: string
@@ -460,7 +462,7 @@ export const api = {
 
   listarFuncionarios: async (): Promise<Funcionario[]> => readRemote<Funcionario[]>('/api/funcionarios', 'funcionarios?order=nome.asc'),
 
-  criarFuncionario: async (payload: { nome: string; cargo?: string | null; salario_base: number; obra_id?: string | null }) => {
+  criarFuncionario: async (payload: { nome: string; cargo?: string | null; salario_base: number; adiantamento_padrao?: number; descontos_padrao?: number; obra_id?: string | null }) => {
     return await readRemote<Funcionario>(
       '/api/funcionarios',
       'funcionarios',
@@ -468,7 +470,7 @@ export const api = {
     ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
-  atualizarFuncionario: async (id: string, body: { nome?: string; cargo?: string | null; salario_base?: number; obra_id?: string | null; ativo?: boolean }) => {
+  atualizarFuncionario: async (id: string, body: { nome?: string; cargo?: string | null; salario_base?: number; adiantamento_padrao?: number; descontos_padrao?: number; obra_id?: string | null; ativo?: boolean }) => {
     await readRemote(`/api/funcionarios/${id}`, `funcionarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 

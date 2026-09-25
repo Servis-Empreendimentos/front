@@ -53,6 +53,7 @@ type HoleriteColaborador = {
 }
 
 type ImportacaoHolerite = {
+  tipo: 'adiantamento'|'salario'
   empresa: string
   competenciaMes: string
   competenciaInicio: string
@@ -127,7 +128,7 @@ export default function Home() {
   const [viewFolha,setViewFolha]=useState<'lista'|'grade'>('lista')
   const [modalFuncionario,setModalFuncionario]=useState(false)
   const [funcionarioEdit,setFuncionarioEdit]=useState<Funcionario|null>(null)
-  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',obraId:''})
+  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;adiantamento:string;descontos:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',obraId:''})
   const [modalPagarFuncionario,setModalPagarFuncionario]=useState<Funcionario|null>(null)
   const [valorPagarFuncionario,setValorPagarFuncionario]=useState('')
   const [dataPagarFuncionario,setDataPagarFuncionario]=useState('')
@@ -139,6 +140,7 @@ export default function Home() {
   const [salvandoHolerite,setSalvandoHolerite]=useState(false)
   const [holeriteFile,setHoleriteFile]=useState<File|null>(null)
   const [holeriteImport,setHoleriteImport]=useState<ImportacaoHolerite|null>(null)
+  const [tipoImportacaoHolerite,setTipoImportacaoHolerite]=useState<'adiantamento'|'salario'>('salario')
   const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
@@ -702,12 +704,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFuncionario=()=>{
     setFuncionarioEdit(null)
-    setFormFuncionario({nome:'',cargo:'',salarioBase:'',obraId:''})
+    setFormFuncionario({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',obraId:''})
     setModalFuncionario(true)
   }
   const openEditarFuncionario=(f:Funcionario)=>{
     setFuncionarioEdit(f)
-    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',obraId:f.obra_id||''})
+    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',adiantamento:f.adiantamento_padrao?f.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',descontos:f.descontos_padrao?f.descontos_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',obraId:f.obra_id||''})
     setModalFuncionario(true)
   }
   const handleSalvarFuncionario=async()=>{
@@ -715,11 +717,14 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSaving(true)
     try {
       const salario=parseFloat(formFuncionario.salarioBase.replace(/\D/g,''))/100||0
+      const adiantamento=parseFloat(formFuncionario.adiantamento.replace(/\D/g,''))/100||0
+      const descontos=parseFloat(formFuncionario.descontos.replace(/\D/g,''))/100||0
+      if(adiantamento<0||descontos<0) return showToast('Adiantamento e descontos não podem ser negativos',false)
       if(funcionarioEdit) {
-        await api.atualizarFuncionario(funcionarioEdit.id,{nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        await api.atualizarFuncionario(funcionarioEdit.id,{nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,obra_id:formFuncionario.obraId||null})
         showToast('Funcionário atualizado!')
       } else {
-        await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,obra_id:formFuncionario.obraId||null})
+        await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,obra_id:formFuncionario.obraId||null})
         showToast('Funcionário cadastrado!')
       }
       setModalFuncionario(false);load()
@@ -750,6 +755,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const abrirImportacaoHolerite=()=>{
     setHoleriteFile(null)
     setHoleriteImport(null)
+    setTipoImportacaoHolerite('salario')
     setModalImportarHolerite(true)
   }
 
@@ -785,6 +791,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
       const totalDescontos=colaboradores.reduce((total,item)=>total+item.descontos_total,0)
       const totalLiquido=colaboradores.reduce((total,item)=>total+item.valor_liquido,0)
       setHoleriteImport({
+        tipo:tipoImportacaoHolerite,
         empresa:String(dados?.empresa||'').trim(),
         competenciaMes,
         competenciaInicio:inicio,
@@ -807,7 +814,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     setSalvandoHolerite(true)
     try {
       const porNome=new Map(funcionarios.map(item=>[normalizarNomePessoa(item.nome),item]))
-      const pagamentosExistentes=new Set(pagamentosFuncionarios.filter(item=>item.tipo==='salario'&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)).map(item=>item.funcionario_id))
+      const pagamentosExistentes=new Set(pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)).map(item=>item.funcionario_id))
       let novos=0
       let atualizados=0
       let pagamentosNovos=0
@@ -832,7 +839,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         if(colaborador.valor_liquido>0){
           if(pagamentosExistentes.has(funcionario.id)) pagamentosIgnorados++
           else {
-            await api.registrarPagamentoFuncionario(funcionario.id,colaborador.valor_liquido,holeriteImport.dataPagamento||holeriteImport.competenciaFim,'salario')
+            await api.registrarPagamentoFuncionario(funcionario.id,colaborador.valor_liquido,holeriteImport.dataPagamento||holeriteImport.competenciaFim,holeriteImport.tipo)
             pagamentosExistentes.add(funcionario.id)
             pagamentosNovos++
           }
@@ -842,7 +849,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
       setHoleriteFile(null)
       setHoleriteImport(null)
       await load()
-      showToast(`Folha de ${mesLabel(holeriteImport.competenciaMes)} criada em Contas a Pagar: ${fmtR(holeriteImport.totalLiquido)}. ${pagamentosNovos} pagamento(s) lançado(s)${pagamentosIgnorados?`; ${pagamentosIgnorados} já existente(s) não duplicado(s)`:''}.`)
+      const tipoLabel=holeriteImport.tipo==='adiantamento'?'Adiantamento':'Folha mensal'
+      showToast(`${tipoLabel} de ${mesLabel(holeriteImport.competenciaMes)} criado em Contas a Pagar: ${fmtR(holeriteImport.totalLiquido)}. ${pagamentosNovos} pagamento(s) lançado(s)${pagamentosIgnorados?`; ${pagamentosIgnorados} já existente(s) não duplicado(s)`:''}.`)
     } catch(err:any) {
       showToast('Erro ao salvar a folha: '+(err?.message||'desconhecido'),false)
     } finally {setSalvandoHolerite(false)}
@@ -959,17 +967,23 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
 
-  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';nome:string;valor:number;data:string;lancamentoId?:string}
+  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';subtipo?:'adiantamento'|'salario';nome:string;valor:number;data:string;lancamentoId?:string}
   const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
-  const gruposFolha:Record<string,{valor:number;data:string}>={}
+  const gruposFolha:Record<string,{valor:number;data:string;tipo:'adiantamento'|'salario'}>={}
   pagamentosFuncionarios.forEach(p=>{
     const mes=(p.data_pagamento||'').slice(0,7)
     if(!mes) return
-    if(!gruposFolha[mes]) gruposFolha[mes]={valor:0,data:p.data_pagamento}
-    gruposFolha[mes].valor+=p.valor
-    if(p.data_pagamento>gruposFolha[mes].data) gruposFolha[mes].data=p.data_pagamento
+    if(p.tipo!=='adiantamento'&&p.tipo!=='salario') return
+    const chave=`${mes}:${p.tipo}`
+    if(!gruposFolha[chave]) gruposFolha[chave]={valor:0,data:p.data_pagamento,tipo:p.tipo}
+    gruposFolha[chave].valor+=p.valor
+    if(p.data_pagamento>gruposFolha[chave].data) gruposFolha[chave].data=p.data_pagamento
   })
-  const itensFolha:ItemPagar[]=Object.entries(gruposFolha).map(([mes,g])=>({id:'folha-'+mes,tipo:'folha',nome:`Folha de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
+  const itensFolha:ItemPagar[]=Object.entries(gruposFolha).map(([chave,g])=>{
+    const mes=chave.slice(0,7)
+    const nome=g.tipo==='adiantamento'?'Adiantamento':'Folha mensal'
+    return {id:`folha-${g.tipo}-${mes}`,tipo:'folha',subtipo:g.tipo,nome:`${nome} de ${mesLabel(mes)}`,valor:g.valor,data:g.data}
+  })
   const gruposMensais:Record<string,{valor:number;data:string}>={}
   pagamentosMensais.forEach(p=>{
     const mes=(p.data_pagamento||'').slice(0,7)
@@ -981,6 +995,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
   const contasAPagar=[...itensNF,...itensFolha,...itensMensais].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
+  const totalAdiantamentosAPagar=itensFolha.filter(item=>item.subtipo==='adiantamento').reduce((s,item)=>s+item.valor,0)
+  const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
 
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
@@ -1153,7 +1169,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
                 <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
-                <KPI l="Meses de folha" v={itensFolha.length} sv="agrupados por mês" c="#8BA59A"/>
+                <KPI l="Adiantamentos" v={fmtR(totalAdiantamentosAPagar)} sv="lançamento separado" c="#8BA59A"/>
+                <KPI l="Folha de pagamento" v={fmtR(totalFolhaAPagar)} sv="lançamento separado" c="#748F84"/>
                 <KPI l="Meses de contas fixas" v={itensMensais.length} sv="agrupados por mês" c="#748F84"/>
               </div>
               <div style={s.card}>
@@ -1178,7 +1195,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                         onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                         <td style={{padding:'11px'}}>
                           <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
-                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?'Folha de pagamento':'Contas mensais'} · {fmtData(item.data)}</p>
+                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?(item.subtipo==='adiantamento'?'Adiantamento salarial':'Folha mensal'):'Contas mensais'} · {fmtData(item.data)}</p>
                         </td>
                         <td style={{padding:'11px',textAlign:'right',fontWeight:700}}>{fmtR(item.valor)}</td>
                       </tr>
@@ -2342,6 +2359,14 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   <span style={{width:50,height:50,borderRadius:15,background:'#fff',color:ACCENT_LT,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name="receipt" size={24} color={ACCENT_LT}/></span>
                   <p style={{fontSize:15,fontWeight:800,color:'#4B5563',margin:'14px 0 7px'}}>Selecione o PDF dos holerites</p>
                   <p style={{fontSize:12,color:'#7D7D7D',lineHeight:1.55,maxWidth:510,margin:'0 auto 16px'}}>A leitura identifica os colaboradores, cargo, salário base, vencimentos, descontos e valor líquido. O valor da folha em Contas a Pagar será a soma dos valores líquidos.</p>
+                  <div style={{maxWidth:360,margin:'0 auto 14px',textAlign:'left'}}>
+                    <label style={s.lb}>Tipo desta importação *</label>
+                    <select style={s.fi} value={tipoImportacaoHolerite} onChange={e=>setTipoImportacaoHolerite(e.target.value as 'adiantamento'|'salario')}>
+                      <option value="salario">Folha mensal</option>
+                      <option value="adiantamento">Adiantamento salarial</option>
+                    </select>
+                    <p style={{fontSize:10,color:'#969696',margin:'6px 0 0',lineHeight:1.4}}>Se o adiantamento já aparece descontado no holerite mensal, escolha Folha mensal. Só escolha Adiantamento para um PDF separado.</p>
+                  </div>
                   <button onClick={()=>holeriteRef.current?.click()} disabled={importandoHolerite} style={{...s.btnTeal,opacity:importandoHolerite?0.6:1}}><Icon name="upload" size={14} color="#fff"/> {importandoHolerite?'Lendo holerites...':'Selecionar PDF'}</button>
                   {holeriteFile&&<p style={{fontSize:11,color:'#7D7D7D',margin:'12px 0 0'}}>{holeriteFile.name}</p>}
                 </div>
@@ -2351,10 +2376,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Competência</p><strong style={{fontSize:14,color:'#4B5563'}}>{mesLabel(holeriteImport.competenciaMes)}</strong></div>
                     <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Colaboradores</p><strong style={{fontSize:14,color:'#4B5563'}}>{holeriteImport.colaboradores.length}</strong></div>
                     <div style={{background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:'#7D7D7D',fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Vencimentos</p><strong style={{fontSize:14,color:'#4B5563'}}>{fmtR(holeriteImport.totalVencimentos)}</strong></div>
-                    <div style={{background:'#E8F0EC',border:'1px solid #CFE0D7',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:ACCENT_LT,fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>Folha a pagar</p><strong style={{fontSize:14,color:ACCENT_LT}}>{fmtR(holeriteImport.totalLiquido)}</strong></div>
+                    <div style={{background:'#E8F0EC',border:'1px solid #CFE0D7',borderRadius:9,padding:'11px 12px'}}><p style={{fontSize:10,color:ACCENT_LT,fontWeight:800,textTransform:'uppercase',margin:'0 0 5px'}}>{holeriteImport.tipo==='adiantamento'?'Adiantamento a pagar':'Folha a pagar'}</p><strong style={{fontSize:14,color:ACCENT_LT}}>{fmtR(holeriteImport.totalLiquido)}</strong></div>
                   </div>
                   <div style={{background:'#F9FBFA',border:'1px solid #E2EAE6',borderRadius:9,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#626262',lineHeight:1.5}}>
-                    <strong>Será criado em Contas a Pagar:</strong> Folha de {mesLabel(holeriteImport.competenciaMes)} · {fmtR(holeriteImport.totalLiquido)}. Os descontos totalizam {fmtR(holeriteImport.totalDescontos)} e o adiantamento já está dentro desses descontos, portanto não será somado novamente.
+                    <strong>Será criado em Contas a Pagar:</strong> {holeriteImport.tipo==='adiantamento'?'Adiantamento':'Folha mensal'} de {mesLabel(holeriteImport.competenciaMes)} · {fmtR(holeriteImport.totalLiquido)}. {holeriteImport.tipo==='salario'&&<>Os descontos totalizam {fmtR(holeriteImport.totalDescontos)} e o adiantamento já está dentro desses descontos, portanto não será somado novamente.</>}
                   </div>
                   <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
                     <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>
@@ -2381,7 +2406,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>!salvandoHolerite&&setModalImportarHolerite(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              {holeriteImport&&<button onClick={handleSalvarHolerite} disabled={salvandoHolerite||importandoHolerite} style={{...s.btnTeal,opacity:salvandoHolerite?0.6:1}}>{salvandoHolerite?'Salvando folha...':`Confirmar folha de ${mesLabel(holeriteImport.competenciaMes)}`}</button>}
+              {holeriteImport&&<button onClick={handleSalvarHolerite} disabled={salvandoHolerite||importandoHolerite} style={{...s.btnTeal,opacity:salvandoHolerite?0.6:1}}>{salvandoHolerite?'Salvando...':`Confirmar ${holeriteImport.tipo==='adiantamento'?'adiantamento':'folha mensal'} de ${mesLabel(holeriteImport.competenciaMes)}`}</button>}
             </div>
           </div>
         </div>
@@ -2403,6 +2428,21 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   setFormFuncionario(p=>({...p,salarioBase:d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):''}))
                 }}/>
               </FF>
+              <FF lb="Adiantamento padrão">
+                <input style={s.fi} value={formFuncionario.adiantamento} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setFormFuncionario(p=>({...p,adiantamento:d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):''}))
+                }}/>
+              </FF>
+              <FF lb="Descontos padrão">
+                <input style={s.fi} value={formFuncionario.descontos} placeholder="R$ 0,00" onChange={e=>{
+                  const d=e.target.value.replace(/\D/g,'')
+                  setFormFuncionario(p=>({...p,descontos:d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):''}))
+                }}/>
+              </FF>
+              <div style={{gridColumn:'1/-1',background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#626262'}}>
+                O salário, o adiantamento e os descontos ficam salvos no cadastro e servem como referência para os próximos pagamentos. O valor efetivamente lançado na folha sempre será confirmado pelo holerite.
+              </div>
               <FF lb="Obra" full>
                 <select style={s.fi} value={formFuncionario.obraId} onChange={e=>setFormFuncionario(p=>({...p,obraId:e.target.value}))}>
                   <option value="">Sem obra vinculada</option>
@@ -2427,7 +2467,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             </div>
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div><label style={s.lb}>Tipo *</label>
-                <select style={s.fi} value={tipoPagarFuncionario} onChange={e=>setTipoPagarFuncionario(e.target.value as any)}>
+                <select style={s.fi} value={tipoPagarFuncionario} onChange={e=>{
+                  const tipo=e.target.value as 'salario'|'adiantamento'|'vale'|'outro'
+                  setTipoPagarFuncionario(tipo)
+                  if(tipo==='adiantamento') setValorPagarFuncionario(modalPagarFuncionario.adiantamento_padrao?modalPagarFuncionario.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                  else if(tipo==='salario') setValorPagarFuncionario(modalPagarFuncionario.salario_base?modalPagarFuncionario.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                  else setValorPagarFuncionario('')
+                }}>
                   <option value="salario">Salário</option>
                   <option value="adiantamento">Adiantamento</option>
                   <option value="vale">Vale</option>

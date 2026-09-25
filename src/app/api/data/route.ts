@@ -11,6 +11,7 @@ const TABLES = new Set([
   'inventario',
   'obras',
   'funcionarios',
+  'historico_salarios',
   'pagamentos_funcionario',
 ])
 
