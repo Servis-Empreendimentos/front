@@ -1025,6 +1025,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
   const totalAdiantamentosAPagar=itensFolha.filter(item=>item.subtipo==='adiantamento').reduce((s,item)=>s+item.valor,0)
   const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
+  const obrasNoAndamento=new Set(filtered.map(l=>l.obra_id).filter(Boolean)).size
+  const entregasProgramadas=filtered.filter(l=>Boolean(l.data_entrega_programada)).length
 
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
@@ -1046,39 +1048,44 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           {role==='entregador'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Andamento dos orçamentos</h1><p style={s.p}>Acompanhe a etapa atual e a obra vinculada, sem acesso a valores financeiros</p></div>
+                <div><h1 style={s.h1}>Acompanhamento</h1><p style={s.p}>Veja rapidamente em que etapa está cada orçamento e em qual obra ele será usado.</p></div>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:12,marginBottom:16}}>
+                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Orçamentos</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{filtered.length}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>em acompanhamento</p></div>
+                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Obras</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{obrasNoAndamento}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>com orçamento vinculado</p></div>
+                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Entregas</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{entregasProgramadas}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>com data programada</p></div>
               </div>
               <div style={s.card}>
-                <div style={s.toolbar}>
-                  <input style={{...s.inp,width:240}} placeholder="Buscar empresa ou orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/>
-                  <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
+                <div style={{...s.toolbar,display:'flex',gap:10,alignItems:'end',flexWrap:'wrap'}}>
+                  <label style={{display:'grid',gap:5,flex:'1 1 250px'}}><span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em'}}>Pesquisar</span><input style={s.inp} placeholder="Empresa ou nº do orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/></label>
+                  <label style={{display:'grid',gap:5,flex:'0 1 220px'}}><span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em'}}>Filtrar por etapa</span><select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
                     <option value="">Todas as etapas</option>
                     {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
-                  </select>
+                  </select></label>
                 </div>
-                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>{th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Entrega prevista')}</tr></thead>
-                  <tbody>
-                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                    :filtered.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum orçamento encontrado</td></tr>
-                    :filtered.map(l=>{
+                {loading?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando acompanhamento...</div>
+                  :filtered.length===0?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum orçamento encontrado.</div>
+                  :<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:12,padding:'0 1.1rem 1.1rem'}}>{filtered.map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
                       const obraDoLanc=obras.find(o=>o.id===l.obra_id)
+                      const etapaIndex=PIPELINE.findIndex(p=>p.id===l.status_processo)
+                      const proximaEtapa=etapaIndex>=0?PIPELINE[etapaIndex+1]:undefined
                       return (
-                        <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
-                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
-                          <td style={{padding:'10px 11px',fontWeight:600}}>{l.titulo}</td>
-                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{obraDoLanc?.nome||'Sem obra vinculada'}</td>
-                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{l.numero_orcamento||'—'}</td>
-                          <td style={{padding:'10px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
-                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{fmtData(l.data)}</td>
-                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
-                        </tr>
+                        <article key={l.id} onClick={()=>openDetalhe(l.id)} style={{border:'1px solid #E2EAE6',borderRadius:12,padding:'15px 16px',cursor:'pointer',background:'#fff',transition:'transform .15s, box-shadow .15s, border-color .15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#B8CEC2';e.currentTarget.style.boxShadow='0 5px 16px rgba(72,103,88,.08)';e.currentTarget.style.transform='translateY(-1px)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#E2EAE6';e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='translateY(0)'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:13}}>
+                            <div style={{minWidth:0}}><p style={{fontSize:10,fontWeight:700,color:'#969696',textTransform:'uppercase',letterSpacing:'.07em',margin:'0 0 5px'}}>Empresa</p><h3 style={{fontSize:15,fontWeight:800,color:'#374151',margin:0,overflow:'hidden',textOverflow:'ellipsis'}}>{l.titulo}</h3></div>
+                            {step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>} 
+                          </div>
+                          <div style={{display:'grid',gridTemplateColumns:'1.3fr .9fr',gap:10,marginBottom:13}}>
+                            <div style={{background:'#F4F8F6',borderRadius:8,padding:'9px 10px'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',margin:'0 0 3px'}}>Obra</p><p style={{fontSize:13,fontWeight:700,color:'#626262',margin:0}}>{obraDoLanc?.nome||'Sem obra vinculada'}</p></div>
+                            <div style={{padding:'9px 0'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',margin:'0 0 3px'}}>Orçamento</p><p style={{fontSize:13,fontWeight:700,color:'#626262',margin:0}}>{l.numero_orcamento||'Sem número'}</p></div>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',gap:10,borderTop:'1px solid #EEF2F0',paddingTop:10,fontSize:11,color:'#7D7D7D'}}><span>Data: {fmtData(l.data)}</span><span>{l.data_entrega_programada?`Entrega: ${fmtData(l.data_entrega_programada)}`:proximaEtapa?`Próxima: ${proximaEtapa.label}`:'Etapa final'}</span></div>
+                          <p style={{fontSize:11,fontWeight:700,color:'#748F84',margin:'12px 0 0'}}>Clique para ver o andamento detalhado →</p>
+                        </article>
                       )
-                    })}
-                  </tbody>
-                </table>
+                    })}</div>}
               </div>
             </div>
           )}
