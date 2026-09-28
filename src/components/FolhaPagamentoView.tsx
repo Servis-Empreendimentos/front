@@ -16,6 +16,7 @@ type Props = {
   viewFolha: FolhaView
   setViewFolha: (value: FolhaView) => void
   onNovoFuncionario: () => void
+  onEditarFuncionario: (funcionario: Funcionario) => void
   onImportarHolerite: () => void
   onPagar: (funcionario: Funcionario, dataSugerida?: string) => void
   onHistorico: (funcionario: Funcionario) => void
@@ -44,6 +45,7 @@ export default function FolhaPagamentoView({
   viewFolha,
   setViewFolha,
   onNovoFuncionario,
+  onEditarFuncionario,
   onImportarHolerite,
   onPagar,
   onHistorico,
@@ -147,6 +149,7 @@ export default function FolhaPagamentoView({
                   </div>
                   <div style={{display:'flex',justifyContent:'flex-end',gap:6,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
                     {f.ativo && <button onClick={()=>onPagar(f)} style={{...s.btnGrn,padding:'.45rem .7rem',fontSize:11}}><Icon name="dollar" size={12} color="#fff"/> Pagar</button>}
+                    <button onClick={()=>onEditarFuncionario(f)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
                     <button onClick={()=>onHistorico(f)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="receipt" size={12}/> Histórico</button>
                     <button title={f.ativo?'Desligar':'Reativar'} onClick={()=>api.atualizarFuncionario(f.id,{ativo:!f.ativo}).then(onAtualizar)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={f.ativo?'x':'check'} size={14} color={f.ativo?'#777777':ACCENT_LT}/></button>
                   </div>
