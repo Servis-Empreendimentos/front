@@ -15,6 +15,13 @@ function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FRO
 function isNotaFiscal(lancamento: Lancamento) {
   return Boolean(lancamento.arquivo_url)
 }
+function ocultarDoUsuarioObra(lancamento: Lancamento) {
+  const texto = `${lancamento.titulo || ''} ${lancamento.numero_orcamento || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+  return ['pluxee', 'aluguel', 'matheus', 'cemig', 'copasa'].some(term => texto.includes(term))
+}
 
 type AnaliseConcorrentes = {
   resumo: string
@@ -940,7 +947,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     if(fDataFim && l.data > fDataFim) return false
     return true
   })
-  const andamentoTodos=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)):filtered
+  const andamentoTodos=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)&&!ocultarDoUsuarioObra(l)):filtered
   const andamentoObra=role==='entregador'&&fPipe?andamentoTodos.filter(l=>l.status_processo===fPipe):andamentoTodos
   const listaOrcamentosBase = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
   const listaOrcamentos = [...listaOrcamentosBase].sort((a,b)=>{
@@ -1048,25 +1055,22 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           {role==='entregador'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Acompanhamento</h1><p style={s.p}>Veja todas as etapas dos orçamentos. Quando a NF é recebida, o orçamento sai automaticamente desta tela.</p></div>
+                <div><h1 style={s.h1}>Orçamentos</h1></div>
               </div>
               <div style={{...s.card,padding:0,overflow:'hidden'}}>
                 <div style={{padding:'18px 20px 14px',borderBottom:'1px solid #E5EBE7',background:'#FBFCFB'}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'end',gap:16,flexWrap:'wrap'}}>
                     <label style={{display:'grid',gap:5,flex:'1 1 300px'}}><span style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em'}}>Pesquisar orçamento</span><input style={s.inp} placeholder="Empresa ou nº do orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/></label>
-                    <span style={{fontSize:11,color:'#7D7D7D',paddingBottom:9}}>Notas fiscais recebidas não aparecem aqui.</span>
                   </div>
                   <div style={{marginTop:18}}>
-                    <p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 9px'}}>Fluxo do orçamento · da entrada até o recebimento</p>
+                    <p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 9px'}}>Fluxo do orçamento</p>
                     <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                      <button onClick={()=>setFPipe('')} style={{border:'1px solid '+(!fPipe?'#8BA59A':'#E2EAE6'),background:!fPipe?'#EAF2ED':'#fff',color:!fPipe?'#5F7D6E':'#7D7D7D',borderRadius:9,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer'}}>Todos <span style={{marginLeft:4}}>{andamentoTodos.length}</span></button>
-                      {PIPELINE.filter(step=>step.id!=='nf_recebida').map((step,index)=>{const count=andamentoTodos.filter(l=>l.status_processo===step.id).length;const ativo=fPipe===step.id;const cor=PIPE_COLORS[step.id]||'#7D7D7D';return <Fragment key={step.id}><span style={{color:'#B3BDB7',fontSize:14,fontWeight:700}}>›</span><button onClick={()=>setFPipe(step.id)} style={{display:'inline-flex',alignItems:'center',gap:7,border:'1px solid '+(ativo?cor:'#E2EAE6'),background:ativo?`${cor}16`:'#fff',color:ativo?cor:'#7D7D7D',borderRadius:9,padding:'6px 9px',fontSize:10,fontWeight:800,cursor:'pointer'}}><span style={{width:20,height:20,borderRadius:'50%',display:'inline-flex',alignItems:'center',justifyContent:'center',background:ativo?cor:'#EEF2F0',color:ativo?'#fff':'#748F84',fontSize:9}}>{String(index+1).padStart(2,'0')}</span><span>{step.label} <small style={{fontSize:9,fontWeight:700,opacity:.75}}>({count})</small></span></button></Fragment>})}
+                      {PIPELINE.filter(step=>step.id!=='nf_recebida').map((step,index)=>{const ativo=fPipe===step.id;const cor=PIPE_COLORS[step.id]||'#7D7D7D';return <Fragment key={step.id}><span style={{color:'#B3BDB7',fontSize:14,fontWeight:700}}>›</span><button onClick={()=>setFPipe(ativo?'':step.id)} style={{display:'inline-flex',alignItems:'center',gap:7,border:'1px solid '+(ativo?cor:'#E2EAE6'),background:ativo?`${cor}16`:'#fff',color:ativo?cor:'#7D7D7D',borderRadius:9,padding:'6px 9px',fontSize:10,fontWeight:800,cursor:'pointer'}}><span style={{width:20,height:20,borderRadius:'50%',display:'inline-flex',alignItems:'center',justifyContent:'center',background:ativo?cor:'#EEF2F0',color:ativo?'#fff':'#748F84',fontSize:9}}>{String(index+1).padStart(2,'0')}</span><span>{step.label}</span></button></Fragment>})}
                     </div>
-                    <p style={{fontSize:10,color:'#969696',margin:'9px 0 0'}}>Quando a NF é recebida, o orçamento sai desta tela e deixa de aparecer no acompanhamento principal.</p>
                   </div>
                 </div>
                 <div style={{padding:'18px 20px 20px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><div><p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 4px'}}>Lista de acompanhamento</p><h2 style={{fontSize:18,fontWeight:800,color:'#4D4D4D',margin:0}}>{fPipe?PIPELINE.find(step=>step.id===fPipe)?.label:'Todos os orçamentos'}</h2></div><span style={{fontSize:11,color:'#7D7D7D'}}>{andamentoObra.length} registro{andamentoObra.length!==1?'s':''}</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><div><h2 style={{fontSize:18,fontWeight:800,color:'#4D4D4D',margin:0}}>{fPipe?PIPELINE.find(step=>step.id===fPipe)?.label:'Orçamentos'}</h2></div><span style={{fontSize:11,color:'#7D7D7D'}}>{andamentoObra.length} registro{andamentoObra.length!==1?'s':''}</span></div>
                   {loading?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando acompanhamento...</div>
                     :andamentoObra.length===0?<div style={{textAlign:'center',padding:'3rem 1rem',border:'1px dashed #D8E2DC',borderRadius:10,color:'#7D7D7D'}}>Nenhum orçamento nesta etapa.</div>
                     :<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:10}}>{andamentoObra.map(l=>{const step=PIPELINE.find(p=>p.id===l.status_processo);const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D';const obraDoLanc=obras.find(o=>o.id===l.obra_id);return <article key={l.id} onClick={()=>openDetalhe(l.id)} style={{border:'1px solid #E2EAE6',borderRadius:10,padding:'13px 14px',background:'#fff',cursor:'pointer',transition:'box-shadow .15s,border-color .15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#B8CEC2';e.currentTarget.style.boxShadow='0 4px 14px rgba(72,103,88,.08)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#E2EAE6';e.currentTarget.style.boxShadow='none'}}><div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0}}><h3 style={{fontSize:13,fontWeight:800,color:'#374151',margin:'0 0 7px',lineHeight:1.3}}>{l.titulo}</h3><p style={{fontSize:11,fontWeight:700,color:'#748F84',margin:0}}>Obra: {obraDoLanc?.nome||'Sem obra vinculada'}</p></div>{step&&<span style={{display:'inline-flex',alignItems:'center',gap:5,whiteSpace:'nowrap',borderRadius:99,padding:'5px 8px',background:`${cor}16`,color:cor,fontSize:10,fontWeight:800}}><Icon name="checkCircle" size={12} color={cor}/>{step.label}</span>}</div><div style={{display:'flex',justifyContent:'space-between',gap:10,borderTop:'1px solid #EEF2F0',marginTop:11,paddingTop:9,fontSize:10,color:'#969696'}}><span>{l.numero_orcamento||'Sem nº de orçamento'}</span><span>{fmtData(l.data)}</span></div>{l.data_entrega_programada&&<p style={{fontSize:10,color:'#7D7D7D',margin:'8px 0 0'}}>Entrega programada: {fmtData(l.data_entrega_programada)}</p>}</article>})}</div>}
