@@ -44,11 +44,15 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 async function supabaseRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  if (typeof options.body === 'string' && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json')
+  }
   const response = await fetch(
     `${DATA_PROXY}?path=${encodeURIComponent(path)}`,
     {
       ...options,
-      headers: { ...(options.headers || {}) },
+      headers,
       cache: 'no-store',
     },
   )
@@ -323,7 +327,7 @@ export const api = {
 
   listarAndamentoObra: async (f: { status_processo?: string } = {}) => {
     const params = new URLSearchParams({
-      select: 'id,titulo,numero_orcamento,data,status_processo,obra_id,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em',
+      select: 'id,titulo,numero_orcamento,data,status_processo,obra_id,arquivo_url,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em',
       order: 'data.desc,criado_em.desc',
     })
     if (f.status_processo) params.set('status_processo', `eq.${f.status_processo}`)
@@ -342,7 +346,7 @@ export const api = {
 
   buscarAndamentoObra: async (id: string) => {
     const [lancamentos, itens] = await Promise.all([
-      supabaseRequest<Lancamento[]>(`lancamentos?select=id,titulo,numero_orcamento,data,status_processo,obra_id,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em&id=eq.${encodeURIComponent(id)}`),
+      supabaseRequest<Lancamento[]>(`lancamentos?select=id,titulo,numero_orcamento,data,status_processo,obra_id,arquivo_url,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em&id=eq.${encodeURIComponent(id)}`),
       supabaseRequest<ItemLancamento[]>(`itens_lancamento?select=id,nome,quantidade,unidade_medida,entregue,data_entrega,tipo&lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
     ])
     if (!lancamentos[0]) throw new Error('Orçamento não encontrado')
