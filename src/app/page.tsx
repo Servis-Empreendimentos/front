@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -128,7 +128,9 @@ export default function Home() {
   const [viewFolha,setViewFolha]=useState<'lista'|'grade'>('lista')
   const [modalFuncionario,setModalFuncionario]=useState(false)
   const [funcionarioEdit,setFuncionarioEdit]=useState<Funcionario|null>(null)
-  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;adiantamento:string;descontos:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',obraId:''})
+  const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;adiantamento:string;descontos:string;vigenciaInicio:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',vigenciaInicio:'',obraId:''})
+  const [historicoSalarios,setHistoricoSalarios]=useState<HistoricoSalario[]>([])
+  const [carregandoHistoricoSalarios,setCarregandoHistoricoSalarios]=useState(false)
   const [modalPagarFuncionario,setModalPagarFuncionario]=useState<Funcionario|null>(null)
   const [valorPagarFuncionario,setValorPagarFuncionario]=useState('')
   const [dataPagarFuncionario,setDataPagarFuncionario]=useState('')
@@ -215,6 +217,17 @@ export default function Home() {
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
     try {
+      if(role==='entregador') {
+        const [rLista,rObras]=await Promise.allSettled([
+          api.listarAndamentoObra({status_processo:fPipe}),
+          api.listarObras(),
+        ])
+        if(rLista.status==='rejected') throw rLista.reason
+        setData(rLista.value)
+        setObras(rObras.status==='fulfilled'?rObras.value:[])
+        setContasMensais([]);setCats([]);setFornecedores([]);setInventario([]);setPagamentosMensais([]);setFuncionarios([]);setPagamentosFuncionarios([])
+        return
+      }
       const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios]=await Promise.allSettled([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
@@ -242,7 +255,7 @@ export default function Home() {
       if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
     }
     finally {if(!silent) setLoading(false)}
-  },[fPipe,fRec,fObra])
+  },[fPipe,fRec,fObra,role])
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
@@ -259,7 +272,8 @@ export default function Home() {
 
   const openDetalhe=async(id:string)=>{
     try {
-      const d=await api.buscar(id);setDetalhe(d);setModal(true)
+      const d=role==='entregador'?await api.buscarAndamentoObra(id):await api.buscar(id)
+      setDetalhe(d);setModal(true)
     } catch (err:any) {
       showToast('Erro ao abrir lançamento: '+(err?.message||'tente novamente'),false)
     }
@@ -704,13 +718,19 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const openNovoFuncionario=()=>{
     setFuncionarioEdit(null)
-    setFormFuncionario({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',obraId:''})
+    setHistoricoSalarios([])
+    setFormFuncionario({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',vigenciaInicio:new Date().toISOString().slice(0,10),obraId:''})
     setModalFuncionario(true)
   }
-  const openEditarFuncionario=(f:Funcionario)=>{
+  const openEditarFuncionario=async(f:Funcionario)=>{
     setFuncionarioEdit(f)
-    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',adiantamento:f.adiantamento_padrao?f.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',descontos:f.descontos_padrao?f.descontos_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',obraId:f.obra_id||''})
+    setHistoricoSalarios([])
+    setCarregandoHistoricoSalarios(true)
+    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',adiantamento:f.adiantamento_padrao?f.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',descontos:f.descontos_padrao?f.descontos_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',vigenciaInicio:new Date().toISOString().slice(0,10),obraId:f.obra_id||''})
     setModalFuncionario(true)
+    try { setHistoricoSalarios(await api.listarHistoricoSalarios(f.id)) }
+    catch { showToast('Não foi possível carregar o histórico salarial.',false) }
+    finally { setCarregandoHistoricoSalarios(false) }
   }
   const handleSalvarFuncionario=async()=>{
     if(!formFuncionario.nome.trim()) return showToast('Informe o nome do funcionário',false)
@@ -719,12 +739,20 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       const salario=parseFloat(formFuncionario.salarioBase.replace(/\D/g,''))/100||0
       const adiantamento=parseFloat(formFuncionario.adiantamento.replace(/\D/g,''))/100||0
       const descontos=parseFloat(formFuncionario.descontos.replace(/\D/g,''))/100||0
+      const vigenciaInicio=formFuncionario.vigenciaInicio||new Date().toISOString().slice(0,10)
       if(adiantamento<0||descontos<0) return showToast('Adiantamento e descontos não podem ser negativos',false)
       if(funcionarioEdit) {
+        const mudouFolha=Math.abs((funcionarioEdit.salario_base||0)-salario)>0.009||Math.abs((funcionarioEdit.adiantamento_padrao||0)-adiantamento)>0.009||Math.abs((funcionarioEdit.descontos_padrao||0)-descontos)>0.009
+        if(mudouFolha) {
+          const vigenciaExistente=historicoSalarios.find(item=>item.vigencia_inicio===vigenciaInicio)
+          if(vigenciaExistente) await api.atualizarHistoricoSalario(vigenciaExistente.id,{salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,vigencia_inicio:vigenciaInicio})
+          else await api.criarHistoricoSalario({funcionario_id:funcionarioEdit.id,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,vigencia_inicio:vigenciaInicio})
+        }
         await api.atualizarFuncionario(funcionarioEdit.id,{nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,obra_id:formFuncionario.obraId||null})
-        showToast('Funcionário atualizado!')
+        showToast(mudouFolha?`Nova vigência salarial salva a partir de ${fmtData(vigenciaInicio)}!`:'Funcionário atualizado!')
       } else {
-        await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,obra_id:formFuncionario.obraId||null})
+        const novoFuncionario=await api.criarFuncionario({nome:formFuncionario.nome.trim(),cargo:formFuncionario.cargo||null,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,obra_id:formFuncionario.obraId||null})
+        await api.criarHistoricoSalario({funcionario_id:novoFuncionario.id,salario_base:salario,adiantamento_padrao:adiantamento,descontos_padrao:descontos,vigencia_inicio:vigenciaInicio})
         showToast('Funcionário cadastrado!')
       }
       setModalFuncionario(false);load()
@@ -1018,29 +1046,33 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           {role==='entregador'&&(
             <div>
               <div style={s.row}>
-                <div><h1 style={s.h1}>Entregas</h1><p style={s.p}>Confirme os itens recebidos e anexe a nota fiscal</p></div>
+                <div><h1 style={s.h1}>Andamento dos orçamentos</h1><p style={s.p}>Acompanhe a etapa atual e a obra vinculada, sem acesso a valores financeiros</p></div>
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
-                  <input style={{...s.inp,width:200}} placeholder="Buscar empresa..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                  <input style={{...s.inp,width:240}} placeholder="Buscar empresa ou orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/>
                   <select style={s.inp} value={fPipe} onChange={e=>setFPipe(e.target.value)}>
                     <option value="">Todas as etapas</option>
                     {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
                   </select>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                  <thead><tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>{th('Empresa')}{th('Etapa')}{th('Entrega prevista')}</tr></thead>
+                  <thead><tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>{th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Entrega prevista')}</tr></thead>
                   <tbody>
-                    {loading?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).length===0?<tr><td colSpan={3} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum lançamento aguardando entrega</td></tr>
-                    :filtered.filter(l=>l.criado_em&&l.criado_em.slice(0,10)>=HOJE).map(l=>{
+                    {loading?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :filtered.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum orçamento encontrado</td></tr>
+                    :filtered.map(l=>{
                       const step=PIPELINE.find(p=>p.id===l.status_processo)
                       const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
+                      const obraDoLanc=obras.find(o=>o.id===l.obra_id)
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                           <td style={{padding:'10px 11px',fontWeight:600}}>{l.titulo}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{obraDoLanc?.nome||'Sem obra vinculada'}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{l.numero_orcamento||'—'}</td>
                           <td style={{padding:'10px 11px'}}>{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
+                          <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{fmtData(l.data)}</td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{l.data_entrega_programada?fmtData(l.data_entrega_programada):'—'}</td>
                         </tr>
                       )
@@ -1391,6 +1423,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               viewFolha={viewFolha}
               setViewFolha={setViewFolha}
               onNovoFuncionario={openNovoFuncionario}
+              onEditarFuncionario={openEditarFuncionario}
               onImportarHolerite={abrirImportacaoHolerite}
               onPagar={abrirPagarFuncionario}
               onHistorico={abrirHistoricoFuncionario}
@@ -1506,8 +1539,12 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   return (
                     <>
                       <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:16}}>
-                        {step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}
+                        {step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>} 
                         {detalhe.data_entrega_programada&&<span style={{fontSize:12,color:'#748F84',fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="calendar" size={13}/>{fmtData(detalhe.data_entrega_programada)}</span>}
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16,padding:'10px 12px',background:'#FAFBFA',border:'1px solid #E2E6E4',borderRadius:8}}>
+                        <div><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',margin:'0 0 3px'}}>Empresa</p><p style={{fontSize:13,fontWeight:700,margin:0}}>{detalhe.titulo}</p></div>
+                        <div><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',margin:'0 0 3px'}}>Obra</p><p style={{fontSize:13,fontWeight:700,margin:0}}>{obras.find(o=>o.id===detalhe.obra_id)?.nome||'Sem obra vinculada'}</p></div>
                       </div>
                       {detalhe.entrega_tipo==='parcial'&&(
                         <div style={{background:'#EDF2EF',border:'1.5px solid #D6E2DB',borderRadius:8,padding:'10px 14px',marginBottom:16}}>
@@ -2443,6 +2480,14 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <div style={{gridColumn:'1/-1',background:'#F4F8F6',border:'1px solid #DDE9E3',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#626262'}}>
                 O salário, o adiantamento e os descontos ficam salvos no cadastro e servem como referência para os próximos pagamentos. O valor efetivamente lançado na folha sempre será confirmado pelo holerite.
               </div>
+              <FF lb="Nova vigência a partir de" full>
+                <input type="date" style={s.fi} value={formFuncionario.vigenciaInicio} onChange={e=>setFormFuncionario(p=>({...p,vigenciaInicio:e.target.value}))}/>
+                <p style={{fontSize:10,color:'#969696',margin:'6px 0 0'}}>Se alterar salário, adiantamento ou descontos, será criada uma nova versão sem apagar as anteriores.</p>
+              </FF>
+              {funcionarioEdit&&<div style={{gridColumn:'1/-1',border:'1px solid #E2EAE6',borderRadius:9,padding:'11px 12px',background:'#FAFBFA'}}>
+                <p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 8px'}}>Histórico salarial</p>
+                {carregandoHistoricoSalarios?<p style={{fontSize:11,color:'#969696',margin:0}}>Carregando versões...</p>:historicoSalarios.length===0?<p style={{fontSize:11,color:'#969696',margin:0}}>Nenhuma versão histórica cadastrada ainda. Esta alteração criará a primeira.</p>:<div style={{display:'grid',gap:6}}>{historicoSalarios.map(item=><div key={item.id} style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap',fontSize:11,color:'#626262',paddingBottom:6,borderBottom:'1px solid #E2E6E4'}}><span><strong>Vigente em {fmtData(item.vigencia_inicio)}</strong></span><span>Salário {fmtR(item.salario_base)} · Adiantamento {fmtR(item.adiantamento_padrao)} · Descontos {fmtR(item.descontos_padrao)}</span></div>)}</div>}
+              </div>}
               <FF lb="Obra" full>
                 <select style={s.fi} value={formFuncionario.obraId} onChange={e=>setFormFuncionario(p=>({...p,obraId:e.target.value}))}>
                   <option value="">Sem obra vinculada</option>
@@ -2452,7 +2497,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalFuncionario(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleSalvarFuncionario} disabled={saving} style={{...s.btnTeal,opacity:saving?0.6:1}}>{saving?'Salvando...':(funcionarioEdit?'Salvar alterações':'Cadastrar')}</button>
+              <button onClick={handleSalvarFuncionario} disabled={saving||carregandoHistoricoSalarios} style={{...s.btnTeal,opacity:(saving||carregandoHistoricoSalarios)?0.6:1}}>{saving?'Salvando...':(funcionarioEdit?'Salvar alterações':'Cadastrar')}</button>
             </div>
           </div>
         </div>

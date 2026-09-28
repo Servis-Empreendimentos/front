@@ -66,7 +66,7 @@ export default function Sidebar({
 }) {
   const [financeiroAberto,setFinanceiroAberto]=useState<boolean>(FINANCEIRO_ABAS.includes(aba))
   const [orcamentosAberto,setOrcamentosAberto]=useState<boolean>(ORCAMENTOS_ABAS.includes(aba))
-  const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Conferente de obra':'Lançadora'
+  const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Usuário da obra':'Lançadora'
 
   useEffect(()=>{
     if(ORCAMENTOS_ABAS.includes(aba)) setOrcamentosAberto(true)
@@ -102,7 +102,7 @@ export default function Sidebar({
         <p style={{fontSize:9,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
 
         {role==='entregador'?(
-          <NavItem icon="truck" label="Entregas" active={true} onClick={()=>{}}/>
+          <NavItem icon="fileText" label="Andamento dos orçamentos" active={true} onClick={()=>setAba('lancamentos')}/>
         ):(
           <>
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>

@@ -180,6 +180,16 @@ export type Funcionario = {
   criado_em?: string
 }
 
+export type HistoricoSalario = {
+  id: string
+  funcionario_id: string
+  salario_base: number
+  adiantamento_padrao: number
+  descontos_padrao: number
+  vigencia_inicio: string
+  criado_em?: string
+}
+
 export type PagamentoFuncionario = {
   id: string
   funcionario_id: string
@@ -311,6 +321,15 @@ export const api = {
     return readRemote<Lancamento[]>(`/api/lancamentos?${backend.toString()}`, `lancamentos?${supabase.toString()}`)
   },
 
+  listarAndamentoObra: async (f: { status_processo?: string } = {}) => {
+    const params = new URLSearchParams({
+      select: 'id,titulo,numero_orcamento,data,status_processo,obra_id,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em',
+      order: 'data.desc,criado_em.desc',
+    })
+    if (f.status_processo) params.set('status_processo', `eq.${f.status_processo}`)
+    return supabaseRequest<Lancamento[]>(`lancamentos?${params.toString()}`)
+  },
+
   buscar: async (id: string) => {
     const [lancamentos, parcelas, itens] = await Promise.all([
       supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),
@@ -319,6 +338,15 @@ export const api = {
     ])
     if (!lancamentos[0]) throw new Error('Lançamento não encontrado no banco')
     return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] }
+  },
+
+  buscarAndamentoObra: async (id: string) => {
+    const [lancamentos, itens] = await Promise.all([
+      supabaseRequest<Lancamento[]>(`lancamentos?select=id,titulo,numero_orcamento,data,status_processo,obra_id,data_entrega_programada,entrega_tipo,entrega_itens1,entrega_itens2,entrega_data2,criado_em&id=eq.${encodeURIComponent(id)}`),
+      supabaseRequest<ItemLancamento[]>(`itens_lancamento?select=id,nome,quantidade,unidade_medida,entregue,data_entrega,tipo&lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
+    ])
+    if (!lancamentos[0]) throw new Error('Orçamento não encontrado')
+    return { ...lancamentos[0], itens: itens || [] }
   },
 
   atualizarLancamento: async (id: string, body: Record<string, unknown>) => {
@@ -472,6 +500,18 @@ export const api = {
 
   atualizarFuncionario: async (id: string, body: { nome?: string; cargo?: string | null; salario_base?: number; adiantamento_padrao?: number; descontos_padrao?: number; obra_id?: string | null; ativo?: boolean }) => {
     await readRemote(`/api/funcionarios/${id}`, `funcionarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+  },
+
+  listarHistoricoSalarios: async (funcionarioId: string): Promise<HistoricoSalario[]> => {
+    return readRemote<HistoricoSalario[]>('/api/historico-salarios', `historico_salarios?funcionario_id=eq.${encodeURIComponent(funcionarioId)}&order=vigencia_inicio.desc`)
+  },
+
+  criarHistoricoSalario: async (payload: Omit<HistoricoSalario, 'id'|'criado_em'>) => {
+    return await readRemote<HistoricoSalario>('/api/historico-salarios', 'historico_salarios', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) }).then((result: any) => Array.isArray(result) ? result[0] : result)
+  },
+
+  atualizarHistoricoSalario: async (id: string, body: Partial<Omit<HistoricoSalario, 'id'|'funcionario_id'|'criado_em'>>) => {
+    await readRemote(`/api/historico-salarios/${id}`, `historico_salarios?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
   },
 
   listarPagamentosFuncionarios: async (): Promise<PagamentoFuncionario[]> => readRemote<PagamentoFuncionario[]>('/api/pagamentos-funcionario', 'pagamentos_funcionario?order=data_pagamento.desc'),
