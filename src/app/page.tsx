@@ -940,7 +940,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     if(fDataFim && l.data > fDataFim) return false
     return true
   })
-  const andamentoObra=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)):filtered
+  const andamentoTodos=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)):filtered
+  const andamentoObra=role==='entregador'&&fPipe?andamentoTodos.filter(l=>l.status_processo===fPipe):andamentoTodos
   const listaOrcamentosBase = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
   const listaOrcamentos = [...listaOrcamentosBase].sort((a,b)=>{
     const semObraA=!a.obra_id ? 0 : 1
@@ -1026,8 +1027,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
   const totalAdiantamentosAPagar=itensFolha.filter(item=>item.subtipo==='adiantamento').reduce((s,item)=>s+item.valor,0)
   const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
-  const obrasNoAndamento=new Set(andamentoObra.map(l=>l.obra_id).filter(Boolean)).size
-  const entregasProgramadas=andamentoObra.filter(l=>Boolean(l.data_entrega_programada)).length
 
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
@@ -1051,26 +1050,23 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <div style={s.row}>
                 <div><h1 style={s.h1}>Acompanhamento</h1><p style={s.p}>Veja todas as etapas dos orçamentos. Quando a NF é recebida, o orçamento sai automaticamente desta tela.</p></div>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:12,marginBottom:16}}>
-                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Orçamentos</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{andamentoObra.length}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>em acompanhamento</p></div>
-                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Obras</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{obrasNoAndamento}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>com orçamento vinculado</p></div>
-                <div style={{...s.kpi,position:'relative'}}><p style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em',margin:'0 0 6px'}}>Entregas</p><p style={{fontSize:24,fontWeight:800,color:'#626262',margin:0}}>{entregasProgramadas}</p><p style={{fontSize:11,color:'#7D7D7D',margin:'5px 0 0'}}>com data programada</p></div>
-              </div>
-              <div style={s.card}>
-                <div style={{...s.toolbar,display:'flex',gap:10,alignItems:'end',flexWrap:'wrap'}}>
-                  <label style={{display:'grid',gap:5,flex:'1 1 250px'}}><span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.06em'}}>Pesquisar</span><input style={s.inp} placeholder="Empresa ou nº do orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/></label>
-                  <span style={{fontSize:11,color:'#7D7D7D',paddingBottom:9}}>As NFs recebidas ficam fora deste quadro.</span>
+              <div style={{...s.card,padding:0,overflow:'hidden'}}>
+                <div style={{padding:'18px 20px 14px',borderBottom:'1px solid #E5EBE7',background:'#FBFCFB'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'end',gap:16,flexWrap:'wrap'}}>
+                    <label style={{display:'grid',gap:5,flex:'1 1 300px'}}><span style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em'}}>Pesquisar orçamento</span><input style={s.inp} placeholder="Empresa ou nº do orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/></label>
+                    <span style={{fontSize:11,color:'#7D7D7D',paddingBottom:9}}>Notas fiscais recebidas não aparecem aqui.</span>
+                  </div>
+                  <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:16}}>
+                    <button onClick={()=>setFPipe('')} style={{border:'1px solid '+(!fPipe?'#8BA59A':'#E2EAE6'),background:!fPipe?'#EAF2ED':'#fff',color:!fPipe?'#5F7D6E':'#7D7D7D',borderRadius:8,padding:'8px 11px',fontSize:11,fontWeight:800,cursor:'pointer'}}>Todos <span style={{marginLeft:4}}>{andamentoTodos.length}</span></button>
+                    {PIPELINE.filter(step=>step.id!=='nf_recebida').map(step=>{const count=andamentoTodos.filter(l=>l.status_processo===step.id).length;const ativo=fPipe===step.id;const cor=PIPE_COLORS[step.id]||'#7D7D7D';return <button key={step.id} onClick={()=>setFPipe(step.id)} style={{border:'1px solid '+(ativo?cor:'#E2EAE6'),background:ativo?`${cor}16`:'#fff',color:ativo?cor:'#7D7D7D',borderRadius:8,padding:'8px 11px',fontSize:11,fontWeight:800,cursor:'pointer'}}>{step.label} <span style={{marginLeft:4}}>{count}</span></button>})}
+                  </div>
                 </div>
-                {loading?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando acompanhamento...</div>
-                  :andamentoObra.length===0?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhum orçamento em acompanhamento.</div>
-                  :<div style={{display:'flex',gap:12,overflowX:'auto',padding:'0 1.1rem 1.1rem',alignItems:'flex-start'}}>{PIPELINE.map(step=>{
-                      const itensEtapa=andamentoObra.filter(l=>l.status_processo===step.id)
-                      const cor=PIPE_COLORS[step.id]||'#7D7D7D'
-                      return <section key={step.id} style={{flex:'0 0 260px',minHeight:180,border:'1px solid #E2EAE6',borderRadius:12,background:'#FAFBFA',overflow:'hidden'}}>
-                        <div style={{borderTop:`4px solid ${cor}`,padding:'12px 12px 10px',background:'#fff',borderBottom:'1px solid #E2EAE6',display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}><div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}><Icon name={step.icon==='💰'?'dollar':step.icon==='📅'?'calendar':step.icon==='📦'?'package':step.icon==='🧾'?'receipt':step.icon==='✅'?'check':'fileText'} size={14} color={cor}/><span style={{fontSize:11,fontWeight:800,color:'#626262',lineHeight:1.2}}>{step.label}</span></div><span style={{minWidth:22,height:22,padding:'0 6px',borderRadius:99,background:`${cor}18`,color:cor,fontSize:11,fontWeight:800,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{itensEtapa.length}</span></div>
-                        <div style={{display:'grid',gap:9,padding:10}}>{itensEtapa.length===0?<p style={{fontSize:11,color:'#A0AAA5',textAlign:'center',padding:'18px 5px',margin:0}}>Nenhum orçamento nesta etapa</p>:itensEtapa.map(l=>{const obraDoLanc=obras.find(o=>o.id===l.obra_id);return <article key={l.id} onClick={()=>openDetalhe(l.id)} style={{border:'1px solid #E2EAE6',borderRadius:9,padding:'11px 10px',background:'#fff',cursor:'pointer',boxShadow:'0 1px 2px rgba(45,70,55,.03)'}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#B8CEC2'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#E2EAE6'}}><p style={{fontSize:12,fontWeight:800,color:'#374151',margin:'0 0 7px',lineHeight:1.3}}>{l.titulo}</p><p style={{fontSize:11,fontWeight:700,color:'#748F84',margin:'0 0 4px'}}>Obra: {obraDoLanc?.nome||'Sem obra vinculada'}</p><div style={{display:'flex',justifyContent:'space-between',gap:6,fontSize:10,color:'#969696'}}><span>{l.numero_orcamento||'Sem nº'}</span><span>{fmtData(l.data)}</span></div>{l.data_entrega_programada&&<p style={{fontSize:10,color:'#7D7D7D',margin:'7px 0 0',paddingTop:7,borderTop:'1px solid #EEF2F0'}}>Entrega: {fmtData(l.data_entrega_programada)}</p>}</article>})}</div>
-                      </section>
-                    })}</div>}
+                <div style={{padding:'18px 20px 20px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}><div><p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 4px'}}>Lista de acompanhamento</p><h2 style={{fontSize:18,fontWeight:800,color:'#4D4D4D',margin:0}}>{fPipe?PIPELINE.find(step=>step.id===fPipe)?.label:'Todos os orçamentos'}</h2></div><span style={{fontSize:11,color:'#7D7D7D'}}>{andamentoObra.length} registro{andamentoObra.length!==1?'s':''}</span></div>
+                  {loading?<div style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando acompanhamento...</div>
+                    :andamentoObra.length===0?<div style={{textAlign:'center',padding:'3rem 1rem',border:'1px dashed #D8E2DC',borderRadius:10,color:'#7D7D7D'}}>Nenhum orçamento nesta etapa.</div>
+                    :<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:10}}>{andamentoObra.map(l=>{const step=PIPELINE.find(p=>p.id===l.status_processo);const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D';const obraDoLanc=obras.find(o=>o.id===l.obra_id);return <article key={l.id} onClick={()=>openDetalhe(l.id)} style={{border:'1px solid #E2EAE6',borderRadius:10,padding:'13px 14px',background:'#fff',cursor:'pointer',transition:'box-shadow .15s,border-color .15s'}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#B8CEC2';e.currentTarget.style.boxShadow='0 4px 14px rgba(72,103,88,.08)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#E2EAE6';e.currentTarget.style.boxShadow='none'}}><div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'}}><div style={{minWidth:0}}><h3 style={{fontSize:13,fontWeight:800,color:'#374151',margin:'0 0 7px',lineHeight:1.3}}>{l.titulo}</h3><p style={{fontSize:11,fontWeight:700,color:'#748F84',margin:0}}>Obra: {obraDoLanc?.nome||'Sem obra vinculada'}</p></div>{step&&<span style={{display:'inline-flex',alignItems:'center',gap:5,whiteSpace:'nowrap',borderRadius:99,padding:'5px 8px',background:`${cor}16`,color:cor,fontSize:10,fontWeight:800}}><Icon name="checkCircle" size={12} color={cor}/>{step.label}</span>}</div><div style={{display:'flex',justifyContent:'space-between',gap:10,borderTop:'1px solid #EEF2F0',marginTop:11,paddingTop:9,fontSize:10,color:'#969696'}}><span>{l.numero_orcamento||'Sem nº de orçamento'}</span><span>{fmtData(l.data)}</span></div>{l.data_entrega_programada&&<p style={{fontSize:10,color:'#7D7D7D',margin:'8px 0 0'}}>Entrega programada: {fmtData(l.data_entrega_programada)}</p>}</article>})}</div>}
+                </div>
               </div>
             </div>
           )}
