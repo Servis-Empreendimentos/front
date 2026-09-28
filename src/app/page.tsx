@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
@@ -1056,9 +1056,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     <label style={{display:'grid',gap:5,flex:'1 1 300px'}}><span style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em'}}>Pesquisar orçamento</span><input style={s.inp} placeholder="Empresa ou nº do orçamento..." value={search} onChange={e=>setSearch(e.target.value)}/></label>
                     <span style={{fontSize:11,color:'#7D7D7D',paddingBottom:9}}>Notas fiscais recebidas não aparecem aqui.</span>
                   </div>
-                  <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:16}}>
-                    <button onClick={()=>setFPipe('')} style={{border:'1px solid '+(!fPipe?'#8BA59A':'#E2EAE6'),background:!fPipe?'#EAF2ED':'#fff',color:!fPipe?'#5F7D6E':'#7D7D7D',borderRadius:8,padding:'8px 11px',fontSize:11,fontWeight:800,cursor:'pointer'}}>Todos <span style={{marginLeft:4}}>{andamentoTodos.length}</span></button>
-                    {PIPELINE.filter(step=>step.id!=='nf_recebida').map(step=>{const count=andamentoTodos.filter(l=>l.status_processo===step.id).length;const ativo=fPipe===step.id;const cor=PIPE_COLORS[step.id]||'#7D7D7D';return <button key={step.id} onClick={()=>setFPipe(step.id)} style={{border:'1px solid '+(ativo?cor:'#E2EAE6'),background:ativo?`${cor}16`:'#fff',color:ativo?cor:'#7D7D7D',borderRadius:8,padding:'8px 11px',fontSize:11,fontWeight:800,cursor:'pointer'}}>{step.label} <span style={{marginLeft:4}}>{count}</span></button>})}
+                  <div style={{marginTop:18}}>
+                    <p style={{fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.08em',margin:'0 0 9px'}}>Fluxo do orçamento · da entrada até o recebimento</p>
+                    <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                      <button onClick={()=>setFPipe('')} style={{border:'1px solid '+(!fPipe?'#8BA59A':'#E2EAE6'),background:!fPipe?'#EAF2ED':'#fff',color:!fPipe?'#5F7D6E':'#7D7D7D',borderRadius:9,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer'}}>Todos <span style={{marginLeft:4}}>{andamentoTodos.length}</span></button>
+                      {PIPELINE.filter(step=>step.id!=='nf_recebida').map((step,index)=>{const count=andamentoTodos.filter(l=>l.status_processo===step.id).length;const ativo=fPipe===step.id;const cor=PIPE_COLORS[step.id]||'#7D7D7D';return <Fragment key={step.id}><span style={{color:'#B3BDB7',fontSize:14,fontWeight:700}}>›</span><button onClick={()=>setFPipe(step.id)} style={{display:'inline-flex',alignItems:'center',gap:7,border:'1px solid '+(ativo?cor:'#E2EAE6'),background:ativo?`${cor}16`:'#fff',color:ativo?cor:'#7D7D7D',borderRadius:9,padding:'6px 9px',fontSize:10,fontWeight:800,cursor:'pointer'}}><span style={{width:20,height:20,borderRadius:'50%',display:'inline-flex',alignItems:'center',justifyContent:'center',background:ativo?cor:'#EEF2F0',color:ativo?'#fff':'#748F84',fontSize:9}}>{String(index+1).padStart(2,'0')}</span><span>{step.label} <small style={{fontSize:9,fontWeight:700,opacity:.75}}>({count})</small></span></button></Fragment>})}
+                    </div>
+                    <p style={{fontSize:10,color:'#969696',margin:'9px 0 0'}}>Quando a NF é recebida, o orçamento sai desta tela e deixa de aparecer no acompanhamento principal.</p>
                   </div>
                 </div>
                 <div style={{padding:'18px 20px 20px'}}>
