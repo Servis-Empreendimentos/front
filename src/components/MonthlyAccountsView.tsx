@@ -89,14 +89,6 @@ export default function MonthlyAccountsView({
         <button onClick={onNovaConta} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar conta</button>
       </div>
 
-      <div style={{display:'flex',alignItems:'flex-start',gap:13,background:'#E8EFEC',border:'1px solid #D6E2DB',borderRadius:14,padding:'14px 16px',marginBottom:'1.25rem'}}>
-        <span style={{width:32,height:32,flex:'0 0 auto',borderRadius:9,background:'#fff',color:ACCENT_LT,display:'inline-flex',alignItems:'center',justifyContent:'center'}}><Icon name="sparkles" size={16}/></span>
-        <div>
-          <p style={{fontSize:12,fontWeight:800,color:'#626262',margin:'1px 0 4px'}}>Como acompanhar</p>
-          <p style={{fontSize:12,lineHeight:1.5,color:'#71817E',margin:0}}>Cadastre cada conta uma vez. Todo mês, clique em <strong>Registrar pagamento</strong> quando quitar. Use o histórico para conferir valores anteriores.</p>
-        </div>
-      </div>
-
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
         <KPI l="Contas ativas" v={ativas.length} sv="em acompanhamento" c={ACCENT_LT}/>
         <KPI l="Pagas neste mês" v={contasPagas.size} sv={`de ${ativas.length} contas ativas`} c="#8BA59A"/>
