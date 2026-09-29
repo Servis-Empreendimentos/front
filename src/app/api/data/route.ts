@@ -66,5 +66,10 @@ async function proxy(request: NextRequest) {
 export async function GET(request: NextRequest) { return proxy(request) }
 export async function POST(request: NextRequest) { return proxy(request) }
 export async function PATCH(request: NextRequest) { return proxy(request) }
-export async function DELETE(request: NextRequest) { return proxy(request) }
+export async function DELETE() {
+  return NextResponse.json(
+    { detail: 'Exclusões bloqueadas neste sistema.' },
+    { status: 405 },
+  )
+}
 export async function OPTIONS() { return new NextResponse(null, { status: 204 }) }
