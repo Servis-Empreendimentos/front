@@ -1191,9 +1191,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='pagar'&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Contas a Pagar</h1><p style={s.p}>Tudo que já foi pago — notas fiscais, folha de pagamento e contas mensais, num lugar só</p></div>
-              </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
                 <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
@@ -1239,8 +1236,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='obras'&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Obras</h1><p style={s.p}>Cadastre cada obra e vincule os lançamentos a ela pra ter o gasto separado por obra</p></div>
+              <div style={{...s.row,justifyContent:'flex-end'}}>
                 <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
@@ -1290,8 +1286,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='fornecedores'&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Fornecedores</h1><p style={s.p}>Cadastro de empresas para preenchimento automático nos orçamentos</p></div>
+              <div style={{...s.row,justifyContent:'flex-end'}}>
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
                   <button onClick={handleRevisarSegmentos} disabled={loadingSegmentos} style={{...s.btnOut,opacity:loadingSegmentos?0.65:1}}><Icon name="sparkles" size={14}/> {loadingSegmentos?'Revisando...':'Revisar segmentos com IA'}</button>
                   <button onClick={handleAnalisarConcorrentes} disabled={loadingConcorrentes} style={{...s.btnOut,opacity:loadingConcorrentes?0.65:1}}><Icon name="search" size={14}/> {loadingConcorrentes?'Analisando...':'Analisar concorrentes com IA'}</button>
@@ -1339,8 +1334,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='inventario'&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Inventário de máquinas e equipamentos</h1><p style={s.p}>Controle patrimônio, localização, uso e manutenção dos ativos</p></div>
+              <div style={{...s.row,justifyContent:'flex-end'}}>
                 <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo ativo</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
