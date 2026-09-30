@@ -20,6 +20,12 @@ const SHARED_LOCAL_KEYS = [
 
 type RequestOptions = RequestInit & { timeoutMs?: number }
 
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text()
+  if (!text.trim()) return undefined as T
+  return JSON.parse(text) as T
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (!API_BASE) throw new Error('Backend não configurado para esta operação')
   const { timeoutMs = 4500, ...init } = options
@@ -33,7 +39,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       throw new Error(detail || `API ${response.status}`)
     }
     if (response.status === 204) return undefined as T
-    return await response.json()
+    return await parseJsonResponse<T>(response)
   } catch (error: any) {
     if (error?.name === 'AbortError') throw new Error('A API demorou para responder. Tente novamente.')
     if (error instanceof TypeError) throw new Error('Não foi possível conectar à API. Verifique a URL pública do backend.')
@@ -62,7 +68,7 @@ async function supabaseRequest<T>(path: string, options: RequestInit = {}): Prom
     throw new Error(detail || `Supabase ${response.status}`)
   }
   if (response.status === 204) return undefined as T
-  return await response.json()
+  return await parseJsonResponse<T>(response)
 }
 
 async function readRemote<T>(backendPath: string, supabasePath: string, options: RequestOptions = {}): Promise<T> {
@@ -400,7 +406,13 @@ export const api = {
     const { parcelas, itens, categoria_nome, ...bodySemFilhos } = payload
     const body = { ...bodySemFilhos, pago_por: 'Servis Empreendimentos' }
     const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
-    const lanc = data[0]
+    let lanc = data?.[0]
+    if (!lanc) {
+      const recuperados = await supabaseRequest<Lancamento[]>(
+        `lancamentos?select=*&titulo=eq.${encodeURIComponent(body.titulo)}&data=eq.${encodeURIComponent(body.data)}&criado_por=eq.${encodeURIComponent(body.criado_por)}&order=criado_em.desc&limit=1`,
+      )
+      lanc = recuperados?.[0]
+    }
     if (!lanc) throw new Error('O banco não retornou o orçamento criado')
     if (itens?.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map((item: ItemLancamento) => ({ lancamento_id: lanc.id, tipo: 'orcamento', nome: item.nome, quantidade: item.quantidade, unidade_medida: item.unidade_medida || 'Un', valor_unitario: item.valor_unitario || 0, valor_total: item.valor_total || 0 }))) })
     if (parcelas?.length) await supabaseRequest('parcelas', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(parcelas.map((p: Parcela) => ({ ...p, lancamento_id: lanc.id }))) })
