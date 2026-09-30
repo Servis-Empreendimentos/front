@@ -338,8 +338,15 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
         criado_por: user,
         itens: itensOrcamento,
       })
-      if(form.titulo) await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
-      setModal(false);showToast('Orçamento salvo no banco compartilhado!');load()
+      let avisoFornecedor = ''
+      if(form.titulo) {
+        try {
+          await api.salvarFornecedor(form.titulo,form.cnpj||undefined)
+        } catch {
+          avisoFornecedor = ' O fornecedor não foi atualizado, mas o orçamento foi salvo.'
+        }
+      }
+      setModal(false);showToast(`Orçamento salvo no banco compartilhado!${avisoFornecedor}`);load()
     } catch (err:any) {
       showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
     } finally {setSaving(false)}
@@ -501,8 +508,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const handleExcluir=async(id:string)=>{
     if(!confirm('Excluir este lançamento?')) return
-    await api.excluirLancamento(id)
-    setModal(false);showToast('Excluído!');load()
+    try {
+      await api.excluirLancamento(id)
+      setModal(false);showToast('Excluído!');load()
+    } catch (err:any) {
+      showToast('Erro ao excluir: '+(err?.message||'desconhecido'),false)
+    }
   }
 
   const handleVincularObra=async(obraId:string)=>{

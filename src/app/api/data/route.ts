@@ -16,8 +16,17 @@ const TABLES = new Set([
 ])
 
 function supabaseConfig() {
-  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '')
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_SUPABASE_KEY || ''
+  const configuredUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  const url = configuredUrl
+    .replace(/\/rest\/v1\/?$/, '')
+    .replace(/\/$/, '')
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.SUPABASE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_KEY ||
+    ''
   return { url, key }
 }
 
@@ -58,18 +67,16 @@ async function proxy(request: NextRequest) {
       status: response.status,
       headers: { 'content-type': response.headers.get('content-type') || 'application/json' },
     })
-  } catch {
-    return NextResponse.json({ detail: 'Não foi possível conectar ao Supabase' }, { status: 502 })
+  } catch (error: any) {
+    return NextResponse.json(
+      { detail: `Não foi possível conectar ao Supabase: ${error?.message || 'erro de rede'}` },
+      { status: 502 },
+    )
   }
 }
 
 export async function GET(request: NextRequest) { return proxy(request) }
 export async function POST(request: NextRequest) { return proxy(request) }
 export async function PATCH(request: NextRequest) { return proxy(request) }
-export async function DELETE() {
-  return NextResponse.json(
-    { detail: 'Exclusões bloqueadas neste sistema.' },
-    { status: 405 },
-  )
-}
+export async function DELETE(request: NextRequest) { return proxy(request) }
 export async function OPTIONS() { return new NextResponse(null, { status: 204 }) }
