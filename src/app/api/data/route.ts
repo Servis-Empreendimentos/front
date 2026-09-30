@@ -62,6 +62,12 @@ async function proxy(request: NextRequest) {
 
   try {
     const response = await fetch(`${url}/rest/v1/${path}`, { ...init, cache: 'no-store' })
+    if (response.status === 204) {
+      return new NextResponse(null, {
+        status: 204,
+        headers: { 'cache-control': 'no-store' },
+      })
+    }
     const body = await response.text()
     return new NextResponse(body, {
       status: response.status,
