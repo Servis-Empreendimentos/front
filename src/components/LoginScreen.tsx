@@ -2,7 +2,7 @@
 import { useState } from 'react'
 
 const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora'|'gestora'|'entregador' }> = {
-  'anne':    { senha: 'anne123',    nome: 'Anne',    role: 'lancadora'  },
+  'anne':    { senha: 'anne123',    nome: 'Anne',    role: 'gestora'  },
   'mayara':  { senha: 'mayara123',  nome: 'Mayara',  role: 'gestora'    },
   'edna':    { senha: 'edna123',    nome: 'Edna',    role: 'lancadora'  },
   'erick':   { senha: 'erick123',   nome: 'Erick',   role: 'lancadora'  },
