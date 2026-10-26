@@ -88,6 +88,14 @@ function localId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function nullableUuid(value: unknown) {
+  if (value === null || value === undefined) return null
+  const normalized = String(value).trim().replace(/^['"]+|['"]+$/g, '')
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : null
+}
+
 export type Parcela = {
   id?: string
   lancamento_id?: string
@@ -204,7 +212,7 @@ export type PagamentoFuncionario = {
   id: string
   funcionario_id: string
   valor: number
-  tipo: 'salario' | 'adiantamento' | 'vale' | 'outro'
+  tipo: 'salario' | 'adiantamento' | 'decimo_terceiro' | 'vale' | 'outro'
   data_pagamento: string
   criado_em?: string
 }
@@ -361,7 +369,9 @@ export const api = {
 
   atualizarLancamento: async (id: string, body: Record<string, unknown>) => {
     try {
-      await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+      const normalizedBody = { ...body }
+      if ('obra_id' in normalizedBody) normalizedBody.obra_id = nullableUuid(normalizedBody.obra_id)
+      await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(normalizedBody) })
     } catch (error) { throw error }
   },
 
@@ -404,7 +414,11 @@ export const api = {
 
   criar: async (payload: any) => {
     const { parcelas, itens, categoria_nome, ...bodySemFilhos } = payload
-    const body = { ...bodySemFilhos, pago_por: 'Servis Empreendimentos' }
+    const body = {
+      ...bodySemFilhos,
+      obra_id: nullableUuid(bodySemFilhos.obra_id),
+      pago_por: 'Servis Empreendimentos',
+    }
     const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
     let lanc = data?.[0]
     if (!lanc) {

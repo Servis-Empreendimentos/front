@@ -66,6 +66,7 @@ export default function FolhaPagamentoView({
   const funcionariosPagosNoMes = new Set(pagamentosDoMes.map(p => p.funcionario_id))
   const totalAdiantamentoMes = pagamentosDoMes.filter(p => p.tipo === 'adiantamento').reduce((total, p) => total + p.valor, 0)
   const totalFolhaMes = pagamentosDoMes.filter(p => p.tipo === 'salario').reduce((total, p) => total + p.valor, 0)
+  const totalDecimoTerceiroMes = pagamentosDoMes.filter(p => p.tipo === 'decimo_terceiro').reduce((total, p) => total + p.valor, 0)
   const totalFolhaBase = ativos.reduce((total, f) => total + f.salario_base, 0)
   const semPagamentoNoMes = ativos.filter(f => !funcionariosPagosNoMes.has(f.id)).length
 
@@ -100,6 +101,7 @@ export default function FolhaPagamentoView({
         <KPI l="Folha base mensal" v={fmtR(totalFolhaBase)} sv="soma dos salários" c="#7D7D7D"/>
         <KPI l="Adiantamentos" v={fmtR(totalAdiantamentoMes)} sv={mesAtualNome} c="#8BA59A"/>
         <KPI l="Folha mensal" v={fmtR(totalFolhaMes)} sv={mesAtualNome} c="#748F84"/>
+        <KPI l="13º salário" v={fmtR(totalDecimoTerceiroMes)} sv={mesAtualNome} c="#8BA59A"/>
         <KPI l="Sem pagamento este mês" v={semPagamentoNoMes} sv="ainda pendente" c="#748F84"/>
       </div>
 
