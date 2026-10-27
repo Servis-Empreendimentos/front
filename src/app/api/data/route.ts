@@ -13,6 +13,8 @@ const TABLES = new Set([
   'funcionarios',
   'historico_salarios',
   'pagamentos_funcionario',
+  'contratos_medicao',
+  'medicoes_contrato',
 ])
 
 function supabaseConfig() {

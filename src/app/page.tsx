@@ -1,6 +1,6 @@
 'use client'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -8,6 +8,7 @@ import LoginScreen from '../components/LoginScreen'
 import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
 import FolhaPagamentoView from '../components/FolhaPagamentoView'
+import ContratosMedicaoView from '../components/ContratosMedicaoView'
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
@@ -109,7 +110,7 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -119,6 +120,7 @@ export default function Home() {
   const [obras,setObras]=useState<Obra[]>([])
   const [funcionarios,setFuncionarios]=useState<Funcionario[]>([])
   const [pagamentosFuncionarios,setPagamentosFuncionarios]=useState<PagamentoFuncionario[]>([])
+  const [contratos,setContratos]=useState<ContratoMedicao[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
@@ -180,6 +182,8 @@ export default function Home() {
   const [loadingIANF,setLoadingIANF]=useState(false)
   const [nfNumeroTemp,setNfNumeroTemp]=useState('')
   const [rawFreteNF,setRawFreteNF]=useState('')
+  const [tipoNfTemp,setTipoNfTemp]=useState<'produto'|'servico'>('produto')
+  const [fTipoNf,setFTipoNf]=useState('')
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalPagParcial,setModalPagParcial]=useState(false)
@@ -235,7 +239,7 @@ export default function Home() {
         setContasMensais([]);setCats([]);setFornecedores([]);setInventario([]);setPagamentosMensais([]);setFuncionarios([]);setPagamentosFuncionarios([])
         return
       }
-      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios]=await Promise.allSettled([
+      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos]=await Promise.allSettled([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
@@ -245,6 +249,7 @@ export default function Home() {
         api.listarObras(),
         api.listarFuncionarios(),
         api.listarPagamentosFuncionarios(),
+        api.listarContratosMedicao(),
       ])
       if(rLista.status==='rejected') throw rLista.reason
       const optional=(result:any,fallback:any[])=>result.status==='fulfilled'?result.value:fallback
@@ -257,6 +262,7 @@ export default function Home() {
       setObras(optional(rObras,[]))
       setFuncionarios(optional(rFuncionarios,[]))
       setPagamentosFuncionarios(optional(rPagamentosFuncionarios,[]))
+      setContratos(optional(rContratos,[]))
     } catch {
       setData([]);setCats([]);setFornecedores([]);setInventario([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
       if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
@@ -378,7 +384,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setNfFileTemp(file);setLoadingIANF(true)
     try {
       const dados=await lerDocIA(file,`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido:
-{"numero_nf":"número da nota fiscal","valor_frete":0.00,"itens":[{"nome":"produto","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+{"numero_nf":"número da nota fiscal","tipo_nf":"produto|servico","valor_frete":0.00,"itens":[{"nome":"produto ou serviço","quantidade":1.0,"unidade_medida":"Kg, Un, Rolo, M, Caixa ou outra unidade do documento","valor_unitario":0.00,"valor_total":0.00}]}
+ Classifique como servico quando a nota cobrar mão de obra, instalação, projeto, locação ou outro serviço; caso contrário classifique como produto.
 Para cada item, extraia quantidade, unidade de medida, valor unitário E valor total exatamente como aparecem no documento. Liste TODOS os itens.`)
       const itens=(dados.itens||[]).map((i:any)=>({
         nome:i.nome||'', quantidade:i.quantidade||1, unidade_medida:i.unidade_medida||'Un',
@@ -388,10 +395,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
       }))
       setItensNFEditor(itens)
       setNfNumeroTemp(dados.numero_nf||'')
+      setTipoNfTemp(dados.tipo_nf==='servico'?'servico':'produto')
       setRawFreteNF(dados.valor_frete>0?dados.valor_frete.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
       setModalNFItens(true)
     } catch {
-      setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('');setModalNFItens(true)
+      setItensNFEditor([]);setNfNumeroTemp('');setTipoNfTemp('produto');setRawFreteNF('');setModalNFItens(true)
       showToast('IA não extraiu os dados. Preencha manualmente.',false)
     } finally {setLoadingIANF(false)}
   }
@@ -402,7 +410,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     try {
       const url=await api.uploadArquivo(nfFileTemp)
       const vFreteNF=parseFloat(rawFreteNF.replace(/\D/g,''))/100||0
-      await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,valor_frete:vFreteNF||detalhe.valor_frete})
+      await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,tipo_nf:tipoNfTemp,valor_frete:vFreteNF||detalhe.valor_frete})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalNFItens(false);setModal(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('')
@@ -960,6 +968,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     }
     if(fDataIni && l.data < fDataIni) return false
     if(fDataFim && l.data > fDataFim) return false
+    if(aba==='notas-fiscais' && fTipoNf && l.tipo_nf !== fTipoNf) return false
     return true
   })
   const andamentoTodos=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)&&!ocultarDoUsuarioObra(l)):filtered
@@ -968,7 +977,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const listaOrcamentos = [...listaOrcamentosBase].sort((a,b)=>{
     const semObraA=!a.obra_id ? 0 : 1
     const semObraB=!b.obra_id ? 0 : 1
-    return semObraA-semObraB || (b.data||'').localeCompare(a.data||'') || (b.criado_em||'').localeCompare(a.criado_em||'')
+    return semObraA-semObraB || (a.data||'').localeCompare(b.data||'') || (a.criado_em||'').localeCompare(b.criado_em||'')
   })
 
   const matchFornecedor = (f:Fornecedor) => {
@@ -1019,7 +1028,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
 
-  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais';subtipo?:'adiantamento'|'salario'|'decimo_terceiro';nome:string;valor:number;data:string;lancamentoId?:string}
+  type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais'|'medicao';subtipo?:'adiantamento'|'salario'|'decimo_terceiro';nome:string;valor:number;data:string;lancamentoId?:string;contratoId?:string}
   const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
   const gruposFolha:Record<string,{valor:number;data:string;tipo:'adiantamento'|'salario'|'decimo_terceiro'}>={}
   pagamentosFuncionarios.forEach(p=>{
@@ -1036,6 +1045,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     const nome=g.tipo==='adiantamento'?'Adiantamento':g.tipo==='decimo_terceiro'?'13º salário':'Folha mensal'
     return {id:`folha-${g.tipo}-${mes}`,tipo:'folha',subtipo:g.tipo,nome:`${nome} de ${mesLabel(mes)}`,valor:g.valor,data:g.data}
   })
+  const itensMedicoes:ItemPagar[]=contratos.flatMap(contrato=>(contrato.medicoes||[]).map(medicao=>({id:`medicao-${medicao.id}`,tipo:'medicao' as const,nome:`${contrato.titulo} — Medição ${medicao.numero}`,valor:medicao.valor,data:medicao.data_medicao,contratoId:contrato.id})))
   const gruposMensais:Record<string,{valor:number;data:string}>={}
   pagamentosMensais.forEach(p=>{
     const mes=(p.data_pagamento||'').slice(0,7)
@@ -1045,7 +1055,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     if(p.data_pagamento>gruposMensais[mes].data) gruposMensais[mes].data=p.data_pagamento
   })
   const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
-  const contasAPagar=[...itensNF,...itensFolha,...itensMensais].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
+  const contasAPagar=[...itensNF,...itensFolha,...itensMensais,...itensMedicoes].sort((a,b)=>(a.data||'').localeCompare(b.data||''))
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
   const totalAdiantamentosAPagar=itensFolha.filter(item=>item.subtipo==='adiantamento').reduce((s,item)=>s+item.valor,0)
   const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
@@ -1232,12 +1242,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                       <tr key={item.id} onClick={()=>{
                         if(item.tipo==='nf'&&item.lancamentoId) openDetalhe(item.lancamentoId)
                         else if(item.tipo==='folha') setAba('folha')
+                        else if(item.tipo==='medicao') setAba('contratos')
                         else setAba('mensais')
                       }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                         onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
                         <td style={{padding:'11px'}}>
                           <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
-                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?(item.subtipo==='adiantamento'?'Adiantamento salarial':item.subtipo==='decimo_terceiro'?'13º salário':'Folha mensal'):'Contas mensais'} · {fmtData(item.data)}</p>
+                          <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.tipo==='nf'?'Nota fiscal':item.tipo==='folha'?(item.subtipo==='adiantamento'?'Adiantamento salarial':item.subtipo==='decimo_terceiro'?'13º salário':'Folha mensal'):item.tipo==='medicao'?'Pagamento por medição':'Contas mensais'} · {fmtData(item.data)}</p>
                         </td>
                         <td style={{padding:'11px',textAlign:'right',fontWeight:700}}>{fmtR(item.valor)}</td>
                       </tr>
@@ -1438,6 +1449,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             />
           )}
 
+          {role!=='entregador'&&aba==='contratos'&&(
+            <ContratosMedicaoView contratos={contratos} obras={obras} onAtualizar={()=>load()}/>
+          )}
+
           {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
             <div>
               <div style={s.card} className="budget-card">
@@ -1465,6 +1480,12 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                       {PIPELINE.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
                     </select>
                   </label>
+                  {aba==='notas-fiscais'&&<label className="budget-filter">
+                    <span>Tipo de NF</span>
+                    <select style={s.inp} value={fTipoNf} onChange={e=>setFTipoNf(e.target.value)}>
+                      <option value="">Todos</option><option value="produto">Produto</option><option value="servico">Serviço</option>
+                    </select>
+                  </label>}
                   <label className="budget-filter">
                     <span>Tipo</span>
                     <select style={s.inp} value={fRec} onChange={e=>setFRec(e.target.value)}>
@@ -1478,8 +1499,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                       {obras.map(o=><option key={o.id} value={o.id}>{o.nome}</option>)}
                     </select>
                   </label>
-                  {(fDataIni||fDataFim||fPipe||fRec||fObra||search)&&(
-                    <button onClick={()=>{setFDataIni('');setFDataFim('');setFPipe('');setFRec('');setFObra('');setSearch('')}} style={{...s.btnOut,padding:'8px 12px',fontSize:11,alignSelf:'end'}}>Limpar filtros</button>
+                  {(fDataIni||fDataFim||fPipe||fRec||fObra||fTipoNf||search)&&(
+                    <button onClick={()=>{setFDataIni('');setFDataFim('');setFPipe('');setFRec('');setFObra('');setFTipoNf('');setSearch('')}} style={{...s.btnOut,padding:'8px 12px',fontSize:11,alignSelf:'end'}}>Limpar filtros</button>
                   )}
                 </div>
                 <div className="budget-table-wrap">
@@ -1490,7 +1511,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     </colgroup>
                     <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo devedor')}{th('Nota fiscal')}
+                        {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo devedor')}{th('Nota fiscal')}{aba==='notas-fiscais'&&th('Tipo')}
                       </tr>
                     </thead>
                     <tbody>
@@ -1512,6 +1533,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                             <td className="budget-cell budget-cell-money">{fmtR(l.valor_total)}</td>
                             <td className="budget-cell budget-cell-money">{temSaldo?fmtR(l.saldo_devedor!):<span className="budget-empty">Quitado</span>}</td>
                             <td className="budget-cell">{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="budget-nf-ok"><Icon name="receipt" size={14}/> {l.nf_numero?`NF ${l.nf_numero}`:'Anexada'}</a>:<span className="budget-nf-pending">Pendente anexar</span>}</td>
+                            {aba==='notas-fiscais'&&<td className="budget-cell budget-cell-muted">{l.tipo_nf==='servico'?'Serviço':l.tipo_nf==='produto'?'Produto':'Não classificada'}</td>}
                           </tr>
                         )
                       })}
@@ -2028,6 +2050,12 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     setRawFreteNF(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                   }}/>
                 </div>
+                <div>
+                  <label style={s.lb}>Tipo da nota fiscal *</label>
+                  <select style={s.fi} value={tipoNfTemp} onChange={e=>setTipoNfTemp(e.target.value as 'produto'|'servico')}>
+                    <option value="produto">Produto</option><option value="servico">Serviço</option>
+                  </select>
+                </div>
               </div>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
             </div>
@@ -2425,6 +2453,11 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   </div>
                   <div style={{background:'#F9FBFA',border:'1px solid #E2EAE6',borderRadius:9,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#626262',lineHeight:1.5}}>
                     <strong>Será criado em Contas a Pagar:</strong> {holeriteImport.tipo==='adiantamento'?'Adiantamento':holeriteImport.tipo==='decimo_terceiro'?'13º salário':'Folha mensal'} de {mesLabel(holeriteImport.competenciaMes)} · {fmtR(holeriteImport.totalLiquido)}. {holeriteImport.tipo==='salario'&&<>Os descontos totalizam {fmtR(holeriteImport.totalDescontos)} e o adiantamento já está dentro desses descontos, portanto não será somado novamente.</>}
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:14,padding:'10px 12px',background:'#FFFDF5',border:'1px solid #EEE3B8',borderRadius:9}}>
+                    <label style={{...s.lb,margin:0}}>Data real do pagamento *</label>
+                    <input type="date" style={{...s.fi,width:180}} value={holeriteImport.dataPagamento} onChange={e=>setHoleriteImport({...holeriteImport,dataPagamento:e.target.value})}/>
+                    <span style={{fontSize:10,color:'#8A6A25'}}>A competência continua sendo a do holerite; esta é a data usada em Contas a Pagar.</span>
                   </div>
                   <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
                     <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>

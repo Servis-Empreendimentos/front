@@ -134,6 +134,7 @@ export type Lancamento = {
   valor_desconto?: number | null
   saldo_devedor?: number | null
   nf_numero?: string | null
+  tipo_nf?: 'produto' | 'servico' | null
   data: string
   pago_por?: string | null
   tipo_pagamento?: 'avista' | 'parcelado'
@@ -157,6 +158,30 @@ export type Lancamento = {
   entrega_itens2?: string | null
   itens?: ItemLancamento[]
   parcelas?: Parcela[]
+}
+
+export type ContratoMedicao = {
+  id: string
+  titulo: string
+  fornecedor?: string | null
+  obra_id?: string | null
+  valor_total: number
+  observacoes?: string | null
+  ativo: boolean
+  criado_em?: string
+  medicoes?: MedicaoContrato[]
+}
+
+export type MedicaoContrato = {
+  id: string
+  contrato_id: string
+  numero: number
+  valor: number
+  data_medicao: string
+  nf_numero?: string | null
+  observacoes?: string | null
+  pago: boolean
+  criado_em?: string
 }
 
 export type Obra = {
@@ -561,6 +586,32 @@ export const api = {
 
   excluirPagamentoFuncionario: async (id: string) => {
     await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+
+  listarContratosMedicao: async (): Promise<ContratoMedicao[]> => {
+    const [contratos, medicoes] = await Promise.all([
+      supabaseRequest<ContratoMedicao[]>('contratos_medicao?order=criado_em.desc'),
+      supabaseRequest<MedicaoContrato[]>('medicoes_contrato?order=data_medicao.asc,numero.asc'),
+    ])
+    return (contratos || []).map(contrato => ({ ...contrato, medicoes: (medicoes || []).filter(medicao => medicao.contrato_id === contrato.id) }))
+  },
+
+  criarContratoMedicao: async (payload: Omit<ContratoMedicao, 'id' | 'criado_em' | 'medicoes'>) => {
+    const result = await supabaseRequest<ContratoMedicao[]>('contratos_medicao', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) })
+    return Array.isArray(result) ? result[0] : result
+  },
+
+  atualizarContratoMedicao: async (id: string, body: Partial<Omit<ContratoMedicao, 'id' | 'criado_em' | 'medicoes'>>) => {
+    await supabaseRequest(`contratos_medicao?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+  },
+
+  criarMedicaoContrato: async (payload: Omit<MedicaoContrato, 'id' | 'criado_em'>) => {
+    const result = await supabaseRequest<MedicaoContrato[]>('medicoes_contrato', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) })
+    return Array.isArray(result) ? result[0] : result
+  },
+
+  excluirMedicaoContrato: async (id: string) => {
+    await supabaseRequest(`medicoes_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.
