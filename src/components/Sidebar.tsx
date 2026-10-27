@@ -49,7 +49,7 @@ function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;
   )
 }
 
-export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'
+export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'
 
 const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais','contratos']
 const ORCAMENTOS_ABAS: Aba[] = ['lancamentos','notas-fiscais']
@@ -122,6 +122,7 @@ export default function Sidebar({
 
             <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
             <NavItem icon="package" label="Inventário" active={aba==='inventario'} onClick={()=>setAba('inventario')}/>
+            <NavItem icon="calendar" label="Viagens" active={aba==='viagens'} onClick={()=>setAba('viagens')}/>
           </>
         )}
       </div>

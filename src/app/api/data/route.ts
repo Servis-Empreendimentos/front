@@ -15,6 +15,7 @@ const TABLES = new Set([
   'pagamentos_funcionario',
   'contratos_medicao',
   'medicoes_contrato',
+  'viagens',
 ])
 
 function supabaseConfig() {

@@ -184,6 +184,17 @@ export type MedicaoContrato = {
   criado_em?: string
 }
 
+export type Viagem = {
+  id: string
+  funcionario_id: string
+  data_inicio: string
+  data_fim: string
+  destino: string
+  finalidade?: string | null
+  observacoes?: string | null
+  criado_em?: string
+}
+
 export type Obra = {
   id: string
   nome: string
@@ -612,6 +623,17 @@ export const api = {
 
   excluirMedicaoContrato: async (id: string) => {
     await supabaseRequest(`medicoes_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+
+  listarViagens: async (): Promise<Viagem[]> => supabaseRequest<Viagem[]>('viagens?order=data_inicio.asc,data_fim.asc,criado_em.asc'),
+
+  criarViagem: async (payload: Omit<Viagem, 'id' | 'criado_em'>) => {
+    const result = await supabaseRequest<Viagem[]>('viagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) })
+    return Array.isArray(result) ? result[0] : result
+  },
+
+  excluirViagem: async (id: string) => {
+    await supabaseRequest(`viagens?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
   // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.

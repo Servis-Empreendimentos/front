@@ -1,6 +1,6 @@
 'use client'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, Viagem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -9,6 +9,7 @@ import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, Pipe
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
 import FolhaPagamentoView from '../components/FolhaPagamentoView'
 import ContratosMedicaoView from '../components/ContratosMedicaoView'
+import ViagensView from '../components/ViagensView'
 
 function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
@@ -110,7 +111,7 @@ export default function Home() {
   const [logado,setLogado]=useState(false)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'>('visao')
+  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -121,6 +122,7 @@ export default function Home() {
   const [funcionarios,setFuncionarios]=useState<Funcionario[]>([])
   const [pagamentosFuncionarios,setPagamentosFuncionarios]=useState<PagamentoFuncionario[]>([])
   const [contratos,setContratos]=useState<ContratoMedicao[]>([])
+  const [viagens,setViagens]=useState<Viagem[]>([])
   const [loading,setLoading]=useState(true)
   const [fPipe,setFPipe]=useState('')
   const [fRec,setFRec]=useState('')
@@ -236,10 +238,10 @@ export default function Home() {
         if(rLista.status==='rejected') throw rLista.reason
         setData(rLista.value)
         setObras(rObras.status==='fulfilled'?rObras.value:[])
-        setContasMensais([]);setCats([]);setFornecedores([]);setInventario([]);setPagamentosMensais([]);setFuncionarios([]);setPagamentosFuncionarios([])
+        setContasMensais([]);setCats([]);setFornecedores([]);setInventario([]);setPagamentosMensais([]);setFuncionarios([]);setPagamentosFuncionarios([]);setContratos([]);setViagens([])
         return
       }
-      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos]=await Promise.allSettled([
+      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos,rViagens]=await Promise.allSettled([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
@@ -250,6 +252,7 @@ export default function Home() {
         api.listarFuncionarios(),
         api.listarPagamentosFuncionarios(),
         api.listarContratosMedicao(),
+        api.listarViagens(),
       ])
       if(rLista.status==='rejected') throw rLista.reason
       const optional=(result:any,fallback:any[])=>result.status==='fulfilled'?result.value:fallback
@@ -263,8 +266,9 @@ export default function Home() {
       setFuncionarios(optional(rFuncionarios,[]))
       setPagamentosFuncionarios(optional(rPagamentosFuncionarios,[]))
       setContratos(optional(rContratos,[]))
+      setViagens(optional(rViagens,[]))
     } catch {
-      setData([]);setCats([]);setFornecedores([]);setInventario([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([])
+      setData([]);setCats([]);setFornecedores([]);setInventario([]);setObras([]);setFuncionarios([]);setPagamentosFuncionarios([]);setContratos([]);setViagens([])
       if(!silent) showToast('Não foi possível carregar os dados compartilhados. Verifique a conexão do sistema.',false)
     }
     finally {if(!silent) setLoading(false)}
@@ -1451,6 +1455,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='contratos'&&(
             <ContratosMedicaoView contratos={contratos} obras={obras} onAtualizar={()=>load()}/>
+          )}
+
+          {role!=='entregador'&&aba==='viagens'&&(
+            <ViagensView viagens={viagens} funcionarios={funcionarios} role={role} onAtualizar={()=>load()}/>
           )}
 
           {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
