@@ -49,9 +49,9 @@ function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;
   )
 }
 
-type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'
+export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'
 
-const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais']
+const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais','contratos']
 const ORCAMENTOS_ABAS: Aba[] = ['lancamentos','notas-fiscais']
 
 export default function Sidebar({
@@ -116,6 +116,7 @@ export default function Sidebar({
             <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
               <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
               <NavItem sub icon="users" label="Folha de Pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
+              <NavItem sub icon="fileText" label="Contratos por medição" active={aba==='contratos'} onClick={()=>setAba('contratos')}/>
               <NavItem sub icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
             </NavGroup>
 
