@@ -1068,14 +1068,12 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     if(aba==='notas-fiscais' && fTipoNf && l.tipo_nf !== fTipoNf) return false
     return true
   })
+  // Mais recentes em cima: pela data do lançamento e, no mesmo dia, pelo horário em que foi criado.
+  const maisRecentePrimeiro=(a:Lancamento,b:Lancamento)=>(b.data||'').localeCompare(a.data||'') || (b.criado_em||'').localeCompare(a.criado_em||'')
   const andamentoTodos=role==='entregador'?filtered.filter(l=>l.status_processo!=='nf_recebida'&&!isNotaFiscal(l)&&!ocultarDoUsuarioObra(l)):filtered
-  const andamentoObra=role==='entregador'&&fPipe?andamentoTodos.filter(l=>l.status_processo===fPipe):andamentoTodos
+  const andamentoObra=(role==='entregador'&&fPipe?andamentoTodos.filter(l=>l.status_processo===fPipe):andamentoTodos).slice().sort(maisRecentePrimeiro)
   const listaOrcamentosBase = aba==='notas-fiscais' ? filtered.filter(isNotaFiscal) : filtered.filter(lancamento=>!isNotaFiscal(lancamento))
-  const listaOrcamentos = [...listaOrcamentosBase].sort((a,b)=>{
-    const semObraA=!a.obra_id ? 0 : 1
-    const semObraB=!b.obra_id ? 0 : 1
-    return semObraA-semObraB || (a.data||'').localeCompare(b.data||'') || (a.criado_em||'').localeCompare(b.criado_em||'')
-  })
+  const listaOrcamentos = [...listaOrcamentosBase].sort(maisRecentePrimeiro)
 
   const matchFornecedor = (f:Fornecedor) => {
     if(!searchForn) return true
@@ -1121,7 +1119,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     resumoObra({id:'',nome:'Sem obra vinculada',ativa:true} as Obra,data.filter(l=>!l.obra_id)),
   ].filter(item=>item.qtd>0||item.obra.id)
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
-  const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
+  const tratativas=data.filter(l=>l.status_processo==='em_tratativa').sort(maisRecentePrimeiro).slice(0,8)
 
   type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais'|'medicao';subtipo?:'adiantamento'|'salario'|'decimo_terceiro';nome:string;valor:number;data:string;lancamentoId?:string;contratoId?:string}
   const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
