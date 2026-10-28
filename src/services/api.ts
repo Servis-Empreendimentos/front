@@ -62,13 +62,24 @@ async function supabaseRequest<T>(path: string, options: RequestInit = {}): Prom
       cache: 'no-store',
     },
   )
-  if (!response.ok) {
-    let detail = ''
-    try { detail = await response.text() } catch {}
-    throw new Error(detail || `Supabase ${response.status}`)
-  }
+  if (!response.ok) throw new Error(await mensagemDeErro(response))
   if (response.status === 204) return undefined as T
   return await parseJsonResponse<T>(response)
+}
+
+// Avisa a tela quando a sessão expira, para voltar ao login.
+export const SESSAO_EXPIRADA_EVENT = 'servis:sessao-expirada'
+
+async function mensagemDeErro(response: Response) {
+  if (response.status === 401 && typeof window !== 'undefined') window.dispatchEvent(new Event(SESSAO_EXPIRADA_EVENT))
+  let texto = ''
+  try { texto = await response.text() } catch {}
+  try {
+    const json = JSON.parse(texto)
+    texto = json?.detail || json?.message || json?.hint || texto
+  } catch {}
+  if (response.status === 403) return texto || 'Seu perfil não tem permissão para esta ação.'
+  return texto || `Erro ${response.status} ao acessar o banco`
 }
 
 async function readRemote<T>(backendPath: string, supabasePath: string, options: RequestOptions = {}): Promise<T> {
@@ -95,6 +106,29 @@ function nullableUuid(value: unknown) {
     ? normalized
     : null
 }
+
+export type Role = 'lancadora' | 'gestora' | 'entregador'
+
+// Data de hoje no fuso do navegador (toISOString usa UTC e "pula" para o dia seguinte depois das 21h no Brasil).
+export const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+export const hojeISO = () => isoLocal(new Date())
+
+export const addDiasCorridos = (dias: number) => {
+  const d = new Date(); d.setDate(d.getDate() + dias); return isoLocal(d)
+}
+export const addDiasUteis = (dias: number) => {
+  const d = new Date(); let count = 0
+  while (count < dias) { d.setDate(d.getDate() + 1); const dow = d.getDay(); if (dow !== 0 && dow !== 6) count++ }
+  return isoLocal(d)
+}
+
+// Converte "R$ 1.234,56" (máscara dos campos de valor) em número.
+export const parseMoeda = (texto: string) => (parseInt(String(texto || '').replace(/\D/g, ''), 10) || 0) / 100
+export const mascaraMoeda = (texto: string) => {
+  const digitos = String(texto || '').replace(/\D/g, '')
+  return digitos ? (parseInt(digitos, 10) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
+}
+export const moedaParaCampo = (valor?: number | null) => valor ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
 
 export type Parcela = {
   id?: string
@@ -334,6 +368,23 @@ export const PIPELINE = [
 export const PIPELINE_LOCKED_FROM = 'orcamento_fechado'
 export const PIPELINE_NF_FROM = 'mercadoria_recebida'
 
+export const pipeIdx = (status: string) => PIPELINE.findIndex(p => p.id === status)
+// Orçamento fechado (ou etapa posterior) vira compromisso financeiro; antes disso ainda é negociação.
+export const isComprometido = (l: Pick<Lancamento, 'status_processo'>) => pipeIdx(l.status_processo) >= pipeIdx(PIPELINE_LOCKED_FROM)
+
+// Saldo devedor consistente mesmo para registros antigos em que saldo_devedor nunca foi preenchido.
+export const saldoLancamento = (l: Pick<Lancamento, 'pago' | 'saldo_devedor' | 'valor_total' | 'status_processo'>) => {
+  if (l.pago) return 0
+  if (!isComprometido(l)) return 0
+  if (typeof l.saldo_devedor === 'number' && l.saldo_devedor > 0) return Math.min(l.saldo_devedor, l.valor_total)
+  return l.valor_total || 0
+}
+export const valorPagoLancamento = (l: Pick<Lancamento, 'pago' | 'saldo_devedor' | 'valor_total' | 'status_processo'>) => {
+  if (l.pago) return l.valor_total || 0
+  if (!isComprometido(l)) return 0
+  return Math.max(0, (l.valor_total || 0) - saldoLancamento(l))
+}
+
 export const fmtR = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export const mesLabel = (mesKey: string) => {
@@ -358,6 +409,24 @@ export const fmtCNPJ = (v: string) => {
 
 const localAccounts = () => readLocal<ContaMensal[]>(LOCAL_ACCOUNTS_KEY, [])
 const localPayments = () => readLocal<PagamentoContaMensal[]>(LOCAL_PAYMENTS_KEY, [])
+const isLocalId = (id: string) => /^(conta|pagamento)-/.test(id)
+
+// Contas mensais ficavam só no navegador. Na primeira carga com o banco disponível,
+// enviamos o que estava salvo localmente e limpamos o navegador.
+let migracaoContas: Promise<void> | null = null
+async function migrarContasLocais() {
+  const contas = localAccounts()
+  const pagamentos = localPayments()
+  if (!contas.length && !pagamentos.length) return
+  const mapa = new Map<string, string>()
+  for (const conta of contas) {
+    const criada = await supabaseRequest<ContaMensal[]>('contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ titulo: conta.titulo, pago_por: conta.pago_por || 'Servis Empreendimentos', dia_vencimento: conta.dia_vencimento, ativo: conta.ativo !== false }) })
+    if (criada?.[0]?.id) mapa.set(conta.id, criada[0].id)
+  }
+  const pendentes = pagamentos.filter(p => mapa.has(p.conta_mensal_id))
+  if (pendentes.length) await supabaseRequest('pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(pendentes.map(p => ({ conta_mensal_id: mapa.get(p.conta_mensal_id), valor: p.valor, data_pagamento: p.data_pagamento }))) })
+  if (typeof window !== 'undefined') { window.localStorage.removeItem(LOCAL_ACCOUNTS_KEY); window.localStorage.removeItem(LOCAL_PAYMENTS_KEY) }
+}
 
 export const api = {
   limparCacheLocal: () => {
@@ -454,6 +523,7 @@ export const api = {
       ...bodySemFilhos,
       obra_id: nullableUuid(bodySemFilhos.obra_id),
       pago_por: 'Servis Empreendimentos',
+      saldo_devedor: bodySemFilhos.pago ? 0 : (bodySemFilhos.valor_total || 0),
     }
     const data = await supabaseRequest<Lancamento[]>('lancamentos', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) })
     let lanc = data?.[0]
@@ -479,7 +549,7 @@ export const api = {
   },
 
   marcarPago: async (id: string) => {
-    await readRemote(`/api/parcelas/${id}/pagar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: true, data_pagamento: new Date().toISOString().slice(0, 10) }) })
+    await readRemote(`/api/parcelas/${id}/pagar`, `parcelas?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ pago: true, data_pagamento: hojeISO() }) })
   },
 
   estornar: async (id: string) => {
@@ -636,30 +706,60 @@ export const api = {
     await supabaseRequest(`viagens?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  // Contas mensais são uma rotina pessoal do navegador e não consultam o banco.
-  listarContasMensais: async (): Promise<ContaMensal[]> => localAccounts(),
+  // Contas mensais: salvas no banco compartilhado. Se a tabela ainda não existir, cai para o navegador.
+  listarContasMensais: async (): Promise<ContaMensal[]> => {
+    try {
+      if (!migracaoContas) migracaoContas = migrarContasLocais().catch(error => { migracaoContas = null; throw error })
+      await migracaoContas
+      const remotas = await supabaseRequest<ContaMensal[]>('contas_mensais?order=titulo.asc')
+      return [...(remotas || []), ...localAccounts()]
+    } catch {
+      return localAccounts()
+    }
+  },
 
   criarContaMensal: async (payload: Omit<ContaMensal, 'id' | 'criado_em'>) => {
-    const local = { ...payload, id: localId('conta'), criado_em: new Date().toISOString() }
-    writeLocal(LOCAL_ACCOUNTS_KEY, [...localAccounts(), local])
-    return local
+    try {
+      const result = await supabaseRequest<ContaMensal[]>('contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ titulo: payload.titulo, pago_por: payload.pago_por, dia_vencimento: payload.dia_vencimento, ativo: payload.ativo }) })
+      return result[0]
+    } catch {
+      const local = { ...payload, id: localId('conta'), criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_ACCOUNTS_KEY, [...localAccounts(), local])
+      return local
+    }
   },
 
   toggleContaMensal: async (id: string, ativo: boolean) => {
-    writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().map(conta => conta.id === id ? { ...conta, ativo } : conta))
+    if (isLocalId(id)) return writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().map(conta => conta.id === id ? { ...conta, ativo } : conta))
+    await supabaseRequest(`contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ativo }) })
   },
 
-  listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => localPayments(),
+  listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => {
+    try {
+      const remotos = await supabaseRequest<PagamentoContaMensal[]>('pagamentos_contas_mensais?order=data_pagamento.desc')
+      return [...(remotos || []), ...localPayments()]
+    } catch {
+      return localPayments()
+    }
+  },
 
-  listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => localPayments().filter(item => item.conta_mensal_id === contaId),
+  listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => {
+    if (isLocalId(contaId)) return localPayments().filter(item => item.conta_mensal_id === contaId)
+    return supabaseRequest<PagamentoContaMensal[]>(`pagamentos_contas_mensais?conta_mensal_id=eq.${encodeURIComponent(contaId)}&order=data_pagamento.desc`)
+  },
 
   registrarPagamentoMensal: async (conta_mensal_id: string, valor: number, data_pagamento: string) => {
-    const local = { id: localId('pagamento'), conta_mensal_id, valor, data_pagamento, criado_em: new Date().toISOString() }
-    writeLocal(LOCAL_PAYMENTS_KEY, [local, ...localPayments()])
-    return local
+    if (isLocalId(conta_mensal_id)) {
+      const local = { id: localId('pagamento'), conta_mensal_id, valor, data_pagamento, criado_em: new Date().toISOString() }
+      writeLocal(LOCAL_PAYMENTS_KEY, [local, ...localPayments()])
+      return local
+    }
+    const result = await supabaseRequest<PagamentoContaMensal[]>('pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ conta_mensal_id, valor, data_pagamento }) })
+    return result[0]
   },
 
   excluirPagamentoMensal: async (id: string) => {
-    writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.id !== id))
+    if (isLocalId(id)) return writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.id !== id))
+    await supabaseRequest(`pagamentos_contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 }

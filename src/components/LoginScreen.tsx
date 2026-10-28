@@ -1,28 +1,35 @@
 'use client'
 import { useState } from 'react'
+import type { Role } from '../services/api'
 
-const USUARIOS: Record<string, { senha: string; nome: string; role: 'lancadora'|'gestora'|'entregador' }> = {
-  'anne':    { senha: 'anne123',    nome: 'Anne',    role: 'gestora'  },
-  'mayara':  { senha: 'mayara123',  nome: 'Mayara',  role: 'gestora'    },
-  'edna':    { senha: 'edna123',    nome: 'Edna',    role: 'lancadora'  },
-  'erick':   { senha: 'erick123',   nome: 'Erick',   role: 'lancadora'  },
-  'clau':    { senha: 'clau123',    nome: 'Clau',    role: 'gestora'    },
-  'obra':    { senha: 'obra123',    nome: 'Obra',    role: 'entregador' },
-}
-
-export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role: 'lancadora'|'gestora'|'entregador') => void }) {
+export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role: Role) => void }) {
   const [login, setLogin] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
+  const [entrando, setEntrando] = useState(false)
 
-  const handleLogin = () => {
-    const usuario = USUARIOS[login.trim().toLowerCase()]
-    if (usuario && usuario.senha === senha) {
-      onLogin(usuario.nome, usuario.role)
-      return
+  const handleLogin = async () => {
+    if (!login.trim() || !senha) return setErro('Informe usuário e senha.')
+    setEntrando(true)
+    setErro('')
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ login, senha }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setErro(data?.detail || 'Usuário ou senha incorretos.')
+        setSenha('')
+        return
+      }
+      onLogin(data.nome, data.role)
+    } catch {
+      setErro('Não foi possível conectar. Verifique sua internet e tente novamente.')
+    } finally {
+      setEntrando(false)
     }
-    setErro('Usuário ou senha incorretos.')
-    setTimeout(() => setErro(''), 3000)
   }
 
   return (
@@ -37,6 +44,7 @@ export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role:
             className="login-only-input"
             autoFocus
             autoComplete="username"
+            autoCapitalize="none"
             placeholder="Digite seu usuário"
             value={login}
             onChange={event => setLogin(event.target.value)}
@@ -55,11 +63,11 @@ export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role:
 
           {erro && <p className="login-only-error" role="alert">{erro}</p>}
 
-          <button className="login-only-button" type="submit">Entrar</button>
+          <button className="login-only-button" type="submit" disabled={entrando} style={{ opacity: entrando ? 0.7 : 1 }}>
+            {entrando ? 'Entrando...' : 'Entrar'}
+          </button>
         </form>
       </section>
     </main>
   )
 }
-
-export { USUARIOS }

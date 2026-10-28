@@ -1,15 +1,16 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { api, Funcionario, Viagem, fmtData } from '../services/api'
+import { api, Funcionario, Viagem, Role, fmtData, hojeISO } from '../services/api'
 import { ACCENT, ACCENT_LT, s } from '../lib/theme'
 import Icon from './Icon'
 
 type Props = {
   viagens: Viagem[]
   funcionarios: Funcionario[]
-  role: 'lancadora' | 'gestora' | 'entregador'
+  role: Role
   onAtualizar: () => void
+  notify: (msg: string, ok?: boolean) => void
 }
 
 type FormViagem = {
@@ -23,14 +24,14 @@ type FormViagem = {
 
 const blankForm = (): FormViagem => ({
   funcionario_id: '',
-  data_inicio: new Date().toISOString().slice(0, 10),
-  data_fim: new Date().toISOString().slice(0, 10),
+  data_inicio: hojeISO(),
+  data_fim: hojeISO(),
   destino: '',
   finalidade: '',
   observacoes: '',
 })
 
-export default function ViagensView({ viagens, funcionarios, role, onAtualizar }: Props) {
+export default function ViagensView({ viagens, funcionarios, role, onAtualizar, notify }: Props) {
   const [modal, setModal] = useState(false)
   const [form, setForm] = useState<FormViagem>(blankForm())
   const [busca, setBusca] = useState('')
@@ -38,7 +39,7 @@ export default function ViagensView({ viagens, funcionarios, role, onAtualizar }
   const [fFim, setFFim] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const hoje = new Date().toISOString().slice(0, 10)
+  const hoje = hojeISO()
   const viagensFiltradas = useMemo(() => viagens
     .filter(item => {
       const funcionario = funcionarios.find(f => f.id === item.funcionario_id)
@@ -55,8 +56,8 @@ export default function ViagensView({ viagens, funcionarios, role, onAtualizar }
   const proximas = viagens.filter(item => item.data_inicio > hoje).length
 
   const salvar = async () => {
-    if (!form.funcionario_id || !form.data_inicio || !form.data_fim || !form.destino.trim()) return
-    if (form.data_fim < form.data_inicio) return
+    if (!form.funcionario_id || !form.data_inicio || !form.data_fim || !form.destino.trim()) return notify('Preencha colaborador, datas e destino', false)
+    if (form.data_fim < form.data_inicio) return notify('A data de término não pode ser anterior à de início', false)
     setSaving(true)
     try {
       await api.criarViagem({
@@ -70,6 +71,9 @@ export default function ViagensView({ viagens, funcionarios, role, onAtualizar }
       setModal(false)
       setForm(blankForm())
       onAtualizar()
+      notify('Viagem cadastrada!')
+    } catch (err: any) {
+      notify('Erro ao salvar viagem: ' + (err?.message || 'tente novamente'), false)
     } finally {
       setSaving(false)
     }
@@ -77,8 +81,13 @@ export default function ViagensView({ viagens, funcionarios, role, onAtualizar }
 
   const excluir = async (viagem: Viagem) => {
     if (!confirm('Excluir esta viagem?')) return
-    await api.excluirViagem(viagem.id)
-    onAtualizar()
+    try {
+      await api.excluirViagem(viagem.id)
+      onAtualizar()
+      notify('Viagem excluída!')
+    } catch (err: any) {
+      notify('Erro ao excluir viagem: ' + (err?.message || 'tente novamente'), false)
+    }
   }
 
   const nomeFuncionario = (id: string) => funcionarios.find(item => item.id === id)?.nome || 'Colaborador não encontrado'

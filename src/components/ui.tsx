@@ -15,6 +15,30 @@ export function KPI({l,v,sv,c}:{l:string;v:string|number;sv?:string;c:string}) {
   )
 }
 
+export function PageHeader({eyebrow,title,description,children}:{eyebrow?:string;title:string;description?:string;children?:React.ReactNode}) {
+  return (
+    <div className="page-header" style={s.row}>
+      <div style={{minWidth:0}}>
+        {eyebrow&&<p className="workspace-eyebrow" style={{marginBottom:7}}>{eyebrow}</p>}
+        <h1 style={s.h1}>{title}</h1>
+        {description&&<p style={s.p}>{description}</p>}
+      </div>
+      {children&&<div className="page-header-actions">{children}</div>}
+    </div>
+  )
+}
+
+export function Toast({msg,ok,onClose}:{msg:string;ok:boolean;onClose:()=>void}) {
+  return (
+    <div role={ok?'status':'alert'} aria-live={ok?'polite':'assertive'} className="app-toast"
+      style={{position:'fixed',bottom:20,right:20,display:'flex',alignItems:'flex-start',gap:10,padding:'.75rem .9rem .75rem 1.1rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:ok?'#8BA59A':'#777777',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:200,maxWidth:420}}>
+      <Icon name={ok?'checkCircle':'alert'} size={16} color="#fff"/>
+      <span style={{flex:1,lineHeight:1.4}}>{msg}</span>
+      <button onClick={onClose} aria-label="Fechar aviso" style={{background:'none',border:'none',color:'#fff',cursor:'pointer',padding:0,display:'flex',opacity:.85}}><Icon name="x" size={15} color="#fff"/></button>
+    </div>
+  )
+}
+
 export function Badge({label,bg,color}:{label:string;bg:string;color:string}) {
   return <span style={{...s.badge,background:bg,color}}>{label}</span>
 }

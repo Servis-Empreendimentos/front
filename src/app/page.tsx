@@ -1,17 +1,16 @@
 'use client'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, Viagem, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais } from '../services/api'
+import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, Viagem, Role, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais, hojeISO, addDiasCorridos, addDiasUteis, parseMoeda, mascaraMoeda, moedaParaCampo, pipeIdx, isComprometido, saldoLancamento, valorPagoLancamento, SESSAO_EXPIRADA_EVENT } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
 import LoginScreen from '../components/LoginScreen'
-import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper } from '../components/ui'
+import { KPI, Badge, StepBadge, FF, AnexoBtn, FornecedorInput, ItensEditor, PipelineStepper, PageHeader, Toast } from '../components/ui'
 import MonthlyAccountsView from '../components/MonthlyAccountsView'
 import FolhaPagamentoView from '../components/FolhaPagamentoView'
 import ContratosMedicaoView from '../components/ContratosMedicaoView'
 import ViagensView from '../components/ViagensView'
 
-function pipeIdx(st: string) { return PIPELINE.findIndex(p => p.id === st) }
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
 function isNotaFiscal(lancamento: Lancamento) {
@@ -94,13 +93,11 @@ function dataIsoDoDocumento(value: unknown) {
   return br ? `${br[3]}-${br[2]}-${br[1]}` : ''
 }
 
-function addDiasCorridos(dias: number): string {
-  const d = new Date(); d.setDate(d.getDate() + dias); return d.toISOString().slice(0,10)
-}
-function addDiasUteis(dias: number): string {
-  let count = 0; const d = new Date()
-  while (count < dias) { d.setDate(d.getDate()+1); const dow=d.getDay(); if(dow!==0&&dow!==6) count++ }
-  return d.toISOString().slice(0,10)
+function rotuloFormaPagamento(tipo: string, parcelas: string, obs: string) {
+  const nomes: Record<string,string> = {pix:'PIX',boleto:'Boleto',transferencia:'Transferência',cartao:'Cartão',avista:'À vista'}
+  let fp = tipo==='parcelado' ? `Parcelado${parcelas?` ${parcelas}x`:''}` : (nomes[tipo]||tipo)
+  if(obs) fp+=` — ${obs}`
+  return fp
 }
 
 async function lerDocIA(file: File, prompt: string): Promise<any> {
@@ -109,8 +106,9 @@ async function lerDocIA(file: File, prompt: string): Promise<any> {
 
 export default function Home() {
   const [logado,setLogado]=useState(false)
+  const [verificandoSessao,setVerificandoSessao]=useState(true)
   const [user,setUser]=useState('')
-  const [role,setRole]=useState<'lancadora'|'gestora'|'entregador'>('lancadora')
+  const [role,setRole]=useState<Role>('lancadora')
   const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
@@ -219,13 +217,40 @@ export default function Home() {
   const nfDetRef=useRef<HTMLInputElement>(null)
   const holeriteRef=useRef<HTMLInputElement>(null)
 
-  const HOJE = new Date().toISOString().slice(0,10)
-
-  const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),4500)}
+  const toastTimer=useRef<any>(null)
+  const showToast=(msg:string,ok=true)=>{
+    clearTimeout(toastTimer.current)
+    setToast({msg,ok})
+    toastTimer.current=setTimeout(()=>setToast(null),ok?4500:8000)
+  }
   const set=(k:string,v:any)=>setForm((p:any)=>({...p,[k]:v}))
   const setM=(k:string,v:any)=>setFormMensal((p:any)=>({...p,[k]:v}))
 
   useEffect(()=>{ api.limparCacheLocal() },[])
+
+  const entrar=(nome:string,r:Role)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
+
+  // Mantém a sessão ao recarregar a página.
+  useEffect(()=>{
+    fetch('/api/auth/me',{cache:'no-store'})
+      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role) } })
+      .catch(()=>{})
+      .finally(()=>setVerificandoSessao(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
+
+  const sair=async(aviso?:string)=>{
+    await fetch('/api/auth/logout',{method:'POST'}).catch(()=>{})
+    setLogado(false);setModal(false);setDetalhe(null);setData([])
+    if(aviso) showToast(aviso,false)
+  }
+
+  useEffect(()=>{
+    const expirou=()=>{ setLogado(false); showToast('Sua sessão expirou. Entre novamente.',false) }
+    window.addEventListener(SESSAO_EXPIRADA_EVENT,expirou)
+    return ()=>window.removeEventListener(SESSAO_EXPIRADA_EVENT,expirou)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
 
   const load=useCallback(async(silent=false)=>{
     if(!silent) setLoading(true)
@@ -276,14 +301,17 @@ export default function Home() {
 
   useEffect(()=>{if(logado)load()},[load,logado])
 
+  // Atualização automática só com a aba visível, e imediata ao voltar para ela.
   useEffect(()=>{
     if(!logado) return
-    const interval = setInterval(()=>{ load(true) }, 15000)
-    return ()=>clearInterval(interval)
+    const interval = setInterval(()=>{ if(!document.hidden) load(true) }, 30000)
+    const aoVoltar = ()=>{ if(!document.hidden) load(true) }
+    document.addEventListener('visibilitychange',aoVoltar)
+    return ()=>{ clearInterval(interval); document.removeEventListener('visibilitychange',aoVoltar) }
   },[logado,load])
 
   const openNovo=()=>{
-    setForm({data:new Date().toISOString().slice(0,10),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
+    setForm({data:hojeISO(),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
     setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
   }
 
@@ -336,10 +364,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setSaving(true)
     try {
       const valor_produtos=itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)
-      const vFrete=parseFloat(rawFrete.replace(/\D/g,''))/100||0
+      const vFrete=parseMoeda(rawFrete)
       const valor_total=valor_produtos+vFrete
       await api.criar({
         ...form,
+        pago: false,
         tipo_pagamento: form.tipo_pagamento || 'avista',
         valor_produtos,
         valor_frete: vFrete,
@@ -364,10 +393,12 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const handleSalvarDesconto=async()=>{
     if(!detalhe) return
-    const valor_desconto=parseFloat(rawDesconto.replace(/\D/g,''))/100||0
-    const valor_total=(detalhe.valor_original||detalhe.valor_total)-valor_desconto
+    const valor_desconto=parseMoeda(rawDesconto)
+    const base=detalhe.valor_original||detalhe.valor_total
+    if(valor_desconto>=base) return showToast('O desconto não pode ser maior ou igual ao valor do orçamento',false)
+    const valor_total=base-valor_desconto
     try {
-      await api.atualizarLancamento(detalhe.id,{tem_desconto:valor_desconto>0,valor_desconto,valor_total})
+      await api.atualizarLancamento(detalhe.id,{tem_desconto:valor_desconto>0,valor_desconto,valor_total,saldo_devedor:detalhe.pago?0:valor_total})
       const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto aplicado!')
     } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
   }
@@ -413,7 +444,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     setLoadingAnexo(true)
     try {
       const url=await api.uploadArquivo(nfFileTemp)
-      const vFreteNF=parseFloat(rawFreteNF.replace(/\D/g,''))/100||0
+      const vFreteNF=parseMoeda(rawFreteNF)
       await api.atualizarLancamento(detalhe.id,{arquivo_url:url,nf_numero:nfNumeroTemp||undefined,tipo_nf:tipoNfTemp,valor_frete:vFreteNF||detalhe.valor_frete})
       await api.salvarItensNF(detalhe.id,itensNFEditor)
       const d=await api.buscar(detalhe.id);setDetalhe(d)
@@ -426,10 +457,22 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const handlePipelineChange=async(novoStatus:string)=>{
     if(!detalhe) return
+    if(novoStatus===detalhe.status_processo) return
+    const voltando=pipeIdx(novoStatus)<pipeIdx(detalhe.status_processo)
+    if(voltando){
+      const destino=PIPELINE.find(p=>p.id===novoStatus)?.label
+      if(!confirm(`Voltar este orçamento para "${destino}"? Use apenas para corrigir um lançamento errado.`)) return
+      if(isComprometido(detalhe)&&!isComprometido({status_processo:novoStatus})&&detalhe.pago){
+        if(!confirm('Este orçamento já tem pagamento registrado. O pagamento será mantido. Deseja continuar?')) return
+      }
+    }
     if(novoStatus==='entrega_programada'){setEntregaTipo('corridos');setDiasEntrega('');setEntregaData1('');setEntregaData2State('');setEntregaItens1('');setEntregaItens2('');setModalEntregaProg(true);return}
-    if(novoStatus==='pagamento_realizado'){setFormaPgtoTipo('pix');setFormaPgtoParc('');setFormaPgtoObs('');setFormaPgtoData(new Date().toISOString().slice(0,10));setModalFormaPgto(true);return}
+    if(novoStatus==='pagamento_realizado'){setFormaPgtoTipo('pix');setFormaPgtoParc('');setFormaPgtoObs('');setFormaPgtoData(hojeISO());setModalFormaPgto(true);return}
     try {
-      await api.atualizarLancamento(detalhe.id,{status_processo:novoStatus})
+      const extra:Record<string,unknown>={}
+      // Ao fechar o orçamento, o saldo devedor passa a ser o valor total (se ainda não houver pagamento).
+      if(!isComprometido(detalhe)&&isComprometido({status_processo:novoStatus})&&!detalhe.pago&&!(detalhe.saldo_devedor&&detalhe.saldo_devedor>0)) extra.saldo_devedor=detalhe.valor_total
+      await api.atualizarLancamento(detalhe.id,{status_processo:novoStatus,...extra})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       const step=PIPELINE.find(p=>p.id===novoStatus)
       showToast(`${step?.label}`)
@@ -441,9 +484,9 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!detalhe||!formaPgtoData) return showToast('Informe a data do pagamento',false)
     setSaving(true)
     try {
-      let fp=formaPgtoTipo==='pix'?'PIX':formaPgtoTipo==='boleto'?'Boleto':formaPgtoTipo==='transferencia'?'Transferência':formaPgtoTipo==='cartao'?'Cartão':formaPgtoTipo==='avista'?'À vista':formaPgtoTipo==='parcelado'?`Parcelado${formaPgtoParc?` ${formaPgtoParc}x`:''}`:formaPgtoTipo
-      if(formaPgtoObs) fp+=` — ${formaPgtoObs}`
-      await api.atualizarLancamento(detalhe.id,{status_processo:'pagamento_realizado',pago:true,data_pagamento:formaPgtoData,forma_pagamento:fp})
+      if(formaPgtoTipo==='parcelado'&&!(parseInt(formaPgtoParc)>=2)) { setSaving(false); return showToast('Informe o número de parcelas (2 ou mais)',false) }
+      const fp=rotuloFormaPagamento(formaPgtoTipo,formaPgtoParc,formaPgtoObs)
+      await api.atualizarLancamento(detalhe.id,{status_processo:'pagamento_realizado',pago:true,saldo_devedor:0,data_pagamento:formaPgtoData,forma_pagamento:fp})
       const d=await api.buscar(detalhe.id);setDetalhe(d)
       setModalFormaPgto(false);showToast('Pagamento registrado!');load()
     } catch (err:any) { showToast('Erro: '+(err?.message||''),false) }
@@ -454,17 +497,16 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!detalhe||!pagParcialData||!pagParcialValor) return showToast('Preencha valor e data',false)
     setSaving(true)
     try {
-      const valorNovo=parseFloat(pagParcialValor.replace(/\D/g,''))/100
-      const valorPagoAtual=detalhe.valor_produtos||0
-      const novoValorPago=valorPagoAtual+valorNovo
-      const novoSaldo=Math.max(0,(detalhe.saldo_devedor||0)-valorNovo)
+      // Antes o valor pago era somado em valor_produtos, apagando o valor dos itens. Agora só o saldo muda.
+      const valorNovo=parseMoeda(pagParcialValor)
+      const saldoAtual=saldoLancamento(detalhe)
+      if(valorNovo<=0) { setSaving(false); return showToast('Informe um valor maior que zero',false) }
+      if(valorNovo>saldoAtual+0.009) { setSaving(false); return showToast(`O valor informado é maior que o saldo em aberto (${fmtR(saldoAtual)})`,false) }
+      const novoSaldo=Math.max(0,Math.round((saldoAtual-valorNovo)*100)/100)
       const quitado=novoSaldo<=0
-
-      let fp=pagParcialTipo==='pix'?'PIX':pagParcialTipo==='boleto'?'Boleto':pagParcialTipo==='transferencia'?'Transferência':pagParcialTipo==='cartao'?'Cartão':pagParcialTipo==='avista'?'À vista':pagParcialTipo==='parcelado'?`Parcelado${pagParcialParc?` ${pagParcialParc}x`:''}`:pagParcialTipo
-      if(pagParcialObs) fp+=` — ${pagParcialObs}`
+      const fp=rotuloFormaPagamento(pagParcialTipo,pagParcialParc,pagParcialObs)
 
       await api.atualizarLancamento(detalhe.id,{
-        valor_produtos: novoValorPago,
         saldo_devedor: novoSaldo,
         pago: quitado,
         data_pagamento: pagParcialData,
@@ -542,23 +584,34 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } finally {setSaving(false)}
   }
 
+  const [confirmandoItem,setConfirmandoItem]=useState<string|null>(null)
   const handleMarcarItemEntregue=async(item:ItemLancamento,data_entrega:string)=>{
     if(!detalhe) return
-    await api.atualizarItem(item.id!,{entregue:true,data_entrega})
-    const d=await api.buscar(detalhe.id)
-    const todos=d.itens?.filter((i:any)=>i.tipo==='orcamento')||[]
-    const todosEntregues=todos.every((i:any)=>i.entregue)
-    if(todosEntregues&&d.status_processo==='entrega_programada') {
-      await api.atualizarLancamento(detalhe.id,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
-    }
-    const d2=await api.buscar(detalhe.id);setDetalhe(d2);showToast('Item confirmado!');load()
+    setConfirmandoItem(item.id||null)
+    try {
+      await api.atualizarItem(item.id!,{entregue:true,data_entrega})
+      const buscar=role==='entregador'?api.buscarAndamentoObra:api.buscar
+      const d=await buscar(detalhe.id)
+      const todos=d.itens?.filter((i:any)=>i.tipo==='orcamento')||[]
+      const todosEntregues=todos.length>0&&todos.every((i:any)=>i.entregue)
+      let recebido=false
+      if(todosEntregues&&d.status_processo==='entrega_programada') {
+        await api.atualizarLancamento(detalhe.id,{status_processo:'mercadoria_recebida',status_entrega:'entregue',data_entrega})
+        recebido=true
+      }
+      const d2=await buscar(detalhe.id);setDetalhe(d2)
+      showToast(recebido?'Todos os itens recebidos! Orçamento movido para Mercadoria recebida.':'Item confirmado!');load(true)
+    } catch (err:any) {
+      showToast('Erro ao confirmar item: '+(err?.message||'tente novamente'),false)
+    } finally { setConfirmandoItem(null) }
   }
 
   const handleSaveMensal=async()=>{
-    if(!formMensal.titulo||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
+    if(!formMensal.titulo?.trim()||!formMensal.dia_vencimento) return showToast('Preencha todos os campos',false)
+    if(formMensal.dia_vencimento<1||formMensal.dia_vencimento>31) return showToast('O dia de vencimento deve ser entre 1 e 31',false)
     setSaving(true)
     try {
-      await api.criarContaMensal({...formMensal,pago_por:'Servis Empreendimentos',ativo:true})
+      await api.criarContaMensal({...formMensal,titulo:formMensal.titulo.trim(),pago_por:'Servis Empreendimentos',ativo:true})
       setModalMensal(false);setFormMensal({});showToast('Conta mensal cadastrada!');load()
     } catch (err:any) {showToast('Erro: '+(err?.message||''),false)}
     finally {setSaving(false)}
@@ -749,14 +802,14 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const openNovoFuncionario=()=>{
     setFuncionarioEdit(null)
     setHistoricoSalarios([])
-    setFormFuncionario({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',vigenciaInicio:new Date().toISOString().slice(0,10),obraId:''})
+    setFormFuncionario({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',vigenciaInicio:hojeISO(),obraId:''})
     setModalFuncionario(true)
   }
   const openEditarFuncionario=async(f:Funcionario)=>{
     setFuncionarioEdit(f)
     setHistoricoSalarios([])
     setCarregandoHistoricoSalarios(true)
-    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',adiantamento:f.adiantamento_padrao?f.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',descontos:f.descontos_padrao?f.descontos_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',vigenciaInicio:new Date().toISOString().slice(0,10),obraId:f.obra_id||''})
+    setFormFuncionario({nome:f.nome,cargo:f.cargo||'',salarioBase:f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',adiantamento:f.adiantamento_padrao?f.adiantamento_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',descontos:f.descontos_padrao?f.descontos_padrao.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'',vigenciaInicio:hojeISO(),obraId:f.obra_id||''})
     setModalFuncionario(true)
     try { setHistoricoSalarios(await api.listarHistoricoSalarios(f.id)) }
     catch { showToast('Não foi possível carregar o histórico salarial.',false) }
@@ -766,11 +819,11 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!formFuncionario.nome.trim()) return showToast('Informe o nome do funcionário',false)
     setSaving(true)
     try {
-      const salario=parseFloat(formFuncionario.salarioBase.replace(/\D/g,''))/100||0
-      const adiantamento=parseFloat(formFuncionario.adiantamento.replace(/\D/g,''))/100||0
-      const descontos=parseFloat(formFuncionario.descontos.replace(/\D/g,''))/100||0
-      const vigenciaInicio=formFuncionario.vigenciaInicio||new Date().toISOString().slice(0,10)
-      if(adiantamento<0||descontos<0) return showToast('Adiantamento e descontos não podem ser negativos',false)
+      const salario=parseMoeda(formFuncionario.salarioBase)
+      const adiantamento=parseMoeda(formFuncionario.adiantamento)
+      const descontos=parseMoeda(formFuncionario.descontos)
+      const vigenciaInicio=formFuncionario.vigenciaInicio||hojeISO()
+      if(salario<=0) { setSaving(false); return showToast('Informe o salário base',false) }
       if(funcionarioEdit) {
         const mudouFolha=Math.abs((funcionarioEdit.salario_base||0)-salario)>0.009||Math.abs((funcionarioEdit.adiantamento_padrao||0)-adiantamento)>0.009||Math.abs((funcionarioEdit.descontos_padrao||0)-descontos)>0.009
         if(mudouFolha) {
@@ -794,7 +847,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
   const abrirPagarFuncionario=(f:Funcionario, dataSugerida?:string)=>{
     setModalPagarFuncionario(f)
     setValorPagarFuncionario(f.salario_base?f.salario_base.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
-    setDataPagarFuncionario(dataSugerida || new Date().toISOString().slice(0,10))
+    setDataPagarFuncionario(dataSugerida || hojeISO())
     setTipoPagarFuncionario('salario')
   }
 
@@ -802,7 +855,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!modalPagarFuncionario||!valorPagarFuncionario||!dataPagarFuncionario) return showToast('Preencha valor e data',false)
     setSaving(true)
     try {
-      const valor=parseFloat(valorPagarFuncionario.replace(/\D/g,''))/100
+      const valor=parseMoeda(valorPagarFuncionario)
       await api.registrarPagamentoFuncionario(modalPagarFuncionario.id,valor,dataPagarFuncionario,tipoPagarFuncionario)
       setModalPagarFuncionario(null);showToast('Pagamento registrado!');load()
     } catch (err:any) {
@@ -920,28 +973,31 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
   const abrirHistoricoFuncionario=async(f:Funcionario)=>{
     setModalHistoricoFuncionario(f)
-    const h=await api.listarPagamentosDoFuncionario(f.id)
-    setHistoricoFuncionario(h)
+    setHistoricoFuncionario([])
+    try { setHistoricoFuncionario(await api.listarPagamentosDoFuncionario(f.id)) }
+    catch (err:any) { showToast('Erro ao carregar histórico: '+(err?.message||''),false) }
   }
 
   const handleExcluirPagamentoFuncionario=async(id:string)=>{
     if(!confirm('Excluir este pagamento?')) return
-    await api.excluirPagamentoFuncionario(id)
-    if(modalHistoricoFuncionario) { const h=await api.listarPagamentosDoFuncionario(modalHistoricoFuncionario.id); setHistoricoFuncionario(h) }
-    showToast('Pagamento excluído!');load()
+    try {
+      await api.excluirPagamentoFuncionario(id)
+      if(modalHistoricoFuncionario) setHistoricoFuncionario(await api.listarPagamentosDoFuncionario(modalHistoricoFuncionario.id))
+      showToast('Pagamento excluído!');load(true)
+    } catch (err:any) { showToast('Erro ao excluir: '+(err?.message||''),false) }
   }
 
   const abrirPagarConta=(c:ContaMensal, dataSugerida?:string)=>{
     setModalPagarConta(c)
     setValorPagarConta('')
-    setDataPagarConta(dataSugerida || new Date().toISOString().slice(0,10))
+    setDataPagarConta(dataSugerida || hojeISO())
   }
 
   const handleRegistrarPagamentoConta=async()=>{
     if(!modalPagarConta||!valorPagarConta||!dataPagarConta) return showToast('Preencha valor e data',false)
     setSaving(true)
     try {
-      const valor=parseFloat(valorPagarConta.replace(/\D/g,''))/100
+      const valor=parseMoeda(valorPagarConta)
       await api.registrarPagamentoMensal(modalPagarConta.id,valor,dataPagarConta)
       setModalPagarConta(null);showToast('Pagamento registrado!');load()
     } catch (err:any) {
@@ -951,18 +1007,55 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
   const abrirHistoricoConta=async(c:ContaMensal)=>{
     setModalHistoricoConta(c)
-    const h=await api.listarPagamentosDaConta(c.id)
-    setHistoricoConta(h)
+    setHistoricoConta([])
+    try { setHistoricoConta(await api.listarPagamentosDaConta(c.id)) }
+    catch (err:any) { showToast('Erro ao carregar histórico: '+(err?.message||''),false) }
   }
 
   const handleExcluirPagamentoConta=async(id:string)=>{
     if(!confirm('Excluir este pagamento?')) return
-    await api.excluirPagamentoMensal(id)
-    if(modalHistoricoConta) { const h=await api.listarPagamentosDaConta(modalHistoricoConta.id); setHistoricoConta(h) }
-    showToast('Pagamento excluído!');load()
+    try {
+      await api.excluirPagamentoMensal(id)
+      if(modalHistoricoConta) setHistoricoConta(await api.listarPagamentosDaConta(modalHistoricoConta.id))
+      showToast('Pagamento excluído!');load(true)
+    } catch (err:any) { showToast('Erro ao excluir: '+(err?.message||''),false) }
   }
 
-  if(!logado) return <LoginScreen onLogin={(nome,r)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}}/>
+  // Esc fecha a janela que está por cima.
+  const fecharModalTopo=useRef<()=>void>(()=>{})
+  fecharModalTopo.current=()=>{
+    const pilha:[unknown,()=>void][]=[
+      [modalNFItens,()=>setModalNFItens(false)],
+      [modalFormaPgto,()=>setModalFormaPgto(false)],
+      [modalPagParcial,()=>setModalPagParcial(false)],
+      [modalEntregaProg,()=>setModalEntregaProg(false)],
+      [modalPagarConta,()=>setModalPagarConta(null)],
+      [modalHistoricoConta,()=>setModalHistoricoConta(null)],
+      [modalPagarFuncionario,()=>setModalPagarFuncionario(null)],
+      [modalHistoricoFuncionario,()=>setModalHistoricoFuncionario(null)],
+      [modalImportarHolerite&&!salvandoHolerite,()=>setModalImportarHolerite(false)],
+      [modalConcorrentes,()=>setModalConcorrentes(false)],
+      [modalSegmentos,()=>setModalSegmentos(false)],
+      [modalFuncionario,()=>setModalFuncionario(false)],
+      [modalInventario,()=>setModalInventario(false)],
+      [modalFornecedor,()=>setModalFornecedor(false)],
+      [modalObra,()=>setModalObra(false)],
+      [modalMensal,()=>setModalMensal(false)],
+      [modal,()=>setModal(false)],
+    ]
+    pilha.find(([aberto])=>Boolean(aberto))?.[1]()
+  }
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') fecharModalTopo.current() }
+    window.addEventListener('keydown',onKey)
+    return ()=>window.removeEventListener('keydown',onKey)
+  },[])
+
+  if(verificandoSessao) return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',color:'#7D7D7D',fontSize:13}}>Carregando...</div>
+  if(!logado) return <>
+    <LoginScreen onLogin={entrar}/>
+    {toast&&<Toast msg={toast.msg} ok={toast.ok} onClose={()=>setToast(null)}/>}
+  </>
 
   const filtered=data.filter(l=>{
     if(search) {
@@ -1013,21 +1106,19 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const inventarioEmUso=inventario.filter(item=>item.status==='Em uso')
   const inventarioManutencao=inventario.filter(item=>item.status==='Em manutenção')
 
-  const totalValor=data.reduce((s,l)=>s+l.valor_total,0)
-  const totalSaldo=data.reduce((s,l)=>s+(l.saldo_devedor||0),0)
-  const valorPagoLancamento=(l:Lancamento)=>Math.max(0,l.valor_total-(l.saldo_devedor ?? (l.pago?0:l.valor_total)))
-  const totalPago=data.reduce((s,l)=>s+valorPagoLancamento(l),0)
+  // Só entra no financeiro o que já foi fechado; orçamentos em negociação aparecem à parte.
+  const comprometidos=data.filter(isComprometido)
+  const totalValor=comprometidos.reduce((s,l)=>s+l.valor_total,0)
+  const totalSaldo=comprometidos.reduce((s,l)=>s+saldoLancamento(l),0)
+  const totalPago=comprometidos.reduce((s,l)=>s+valorPagoLancamento(l),0)
   const totalTratativa=data.filter(l=>l.status_processo==='em_tratativa').length
-  const obrasVisiveis=obras
+  const resumoObra=(obra:Obra,lancs:Lancamento[])=>{
+    const fechados=lancs.filter(isComprometido)
+    return {obra,total:fechados.reduce((s,l)=>s+l.valor_total,0),pago:fechados.reduce((s,l)=>s+valorPagoLancamento(l),0),saldo:fechados.reduce((s,l)=>s+saldoLancamento(l),0),qtd:lancs.length}
+  }
   const porObra=[
-    ...obrasVisiveis.map(o=>{
-      const lancs=data.filter(l=>l.obra_id===o.id)
-      return {obra:o,total:lancs.reduce((s,l)=>s+l.valor_total,0),pago:lancs.reduce((s,l)=>s+valorPagoLancamento(l),0),saldo:lancs.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:lancs.length}
-    }),
-    (()=>{
-      const semObra=data.filter(l=>!l.obra_id)
-      return {obra:{id:'',nome:'Sem obra vinculada',ativa:true} as Obra,total:semObra.reduce((s,l)=>s+l.valor_total,0),pago:semObra.reduce((s,l)=>s+valorPagoLancamento(l),0),saldo:semObra.reduce((s,l)=>s+(l.saldo_devedor||0),0),qtd:semObra.length}
-    })(),
+    ...obras.map(o=>resumoObra(o,data.filter(l=>l.obra_id===o.id))),
+    resumoObra({id:'',nome:'Sem obra vinculada',ativa:true} as Obra,data.filter(l=>!l.obra_id)),
   ].filter(item=>item.qtd>0||item.obra.id)
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').slice(0,8)
@@ -1059,7 +1150,20 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     if(p.data_pagamento>gruposMensais[mes].data) gruposMensais[mes].data=p.data_pagamento
   })
   const itensMensais:ItemPagar[]=Object.entries(gruposMensais).map(([mes,g])=>({id:'mensais-'+mes,tipo:'mensais',nome:`Contas de ${mesLabel(mes)}`,valor:g.valor,data:g.data}))
-  const contasAPagar=[...itensNF,...itensFolha,...itensMensais,...itensMedicoes].sort((a,b)=>(a.data||'').localeCompare(b.data||''))
+  const contasAPagar=[...itensNF,...itensFolha,...itensMensais,...itensMedicoes].sort((a,b)=>(b.data||'').localeCompare(a.data||''))
+
+  // O que ainda precisa ser pago: orçamentos fechados com saldo e contas mensais do mês sem pagamento.
+  const hoje=hojeISO()
+  const mesAtual=hoje.slice(0,7)
+  type ItemAberto = {id:string;nome:string;detalhe:string;valor:number|null;vencimento:string|null;lancamentoId?:string;conta?:ContaMensal}
+  const contasPagasNoMes=new Set(pagamentosMensais.filter(p=>p.data_pagamento.startsWith(mesAtual)).map(p=>p.conta_mensal_id))
+  const ultimoValorConta=(id:string)=>pagamentosMensais.filter(p=>p.conta_mensal_id===id).sort((a,b)=>b.data_pagamento.localeCompare(a.data_pagamento))[0]?.valor ?? null
+  const ultimoDiaMes=new Date(Number(mesAtual.slice(0,4)),Number(mesAtual.slice(5,7)),0).getDate()
+  const emAberto:ItemAberto[]=[
+    ...comprometidos.filter(l=>saldoLancamento(l)>0).map(l=>({id:'l-'+l.id,nome:l.titulo,detalhe:`${obras.find(o=>o.id===l.obra_id)?.nome||'Sem obra'} · ${PIPELINE.find(p=>p.id===l.status_processo)?.label||''}`,valor:saldoLancamento(l),vencimento:null,lancamentoId:l.id})),
+    ...contasMensais.filter(c=>c.ativo&&!contasPagasNoMes.has(c.id)).map(c=>({id:'c-'+c.id,nome:c.titulo,detalhe:'Conta mensal',valor:ultimoValorConta(c.id),vencimento:`${mesAtual}-${String(Math.min(c.dia_vencimento||1,ultimoDiaMes)).padStart(2,'0')}`,conta:c})),
+  ].sort((a,b)=>(a.vencimento||'9999').localeCompare(b.vencimento||'9999'))
+  const totalEmAberto=emAberto.reduce((s,i)=>s+(i.valor||0),0)
   const totalContasAPagar=contasAPagar.reduce((s,i)=>s+i.valor,0)
   const totalAdiantamentosAPagar=itensFolha.filter(item=>item.subtipo==='adiantamento').reduce((s,item)=>s+item.valor,0)
   const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
@@ -1076,7 +1180,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         aba={aba}
         setAba={setAba}
         onNovoOrcamento={openNovo}
-        onSair={()=>setLogado(false)}
+        onSair={()=>sair()}
       />
 
       <div style={s.content}>
@@ -1111,13 +1215,11 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='visao'&&(
             <div>
-              <div style={s.row}>
-                <div><h1 style={s.h1}>Visão Geral</h1><p style={s.p}>Resumo financeiro · Servis Empreendimentos</p></div>
-              </div>
+              <PageHeader eyebrow="Servis Empreendimentos" title="Visão geral" description="Resumo financeiro dos orçamentos fechados, por obra."/>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Valor total" v={fmtR(totalValor)} sv="soma dos contratos" c="#7D7D7D"/>
+                <KPI l="Valor fechado" v={fmtR(totalValor)} sv={`${comprometidos.length} orçamento${comprometidos.length!==1?'s':''} fechado${comprometidos.length!==1?'s':''}`} c="#7D7D7D"/>
                 <KPI l="Valor pago" v={fmtR(totalPago)} sv="valor já quitado" c="#8BA59A"/>
-                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="valores em aberto" c="#777777"/>
+                <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="fechado e ainda não pago" c="#777777"/>
                 <KPI l="Em tratativa" v={totalTratativa} sv="orçamentos em negociação" c="#748F84"/>
               </div>
               <div className="overview-grid overview-grid-chart-focus">
@@ -1125,7 +1227,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   <div style={s.toolbar}>
                     <div style={{display:'grid',gap:3,flex:1}}>
                       <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Resumo por obra</span>
-                      <span style={{fontSize:11,color:'#969696'}}>Total contratado, valor pago e saldo devedor</span>
+                      <span style={{fontSize:11,color:'#969696'}}>Total fechado, valor pago e saldo devedor</span>
                     </div>
                     <button onClick={()=>setAba('obras')} style={{background:'none',border:'none',color:ACCENT,fontWeight:600,cursor:'pointer',fontSize:11,padding:0}}>Gerenciar obras →</button>
                   </div>
@@ -1136,7 +1238,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                         <thead>
                           <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                            {th('Obra')}{th('Lançamentos')}{th('Valor total')}{th('Valor pago')}{th('Saldo devedor')}
+                            {th('Obra')}{th('Lançamentos')}{th('Valor fechado')}{th('Valor pago')}{th('Saldo devedor')}
                           </tr>
                         </thead>
                         <tbody>
@@ -1148,7 +1250,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                               <td style={{padding:'11px',color:'#7D7D7D'}}>{item.qtd}</td>
                               <td style={{padding:'11px',fontWeight:700}}>{fmtR(item.total)}</td>
                               <td style={{padding:'11px',fontWeight:700,color:ACCENT_LT}}>{fmtR(item.pago)}</td>
-                              <td style={{padding:'11px',fontWeight:700,color:item.saldo>0?'#777777':'#A6B0AA'}}>{item.saldo>0?fmtR(item.saldo):'Quitado'}</td>
+                              <td style={{padding:'11px',fontWeight:700,color:item.saldo>0?'#777777':'#A6B0AA'}}>{item.saldo>0?fmtR(item.saldo):item.total>0?'Quitado':'—'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1164,18 +1266,23 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     </div>
                   </div>
                   <div className="overview-chart" role="img" aria-label="Gráfico de valor total, pago e saldo devedor por obra">
-                    {porObra.length===0?<span style={{fontSize:12,color:'#7D7D7D'}}>Sem dados para exibir</span>:porObra.map(item=>(
+                    {porObra.every(item=>item.total===0)?<span style={{fontSize:12,color:'#7D7D7D'}}>Nenhum orçamento fechado para exibir</span>:porObra.filter(item=>item.total>0).map(item=>(
                       <div className="overview-chart-row" key={item.obra.id||'sem-obra'}>
                         <div className="overview-chart-label" title={item.obra.nome}>{item.obra.nome}</div>
                         <div className="overview-chart-bars">
-                          <span className="overview-bar overview-bar-total" style={{width:`${Math.max(5,(item.total/maxTotalObra)*100)}%`}} title={`Total: ${fmtR(item.total)}`}/>
-                          <span className="overview-bar overview-bar-paid" style={{width:`${item.total?Math.max(3,(item.pago/item.total)*100):0}%`}} title={`Pago: ${fmtR(item.pago)}`}/>
+                          <div className="overview-track" style={{width:`${Math.max(6,(item.total/maxTotalObra)*100)}%`}} title={`Total: ${fmtR(item.total)} · Pago: ${fmtR(item.pago)} · Saldo: ${fmtR(item.saldo)}`}>
+                            <span className="overview-seg-pago" style={{width:`${(item.pago/item.total)*100}%`}}/>
+                            <span className="overview-seg-saldo" style={{width:`${(item.saldo/item.total)*100}%`}}/>
+                          </div>
                         </div>
-                        <strong>{fmtR(item.saldo)}</strong>
+                        <div className="overview-chart-values">
+                          <strong>{fmtR(item.total)}</strong>
+                          {item.saldo>0?<span className="overview-chart-debt">Saldo {fmtR(item.saldo)}</span>:<span className="overview-chart-ok">Quitado</span>}
+                        </div>
                       </div>
                     ))}
                   </div>
-                  <div className="overview-chart-legend"><span><i className="legend-total"/> Total</span><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo</span></div>
+                  <div className="overview-chart-legend"><span><i className="legend-paid"/> Pago</span><span><i className="legend-debt"/> Saldo devedor</span></div>
                 </div>
               </div>
               <div style={{height:16}}/>
@@ -1190,7 +1297,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
                     <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                      {th('Empresa')}{th('Obra')}{th('Data')}{th('Total')}{th('Saldo devedor')}
+                      {th('Empresa')}{th('Obra')}{th('Data')}{th('Total')}{th('Desconto')}
                     </tr>
                   </thead>
                   <tbody>
@@ -1198,7 +1305,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     :tratativas.length===0?<tr><td colSpan={5} style={{textAlign:'center',padding:'2.5rem',color:'#7D7D7D'}}>Nenhum orçamento em tratativa no momento.</td></tr>
                     :tratativas.map(l=>{
                       const obraDoLanc=obras.find(o=>o.id===l.obra_id)
-                      const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
                       return (
                         <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                           onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
@@ -1206,7 +1312,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                           <td style={{padding:'10px 11px',color:'#7D7D7D'}}>{obraDoLanc?.nome||'Sem obra'}</td>
                           <td style={{padding:'10px 11px',color:'#7D7D7D',whiteSpace:'nowrap'}}>{fmtData(l.data)}</td>
                           <td style={{padding:'10px 11px',fontWeight:700}}>{fmtR(l.valor_total)}</td>
-                          <td style={{padding:'10px 11px',fontWeight:700,color:temSaldo?'#777777':'#A6B0AA'}}>{temSaldo?fmtR(l.saldo_devedor!):'Quitado'}</td>
+                          <td style={{padding:'10px 11px',fontWeight:700,color:l.tem_desconto?'#748F84':'#A6B0AA'}}>{l.tem_desconto&&l.valor_desconto?`- ${fmtR(l.valor_desconto)}`:'—'}</td>
                         </tr>
                       )
                     })}
@@ -1221,8 +1327,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='pagar'&&(
             <div>
+              <PageHeader eyebrow="Financeiro" title="Contas a pagar" description="O que ainda está em aberto e o histórico de tudo que já foi pago."/>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
-                <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma de tudo" c={ACCENT_LT}/>
+                <KPI l="Em aberto" v={fmtR(totalEmAberto)} sv={`${emAberto.length} pendência${emAberto.length!==1?'s':''}`} c="#C99A4B"/>
+                <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma do histórico" c={ACCENT_LT}/>
                 <KPI l="Notas fiscais" v={itensNF.length} sv="pagamentos individuais" c="#7D7D7D"/>
                 <KPI l="Adiantamentos" v={fmtR(totalAdiantamentosAPagar)} sv="lançamento separado" c="#8BA59A"/>
                 <KPI l="Folha de pagamento" v={fmtR(totalFolhaAPagar)} sv="lançamento separado" c="#748F84"/>
@@ -1231,12 +1339,50 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               </div>
               <div style={s.card}>
                 <div style={s.toolbar}>
+                  <div style={{display:'grid',gap:3,flex:1}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Em aberto</span>
+                    <span style={{fontSize:11,color:'#969696'}}>Orçamentos fechados com saldo e contas mensais de {mesLabel(mesAtual)} ainda sem pagamento</span>
+                  </div>
+                </div>
+                <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                  <thead>
+                    <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                      {th('Descrição')}{th('Vencimento')}<th style={{padding:'8px 11px',textAlign:'right',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase'}}>Valor</th><th style={{width:1}}/>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading?<tr><td colSpan={4} style={{textAlign:'center',padding:'2.5rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                    :emAberto.length===0?<tr><td colSpan={4} style={{textAlign:'center',padding:'2.5rem',color:'#7D7D7D'}}>Nada em aberto. Tudo em dia!</td></tr>
+                    :emAberto.map(item=>{
+                      const atrasado=Boolean(item.vencimento&&item.vencimento<hoje)
+                      return (
+                        <tr key={item.id} onClick={()=>{ if(item.lancamentoId) openDetalhe(item.lancamentoId); else if(item.conta) abrirHistoricoConta(item.conta) }} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}>
+                          <td style={{padding:'11px'}}>
+                            <p style={{margin:0,fontWeight:600,color:'#374151'}}>{item.nome}</p>
+                            <p style={{margin:'2px 0 0',fontSize:11,color:'#969696'}}>{item.detalhe}</p>
+                          </td>
+                          <td style={{padding:'11px',whiteSpace:'nowrap'}}>{item.vencimento?<span className={`due-tag ${atrasado?'due-late':'due-soon'}`}>{atrasado&&<Icon name="alert" size={11}/>}{atrasado?'Venceu ':'Vence '}{fmtData(item.vencimento)}</span>:<span style={{fontSize:11,color:'#969696'}}>Sem data</span>}</td>
+                          <td style={{padding:'11px',textAlign:'right',fontWeight:700,whiteSpace:'nowrap'}}>{item.valor!==null?fmtR(item.valor):<span style={{fontSize:11,color:'#969696',fontWeight:600}}>Valor a definir</span>}</td>
+                          <td style={{padding:'11px',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
+                            {item.conta?<button onClick={()=>abrirPagarConta(item.conta!,item.vencimento||undefined)} style={{...s.btnGrn,padding:'.4rem .7rem',fontSize:11,whiteSpace:'nowrap'}}><Icon name="dollar" size={12} color="#fff"/> Pagar</button>
+                            :<button onClick={()=>openDetalhe(item.lancamentoId!)} style={{...s.btnOut,padding:'.4rem .7rem',fontSize:11,whiteSpace:'nowrap'}}>Abrir</button>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
                   <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Histórico de pagamentos</span>
                 </div>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
                     <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                      {th('Descrição')}{th('Valor pago')}
+                      {th('Descrição')}<th style={{padding:'8px 11px',textAlign:'right',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>Valor pago</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1268,9 +1414,9 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='obras'&&(
             <div>
-              <div style={{...s.row,justifyContent:'flex-end'}}>
+              <PageHeader eyebrow="Operação" title="Obras" description="Cadastre as obras e veja quanto já foi lançado em cada uma.">
                 <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
-              </div>
+              </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de obras" v={obras.length} sv="cadastradas" c={ACCENT_LT}/>
                 <KPI l="Ativas" v={obras.filter(o=>o.ativa).length} sv="em andamento" c="#8BA59A"/>
@@ -1280,7 +1426,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                   <thead>
                     <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
-                      {th('Obra')}{th('Endereço')}{th('Lançamentos')}{th('Total gasto')}{th('Status')}{th('Ações')}
+                      {th('Obra')}{th('Endereço')}{th('Lançamentos')}{th('Total fechado')}{th('Status')}{th('Ações')}
                     </tr>
                   </thead>
                   <tbody>
@@ -1288,7 +1434,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     :obras.length===0?<tr><td colSpan={6} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Nenhuma obra cadastrada ainda</td></tr>
                     :obras.map(o=>{
                       const lancs=data.filter(l=>l.obra_id===o.id)
-                      const totalObra=lancs.reduce((s,l)=>s+l.valor_total,0)
+                      const totalObra=lancs.filter(isComprometido).reduce((s,l)=>s+l.valor_total,0)
                       return (
                         <tr key={o.id} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
                           onClick={()=>{setFObra(o.id);setAba('lancamentos')}}
@@ -1318,13 +1464,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='fornecedores'&&(
             <div>
-              <div style={{...s.row,justifyContent:'flex-end'}}>
+              <PageHeader eyebrow="Cadastros" title="Fornecedores" description="Empresas que fornecem materiais e serviços. Clique numa linha para editar.">
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
                   <button onClick={handleRevisarSegmentos} disabled={loadingSegmentos} style={{...s.btnOut,opacity:loadingSegmentos?0.65:1}}><Icon name="sparkles" size={14}/> {loadingSegmentos?'Revisando...':'Revisar segmentos com IA'}</button>
                   <button onClick={handleAnalisarConcorrentes} disabled={loadingConcorrentes} style={{...s.btnOut,opacity:loadingConcorrentes?0.65:1}}><Icon name="search" size={14}/> {loadingConcorrentes?'Analisando...':'Analisar concorrentes com IA'}</button>
                   <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
                 </div>
-              </div>
+              </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de fornecedores" v={fornecedores.length} sv={`${fornecedorRows.length} exibidos`} c={ACCENT_LT}/>
                 <KPI l="Com CNPJ cadastrado" v={fornecedores.filter(f=>f.cnpj).length} sv="dados completos" c="#8BA59A"/>
@@ -1366,9 +1512,9 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='inventario'&&(
             <div>
-              <div style={{...s.row,justifyContent:'flex-end'}}>
+              <PageHeader eyebrow="Operação" title="Inventário" description="Máquinas e equipamentos, com status e localização.">
                 <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo ativo</button>
-              </div>
+              </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de ativos" v={inventario.length} sv="máquinas e equipamentos" c={ACCENT_LT}/>
                 <KPI l="Máquinas" v={inventarioMaquinas.length} sv="ativos cadastrados" c="#8BA59A"/>
@@ -1431,7 +1577,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               onNovaConta={()=>setModalMensal(true)}
               onPagar={abrirPagarConta}
               onHistorico={abrirHistoricoConta}
-              onAtualizar={()=>load()}
+              onAtualizar={()=>load(true)}
+              notify={showToast}
             />
           )}
 
@@ -1449,20 +1596,24 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               onImportarHolerite={abrirImportacaoHolerite}
               onPagar={abrirPagarFuncionario}
               onHistorico={abrirHistoricoFuncionario}
-              onAtualizar={()=>load()}
+              onAtualizar={()=>load(true)}
+              notify={showToast}
             />
           )}
 
           {role!=='entregador'&&aba==='contratos'&&(
-            <ContratosMedicaoView contratos={contratos} obras={obras} onAtualizar={()=>load()}/>
+            <ContratosMedicaoView contratos={contratos} obras={obras} onAtualizar={()=>load(true)} notify={showToast}/>
           )}
 
           {role!=='entregador'&&aba==='viagens'&&(
-            <ViagensView viagens={viagens} funcionarios={funcionarios} role={role} onAtualizar={()=>load()}/>
+            <ViagensView viagens={viagens} funcionarios={funcionarios} role={role} onAtualizar={()=>load(true)} notify={showToast}/>
           )}
 
           {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
             <div>
+              <PageHeader eyebrow="Orçamentos" title={aba==='notas-fiscais'?'Notas fiscais':'Orçamentos'} description={aba==='notas-fiscais'?'Orçamentos que já têm nota fiscal anexada.':'Orçamentos em andamento que ainda não têm nota fiscal.'}>
+                {aba==='lancamentos'&&<button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>}
+              </PageHeader>
               <div style={s.card} className="budget-card">
                 <div className="budget-toolbar">
                   <div className="budget-toolbar-title">
@@ -1513,22 +1664,18 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                 </div>
                 <div className="budget-table-wrap">
                   <table className="budget-table" style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                    <colgroup>
-                      <col style={{width:'22%'}}/><col style={{width:'13%'}}/><col style={{width:'12%'}}/><col style={{width:'18%'}}/>
-                      <col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'10%'}}/><col style={{width:'15%'}}/>
-                    </colgroup>
                     <thead>
                       <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
                         {th('Empresa')}{th('Obra')}{th('Nº orçamento')}{th('Etapa')}{th('Data')}{th('Total')}{th('Saldo devedor')}{th('Nota fiscal')}{aba==='notas-fiscais'&&th('Tipo')}
                       </tr>
                     </thead>
                     <tbody>
-                      {loading?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
-                      :listaOrcamentos.length===0?<tr><td colSpan={8} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum orçamento pendente'}</td></tr>
+                      {loading?<tr><td colSpan={9} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>Carregando...</td></tr>
+                      :listaOrcamentos.length===0?<tr><td colSpan={9} style={{textAlign:'center',padding:'3rem',color:'#7D7D7D'}}>{aba==='notas-fiscais'?'Nenhuma nota fiscal vinculada':'Nenhum orçamento pendente'}</td></tr>
                       :listaOrcamentos.map(l=>{
                         const step=PIPELINE.find(p=>p.id===l.status_processo)
                         const cor=PIPE_COLORS[l.status_processo]||'#7D7D7D'
-                        const temSaldo=l.saldo_devedor&&l.saldo_devedor>0
+                        const saldo=saldoLancamento(l)
                         const obraDoLanc=obras.find(o=>o.id===l.obra_id)
                         return (
                           <tr key={l.id} onClick={()=>openDetalhe(l.id)} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}}
@@ -1539,7 +1686,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                             <td className="budget-cell">{step&&<StepBadge stepId={step.id} label={step.label} color={cor}/>}</td>
                             <td className="budget-cell budget-cell-muted budget-cell-nowrap">{fmtData(l.data)}</td>
                             <td className="budget-cell budget-cell-money">{fmtR(l.valor_total)}</td>
-                            <td className="budget-cell budget-cell-money">{temSaldo?fmtR(l.saldo_devedor!):<span className="budget-empty">Quitado</span>}</td>
+                            <td className="budget-cell budget-cell-money">{saldo>0?fmtR(saldo):<span className="budget-empty">{isComprometido(l)?'Quitado':'Em negociação'}</span>}</td>
                             <td className="budget-cell">{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="budget-nf-ok"><Icon name="receipt" size={14}/> {l.nf_numero?`NF ${l.nf_numero}`:'Anexada'}</a>:<span className="budget-nf-pending">Pendente anexar</span>}</td>
                             {aba==='notas-fiscais'&&<td className="budget-cell budget-cell-muted">{l.tipo_nf==='servico'?'Serviço':l.tipo_nf==='produto'?'Produto':'Não classificada'}</td>}
                           </tr>
@@ -1606,11 +1753,11 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                               </div>
                               {!item.entregue?(
                                 <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                  <input type="date" id={inputId} defaultValue={new Date().toISOString().slice(0,10)} style={{...s.fi,width:'auto',fontSize:11}}/>
+                                  <input type="date" id={inputId} defaultValue={hojeISO()} style={{...s.fi,width:'auto',fontSize:11}}/>
                                   <button onClick={async()=>{
                                     const el=document.getElementById(inputId) as HTMLInputElement
-                                    await handleMarcarItemEntregue(item,el?.value||new Date().toISOString().slice(0,10))
-                                  }} style={{...s.btnGrn,padding:'4px 10px',fontSize:11}}>Confirmar</button>
+                                    await handleMarcarItemEntregue(item,el?.value||hojeISO())
+                                  }} disabled={confirmandoItem===item.id} style={{...s.btnGrn,padding:'4px 10px',fontSize:11,opacity:confirmandoItem===item.id?0.6:1}}>{confirmandoItem===item.id?'Salvando...':'Confirmar'}</button>
                                 </div>
                               ):(
                                 <span style={{fontSize:12,color:'#8BA59A',fontWeight:700,display:'inline-flex',alignItems:'center',gap:4}}><Icon name="check" size={13}/>Recebido</span>
@@ -1711,21 +1858,21 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     </div>
                     <div>
                       <p style={{fontSize:10,color:'#7D7D7D',fontWeight:600,textTransform:'uppercase',marginBottom:4}}>Saldo Devedor</p>
-                      <p style={{fontSize:14,fontWeight:700,color:detalhe.saldo_devedor&&detalhe.saldo_devedor>0?'#777777':'#8BA59A'}}>
-                        {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?fmtR(detalhe.saldo_devedor):'Quitado'}
+                      <p style={{fontSize:14,fontWeight:700,color:saldoLancamento(detalhe)>0?'#777777':'#8BA59A'}}>
+                        {saldoLancamento(detalhe)>0?fmtR(saldoLancamento(detalhe)):isComprometido(detalhe)?'Quitado':'Em negociação'}
                       </p>
                     </div>
                   </div>
 
-                  {detalhe.saldo_devedor&&detalhe.saldo_devedor>0?(
+                  {saldoLancamento(detalhe)>0?(
                     <div style={{paddingTop:12,borderTop:'1px solid #E2E6E4'}}>
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                         <p style={{fontSize:12,color:'#777777',fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:6}}>
-                          <Icon name="alert" size={14}/> Saldo em aberto: {fmtR(detalhe.saldo_devedor)}
+                          <Icon name="alert" size={14}/> Saldo em aberto: {fmtR(saldoLancamento(detalhe))}
                         </p>
                         <button onClick={()=>{
                           setPagParcialTipo('pix');setPagParcialValor('');setPagParcialObs('');setPagParcialParc('')
-                          setPagParcialData(new Date().toISOString().slice(0,10))
+                          setPagParcialData(hojeISO())
                           setModalPagParcial(true)
                         }} style={{...s.btnGrn,padding:'6px 14px',fontSize:12}}>
                           <Icon name="dollar" size={13} color="#fff"/> Registrar pagamento
@@ -1743,8 +1890,11 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                         <button onClick={handleSalvarDesconto} disabled={!rawDesconto} style={{...s.btnTeal,opacity:!rawDesconto?0.6:1,whiteSpace:'nowrap' as const}}>Aplicar</button>
                         {detalhe.tem_desconto&&(
                           <button onClick={async()=>{
-                            await api.atualizarLancamento(detalhe.id,{tem_desconto:false,valor_desconto:0,valor_total:detalhe.valor_original||detalhe.valor_total})
-                            const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!')
+                            try {
+                              const valor_total=detalhe.valor_original||detalhe.valor_total
+                              await api.atualizarLancamento(detalhe.id,{tem_desconto:false,valor_desconto:0,valor_total,saldo_devedor:detalhe.pago?0:valor_total})
+                              const d=await api.buscar(detalhe.id);setDetalhe(d);setRawDesconto('');showToast('Desconto removido!');load(true)
+                            } catch (err:any) { showToast('Erro ao remover desconto: '+(err?.message||''),false) }
                           }} style={{...s.btnOut,color:'#777777',borderColor:'#E2E6E4',whiteSpace:'nowrap' as const}}>Remover</button>
                         )}
                       </div>
@@ -1890,14 +2040,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <ItensEditor itens={itensOrcamento} onChange={setItensOrcamento}/>
               <FF lb="Valor do frete">
                 <input style={s.fi} value={rawFrete} placeholder="R$ 0,00" onChange={e=>{
-                  const d=e.target.value.replace(/\D/g,'')
-                  setRawFrete(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
+                  setRawFrete(mascaraMoeda(e.target.value))
                 }}/>
               </FF>
               <div style={{background:'#ECF2EF',borderRadius:8,padding:'12px 14px',border:'1.5px solid #E8EFEC'}}>
                 <p style={{fontSize:10,fontWeight:600,color:'#7D7D7D',textTransform:'uppercase',marginBottom:4}}>Total do orçamento</p>
                 <p style={{fontSize:20,fontWeight:700,color:ACCENT_LT}}>
-                  {fmtR(itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)+(parseFloat(rawFrete.replace(/\D/g,''))/100||0))}
+                  {fmtR(itensOrcamento.reduce((s,i)=>s+(i.valor_total||0),0)+parseMoeda(rawFrete))}
                 </p>
               </div>
             </div>
@@ -1954,7 +2103,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             <div style={{padding:'1.5rem',display:'grid',gap:14}}>
               <div style={{background:'#F4F6F5',borderRadius:8,padding:'10px 14px'}}>
                 <p style={{fontSize:12,color:'#626262',margin:'0 0 4px',fontWeight:600}}>Saldo em aberto</p>
-                <p style={{fontSize:20,fontWeight:700,color:'#777777',margin:0}}>{fmtR(detalhe.saldo_devedor||0)}</p>
+                <p style={{fontSize:20,fontWeight:700,color:'#777777',margin:0}}>{fmtR(saldoLancamento(detalhe))}</p>
               </div>
               <div><label style={s.lb}>Valor pago agora *</label>
                 <input style={s.fi} value={pagParcialValor} placeholder="R$ 0,00" onChange={e=>{
@@ -1962,10 +2111,12 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   setPagParcialValor(d?(parseInt(d)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):'')
                 }}/>
                 {pagParcialValor&&(()=>{
-                  const v=parseFloat(pagParcialValor.replace(/\D/g,''))/100
-                  const novoSaldo=Math.max(0,(detalhe.saldo_devedor||0)-v)
-                  return <p style={{fontSize:11,color:novoSaldo===0?'#8BA59A':'#7D7D7D',marginTop:6,fontWeight:600}}>
-                    {novoSaldo===0?'Quitará o saldo total':`Saldo restante: ${fmtR(novoSaldo)}`}
+                  const v=parseMoeda(pagParcialValor)
+                  const saldoAtual=saldoLancamento(detalhe)
+                  if(v>saldoAtual+0.009) return <p style={{fontSize:11,color:'#626262',marginTop:6,fontWeight:700}}>Valor maior que o saldo em aberto</p>
+                  const novoSaldo=Math.max(0,saldoAtual-v)
+                  return <p style={{fontSize:11,color:novoSaldo<0.01?'#8BA59A':'#7D7D7D',marginTop:6,fontWeight:600}}>
+                    {novoSaldo<0.01?'Quitará o saldo total':`Saldo restante: ${fmtR(novoSaldo)}`}
                   </p>
                 })()}
               </div>
@@ -2631,11 +2782,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         </div>
       )}
 
-      {toast&&(
-        <div style={{position:'fixed',bottom:20,right:20,padding:'.75rem 1.25rem',borderRadius:10,fontSize:13,fontWeight:500,color:'#fff',background:toast.ok?'#8BA59A':'#777777',boxShadow:'0 4px 16px rgba(0,0,0,.2)',zIndex:100,maxWidth:400}}>
-          {toast.msg}
-        </div>
-      )}
+      {toast&&<Toast msg={toast.msg} ok={toast.ok} onClose={()=>setToast(null)}/>}
     </div>
   )
 }

@@ -2,6 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import Icon from './Icon'
 import { s, SIDEBAR_BG2 } from '../lib/theme'
+import type { Role } from '../services/api'
 
 function NavItem({icon,label,active,onClick,sub}:{icon:string;label:string;active:boolean;onClick:()=>void;sub?:boolean}) {
   return (
@@ -58,7 +59,7 @@ export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
 }:{
   user: string
-  role: 'lancadora'|'gestora'|'entregador'
+  role: Role
   aba: Aba
   setAba: (a:Aba)=>void
   onNovoOrcamento: ()=>void

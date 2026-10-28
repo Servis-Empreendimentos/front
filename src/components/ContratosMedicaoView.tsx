@@ -1,20 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { api, ContratoMedicao, MedicaoContrato, Obra, fmtData, fmtR } from '../services/api'
+import { api, ContratoMedicao, Obra, fmtData, fmtR, hojeISO } from '../services/api'
 import { ACCENT, ACCENT_LT, s } from '../lib/theme'
 import Icon from './Icon'
 
-type Props = { contratos: ContratoMedicao[]; obras: Obra[]; onAtualizar: () => void }
+type Props = { contratos: ContratoMedicao[]; obras: Obra[]; onAtualizar: () => void; notify: (msg: string, ok?: boolean) => void }
 
 const money = (value: string) => Number(value.replace(/\D/g, '')) / 100 || 0
 const moneyText = (value: number) => value ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : ''
 
-export default function ContratosMedicaoView({ contratos, obras, onAtualizar }: Props) {
+export default function ContratosMedicaoView({ contratos, obras, onAtualizar, notify }: Props) {
   const [novo, setNovo] = useState(false)
   const [medicaoContrato, setMedicaoContrato] = useState<ContratoMedicao | null>(null)
   const [form, setForm] = useState({ titulo: '', fornecedor: '', obra_id: '', valor_total: '', observacoes: '' })
-  const [medicao, setMedicao] = useState({ valor: '', data_medicao: new Date().toISOString().slice(0, 10), nf_numero: '', observacoes: '' })
+  const [medicao, setMedicao] = useState({ valor: '', data_medicao: hojeISO(), nf_numero: '', observacoes: '' })
   const [saving, setSaving] = useState(false)
   const [busca, setBusca] = useState('')
 
@@ -23,22 +23,32 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar }: 
   const filtrados = contratos.filter(contrato => `${contrato.titulo} ${contrato.fornecedor || ''}`.toLowerCase().includes(busca.toLowerCase()))
 
   const salvarContrato = async () => {
-    if (!form.titulo.trim() || money(form.valor_total) <= 0) return
+    if (!form.titulo.trim()) return notify('Informe o nome do contrato', false)
+    if (money(form.valor_total) <= 0) return notify('Informe o valor total do contrato', false)
     setSaving(true)
     try {
       await api.criarContratoMedicao({ titulo: form.titulo.trim(), fornecedor: form.fornecedor.trim() || null, obra_id: form.obra_id || null, valor_total: money(form.valor_total), observacoes: form.observacoes.trim() || null, ativo: true })
       setNovo(false); setForm({ titulo: '', fornecedor: '', obra_id: '', valor_total: '', observacoes: '' }); onAtualizar()
+      notify('Contrato cadastrado!')
+    } catch (err: any) {
+      notify('Erro ao salvar contrato: ' + (err?.message || 'tente novamente'), false)
     } finally { setSaving(false) }
   }
 
   const salvarMedicao = async () => {
-    if (!medicaoContrato || money(medicao.valor) <= 0 || !medicao.data_medicao) return
+    if (!medicaoContrato) return
+    if (money(medicao.valor) <= 0) return notify('Informe o valor da medição', false)
+    if (!medicao.data_medicao) return notify('Informe a data do pagamento', false)
     const acumulado = (medicaoContrato.medicoes || []).reduce((sum, item) => sum + item.valor, 0)
-    if (acumulado + money(medicao.valor) > medicaoContrato.valor_total + 0.009) return
+    if (acumulado + money(medicao.valor) > medicaoContrato.valor_total + 0.009) return notify(`O valor passa do saldo do contrato (${fmtR(medicaoContrato.valor_total - acumulado)})`, false)
+    const proximoNumero = Math.max(0, ...(medicaoContrato.medicoes || []).map(item => item.numero || 0)) + 1
     setSaving(true)
     try {
-      await api.criarMedicaoContrato({ contrato_id: medicaoContrato.id, numero: (medicaoContrato.medicoes || []).length + 1, valor: money(medicao.valor), data_medicao: medicao.data_medicao, nf_numero: medicao.nf_numero.trim() || null, observacoes: medicao.observacoes.trim() || null, pago: true })
-      setMedicaoContrato(null); setMedicao({ valor: '', data_medicao: new Date().toISOString().slice(0, 10), nf_numero: '', observacoes: '' }); onAtualizar()
+      await api.criarMedicaoContrato({ contrato_id: medicaoContrato.id, numero: proximoNumero, valor: money(medicao.valor), data_medicao: medicao.data_medicao, nf_numero: medicao.nf_numero.trim() || null, observacoes: medicao.observacoes.trim() || null, pago: true })
+      setMedicaoContrato(null); setMedicao({ valor: '', data_medicao: hojeISO(), nf_numero: '', observacoes: '' }); onAtualizar()
+      notify(`Medição ${proximoNumero} registrada!`)
+    } catch (err: any) {
+      notify('Erro ao salvar medição: ' + (err?.message || 'tente novamente'), false)
     } finally { setSaving(false) }
   }
 

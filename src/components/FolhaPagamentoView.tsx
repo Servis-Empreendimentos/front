@@ -21,6 +21,7 @@ type Props = {
   onPagar: (funcionario: Funcionario, dataSugerida?: string) => void
   onHistorico: (funcionario: Funcionario) => void
   onAtualizar: () => void
+  notify: (msg: string, ok?: boolean) => void
 }
 
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -50,6 +51,7 @@ export default function FolhaPagamentoView({
   onPagar,
   onHistorico,
   onAtualizar,
+  notify,
 }: Props) {
   const hoje = new Date()
   const mesAtual = monthKey(hoje)
@@ -153,7 +155,7 @@ export default function FolhaPagamentoView({
                     {f.ativo && <button onClick={()=>onPagar(f)} style={{...s.btnGrn,padding:'.45rem .7rem',fontSize:11}}><Icon name="dollar" size={12} color="#fff"/> Pagar</button>}
                     <button onClick={()=>onEditarFuncionario(f)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
                     <button onClick={()=>onHistorico(f)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="receipt" size={12}/> Histórico</button>
-                    <button title={f.ativo?'Desligar':'Reativar'} onClick={()=>api.atualizarFuncionario(f.id,{ativo:!f.ativo}).then(onAtualizar)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={f.ativo?'x':'check'} size={14} color={f.ativo?'#777777':ACCENT_LT}/></button>
+                    <button title={f.ativo?'Desligar':'Reativar'} onClick={()=>{if(f.ativo&&!confirm(`Desligar ${f.nome}? O cadastro deixará de aparecer como pendente na folha.`))return;api.atualizarFuncionario(f.id,{ativo:!f.ativo}).then(()=>{onAtualizar();notify(f.ativo?'Funcionário desligado':'Funcionário reativado')}).catch((err:any)=>notify('Erro: '+(err?.message||'tente novamente'),false))}} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={f.ativo?'x':'check'} size={14} color={f.ativo?'#777777':ACCENT_LT}/></button>
                   </div>
                 </div>
               )

@@ -18,6 +18,7 @@ type Props = {
   onPagar: (conta: ContaMensal, dataSugerida?: string) => void
   onHistorico: (conta: ContaMensal) => void
   onAtualizar: () => void
+  notify: (msg: string, ok?: boolean) => void
 }
 
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -49,6 +50,7 @@ export default function MonthlyAccountsView({
   onPagar,
   onHistorico,
   onAtualizar,
+  notify,
 }: Props) {
   const hoje = new Date()
   const mesAtual = monthKey(hoje)
@@ -145,7 +147,7 @@ export default function MonthlyAccountsView({
                   <div style={{display:'flex',justifyContent:'flex-end',gap:6,flexWrap:'wrap'}} onClick={e=>e.stopPropagation()}>
                     {conta.ativo && <button onClick={()=>onPagar(conta)} style={{...s.btnGrn,padding:'.45rem .7rem',fontSize:11}}><Icon name="dollar" size={12} color="#fff"/> Registrar pagamento</button>}
                     <button onClick={()=>onHistorico(conta)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="receipt" size={12}/> Histórico</button>
-                    <button title={conta.ativo?'Pausar conta':'Reativar conta'} onClick={()=>api.toggleContaMensal(conta.id,!conta.ativo).then(onAtualizar)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={conta.ativo?'x':'check'} size={14} color={conta.ativo?'#777777':ACCENT_LT}/></button>
+                    <button title={conta.ativo?'Pausar conta':'Reativar conta'} onClick={()=>api.toggleContaMensal(conta.id,!conta.ativo).then(()=>{onAtualizar();notify(conta.ativo?'Conta pausada':'Conta reativada')}).catch((err:any)=>notify('Erro: '+(err?.message||'tente novamente'),false))} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={conta.ativo?'x':'check'} size={14} color={conta.ativo?'#777777':ACCENT_LT}/></button>
                   </div>
                 </div>
               )

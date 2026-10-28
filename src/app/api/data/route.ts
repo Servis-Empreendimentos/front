@@ -16,6 +16,8 @@ const TABLES = new Set([
   'contratos_medicao',
   'medicoes_contrato',
   'viagens',
+  'contas_mensais',
+  'pagamentos_contas_mensais',
 ])
 
 function supabaseConfig() {
