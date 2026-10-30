@@ -17,7 +17,7 @@ const USUARIOS_PADRAO: Record<string, Usuario> = {
   mayara: { senha: 'mayara123', nome: 'Mayara', role: 'gestora' },
   edna: { senha: 'edna123', nome: 'Edna', role: 'lancadora' },
   adriana: { senha: 'adriana123', nome: 'Adriana', role: 'lancadora' },
-  laryssa: {senha: 'adriana123', nome: 'Adriana', role: 'lancadora'}
+  laryssa: {senha: 'laryssa123', nome: 'Laryssa', role: 'lancadora'}
   clau: { senha: 'clau123', nome: 'Clau', role: 'gestora' },
   obra: { senha: 'obra123', nome: 'Obra', role: 'entregador' },
 }
