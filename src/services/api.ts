@@ -49,7 +49,28 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
 }
 
+// O Supabase devolve no máximo 1000 linhas por consulta. Sem paginar, quando uma tabela
+// passa desse tamanho os registros que ficam "depois" da ordenação somem da tela,
+// e cada usuário pode ver uma lista diferente conforme o filtro. Por isso as leituras
+// de listas são feitas em páginas até trazer tudo.
+const PAGINA_SUPABASE = 1000
+
 async function supabaseRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const metodo = (options.method || 'GET').toUpperCase()
+  if (metodo === 'GET' && !/[?&](limit|offset)=/.test(path)) {
+    const separador = path.includes('?') ? '&' : '?'
+    let todos: any[] = []
+    for (let offset = 0; ; offset += PAGINA_SUPABASE) {
+      const pagina = await supabaseRequestUnico<any>(`${path}${separador}limit=${PAGINA_SUPABASE}&offset=${offset}`, options)
+      if (!Array.isArray(pagina)) return (offset === 0 ? pagina : todos) as T
+      todos = todos.concat(pagina)
+      if (pagina.length < PAGINA_SUPABASE) return todos as T
+    }
+  }
+  return supabaseRequestUnico<T>(path, options)
+}
+
+async function supabaseRequestUnico<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (typeof options.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json')
@@ -416,16 +437,19 @@ const isLocalId = (id: string) => /^(conta|pagamento)-/.test(id)
 let migracaoContas: Promise<void> | null = null
 async function migrarContasLocais() {
   const contas = localAccounts()
-  const pagamentos = localPayments()
-  if (!contas.length && !pagamentos.length) return
-  const mapa = new Map<string, string>()
+  if (!contas.length && !localPayments().length) return
   for (const conta of contas) {
     const criada = await supabaseRequest<ContaMensal[]>('contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ titulo: conta.titulo, pago_por: conta.pago_por || 'Servis Empreendimentos', dia_vencimento: conta.dia_vencimento, ativo: conta.ativo !== false }) })
-    if (criada?.[0]?.id) mapa.set(conta.id, criada[0].id)
+    const novoId = criada?.[0]?.id
+    if (!novoId) throw new Error('O banco não confirmou a conta mensal migrada')
+    const pagamentos = localPayments().filter(p => p.conta_mensal_id === conta.id)
+    if (pagamentos.length) await supabaseRequest('pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(pagamentos.map(p => ({ conta_mensal_id: novoId, valor: p.valor, data_pagamento: p.data_pagamento }))) })
+    // Tira do navegador só o que já foi para o banco, para não duplicar se algo falhar no meio.
+    writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().filter(c => c.id !== conta.id))
+    writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(p => p.conta_mensal_id !== conta.id))
   }
-  const pendentes = pagamentos.filter(p => mapa.has(p.conta_mensal_id))
-  if (pendentes.length) await supabaseRequest('pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(pendentes.map(p => ({ conta_mensal_id: mapa.get(p.conta_mensal_id), valor: p.valor, data_pagamento: p.data_pagamento }))) })
-  if (typeof window !== 'undefined') { window.localStorage.removeItem(LOCAL_ACCOUNTS_KEY); window.localStorage.removeItem(LOCAL_PAYMENTS_KEY) }
+  // Pagamentos soltos (de contas que não existem mais no navegador) não têm para onde ir.
+  if (typeof window !== 'undefined' && !localAccounts().length) window.localStorage.removeItem(LOCAL_PAYMENTS_KEY)
 }
 
 export const api = {
@@ -539,9 +563,20 @@ export const api = {
     return lanc
   },
 
-  salvarItensNF: async (lancamento_id: string, itens: ItemLancamento[]) => {
-    await supabaseRequest(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(lancamento_id)}&tipo=eq.nf`, { method: 'DELETE' })
-    if (itens.length) await supabaseRequest('itens_lancamento', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(itens.map(i => ({ lancamento_id, tipo: 'nf', nome: i.nome, quantidade: i.quantidade, unidade_medida: i.unidade_medida || 'Un', valor_unitario: i.valor_unitario || 0, valor_total: i.valor_total || 0 }))) })
+  // Lança ou edita a nota fiscal pelo servidor, que confere a permissão:
+  // depois de lançada, só a gestora pode alterar tipo, número, frete e itens.
+  salvarNota: async (lancamento_id: string, dados: { tipo_nf: 'produto' | 'servico'; nf_numero?: string; valor_frete?: number; arquivo_url?: string; itens: ItemLancamento[]; atualizar_valores?: boolean }) => {
+    const response = await fetch(`/api/notas/${encodeURIComponent(lancamento_id)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({
+        ...dados,
+        itens: dados.itens.map(i => ({ nome: i.nome, quantidade: i.quantidade, unidade_medida: i.unidade_medida || 'Un', valor_unitario: i.valor_unitario || 0, valor_total: i.valor_total || 0 })),
+      }),
+    })
+    if (!response.ok) throw new Error(await mensagemDeErro(response))
+    return parseJsonResponse<{ ok: boolean; editada: boolean }>(response)
   },
 
   atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {
@@ -706,27 +741,23 @@ export const api = {
     await supabaseRequest(`viagens?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  // Contas mensais: salvas no banco compartilhado. Se a tabela ainda não existir, cai para o navegador.
+  // Contas mensais: sempre no banco compartilhado. Antes, se a gravação falhasse, a conta
+  // ficava salva só no navegador de quem cadastrou e os outros usuários nunca a viam.
+  // Agora o erro aparece na tela e nada é gravado só no navegador.
   listarContasMensais: async (): Promise<ContaMensal[]> => {
-    try {
-      if (!migracaoContas) migracaoContas = migrarContasLocais().catch(error => { migracaoContas = null; throw error })
-      await migracaoContas
-      const remotas = await supabaseRequest<ContaMensal[]>('contas_mensais?order=titulo.asc')
-      return [...(remotas || []), ...localAccounts()]
-    } catch {
-      return localAccounts()
-    }
+    if (!migracaoContas) migracaoContas = migrarContasLocais().catch(error => { migracaoContas = null; throw error })
+    try { await migracaoContas } catch { /* tenta de novo na próxima atualização; as contas pendentes seguem visíveis abaixo */ }
+    const remotas = await supabaseRequest<ContaMensal[]>('contas_mensais?order=titulo.asc')
+    return [...(remotas || []), ...localAccounts()]
   },
 
+  // Quantas contas mensais ainda estão só neste navegador (não foram para o banco).
+  contasMensaisSoNesteNavegador: () => localAccounts().length,
+
   criarContaMensal: async (payload: Omit<ContaMensal, 'id' | 'criado_em'>) => {
-    try {
-      const result = await supabaseRequest<ContaMensal[]>('contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ titulo: payload.titulo, pago_por: payload.pago_por, dia_vencimento: payload.dia_vencimento, ativo: payload.ativo }) })
-      return result[0]
-    } catch {
-      const local = { ...payload, id: localId('conta'), criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_ACCOUNTS_KEY, [...localAccounts(), local])
-      return local
-    }
+    const result = await supabaseRequest<ContaMensal[]>('contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ titulo: payload.titulo, pago_por: payload.pago_por, dia_vencimento: payload.dia_vencimento, ativo: payload.ativo }) })
+    if (!result?.[0]) throw new Error('O banco não confirmou a gravação da conta mensal')
+    return result[0]
   },
 
   toggleContaMensal: async (id: string, ativo: boolean) => {
@@ -735,12 +766,8 @@ export const api = {
   },
 
   listarPagamentosMensais: async (): Promise<PagamentoContaMensal[]> => {
-    try {
-      const remotos = await supabaseRequest<PagamentoContaMensal[]>('pagamentos_contas_mensais?order=data_pagamento.desc')
-      return [...(remotos || []), ...localPayments()]
-    } catch {
-      return localPayments()
-    }
+    const remotos = await supabaseRequest<PagamentoContaMensal[]>('pagamentos_contas_mensais?order=data_pagamento.desc')
+    return [...(remotos || []), ...localPayments()]
   },
 
   listarPagamentosDaConta: async (contaId: string): Promise<PagamentoContaMensal[]> => {
@@ -750,9 +777,7 @@ export const api = {
 
   registrarPagamentoMensal: async (conta_mensal_id: string, valor: number, data_pagamento: string) => {
     if (isLocalId(conta_mensal_id)) {
-      const local = { id: localId('pagamento'), conta_mensal_id, valor, data_pagamento, criado_em: new Date().toISOString() }
-      writeLocal(LOCAL_PAYMENTS_KEY, [local, ...localPayments()])
-      return local
+      throw new Error('Esta conta mensal ainda está salva só neste computador e não foi enviada ao banco. Recarregue a página para enviá-la e tente de novo.')
     }
     const result = await supabaseRequest<PagamentoContaMensal[]>('pagamentos_contas_mensais', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ conta_mensal_id, valor, data_pagamento }) })
     return result[0]
