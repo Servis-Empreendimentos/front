@@ -165,6 +165,7 @@ export type ItemLancamento = {
   id?: string
   lancamento_id?: string
   tipo: 'orcamento' | 'nf'
+  nota_id?: string | null
   nome: string
   quantidade: number
   unidade_medida?: string | null
@@ -174,6 +175,22 @@ export type ItemLancamento = {
   data_entrega?: string | null
   criado_em?: string
 }
+
+// Nota fiscal de um orçamento. Um orçamento pode ter várias.
+export type NotaFiscal = {
+  id: string // 'legado' = nota antiga gravada só nos campos do lançamento
+  lancamento_id: string
+  numero?: string | null
+  tipo: 'produto' | 'servico'
+  arquivo_url?: string | null
+  valor_frete: number
+  valor_itens: number
+  valor_total: number
+  criado_por?: string | null
+  criado_em?: string
+}
+
+export type DadosNota = { tipo_nf: 'produto' | 'servico'; nf_numero?: string; valor_frete?: number; arquivo_url?: string; itens: ItemLancamento[]; atualizar_valores?: boolean }
 
 export type Lancamento = {
   id: string
@@ -213,6 +230,7 @@ export type Lancamento = {
   entrega_itens2?: string | null
   itens?: ItemLancamento[]
   parcelas?: Parcela[]
+  notas?: NotaFiscal[]
 }
 
 export type ContratoMedicao = {
@@ -478,13 +496,15 @@ export const api = {
   },
 
   buscar: async (id: string) => {
-    const [lancamentos, parcelas, itens] = await Promise.all([
+    const [lancamentos, parcelas, itens, notas] = await Promise.all([
       supabaseRequest<Lancamento[]>(`lancamentos?id=eq.${encodeURIComponent(id)}`),
       supabaseRequest<Parcela[]>(`parcelas?lancamento_id=eq.${encodeURIComponent(id)}&order=numero.asc`),
       supabaseRequest<ItemLancamento[]>(`itens_lancamento?lancamento_id=eq.${encodeURIComponent(id)}&order=tipo.asc,criado_em.asc`),
+      // Se a tabela de notas ainda não existir no banco, segue com a nota antiga do lançamento.
+      supabaseRequest<NotaFiscal[]>(`notas_fiscais?lancamento_id=eq.${encodeURIComponent(id)}&order=criado_em.asc`).catch(() => [] as NotaFiscal[]),
     ])
     if (!lancamentos[0]) throw new Error('Lançamento não encontrado no banco')
-    return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [] }
+    return { ...lancamentos[0], parcelas: parcelas || [], itens: itens || [], notas: notas || [] }
   },
 
   buscarAndamentoObra: async (id: string) => {
@@ -563,11 +583,16 @@ export const api = {
     return lanc
   },
 
-  // Lança ou edita a nota fiscal pelo servidor, que confere a permissão:
-  // depois de lançada, só a gestora pode alterar tipo, número, frete e itens.
-  salvarNota: async (lancamento_id: string, dados: { tipo_nf: 'produto' | 'servico'; nf_numero?: string; valor_frete?: number; arquivo_url?: string; itens: ItemLancamento[]; atualizar_valores?: boolean }) => {
-    const response = await fetch(`/api/notas/${encodeURIComponent(lancamento_id)}`, {
-      method: 'PUT',
+  // Resumo das notas de todos os orçamentos (para a lista e o filtro de tipo). Vazio se a tabela ainda não existir.
+  listarNotas: async (): Promise<NotaFiscal[]> =>
+    supabaseRequest<NotaFiscal[]>('notas_fiscais?select=id,lancamento_id,numero,tipo,arquivo_url,valor_total,criado_em&order=criado_em.asc').catch(() => []),
+
+  // Lança (notaId vazio) ou edita uma nota pelo servidor, que confere a permissão:
+  // lançar é para gestora e lançadora; editar e excluir uma nota já lançada, só a gestora.
+  salvarNota: async (lancamento_id: string, notaId: string | null, dados: DadosNota) => {
+    const url = `/api/notas/${encodeURIComponent(lancamento_id)}${notaId ? `?nota=${encodeURIComponent(notaId)}` : ''}`
+    const response = await fetch(url, {
+      method: notaId ? 'PUT' : 'POST',
       headers: { 'content-type': 'application/json' },
       cache: 'no-store',
       body: JSON.stringify({
@@ -576,7 +601,12 @@ export const api = {
       }),
     })
     if (!response.ok) throw new Error(await mensagemDeErro(response))
-    return parseJsonResponse<{ ok: boolean; editada: boolean }>(response)
+    return parseJsonResponse<{ ok: boolean; nota_id: string }>(response)
+  },
+
+  excluirNota: async (lancamento_id: string, notaId: string, atualizar_valores: boolean) => {
+    const response = await fetch(`/api/notas/${encodeURIComponent(lancamento_id)}?nota=${encodeURIComponent(notaId)}&atualizar_valores=${atualizar_valores}`, { method: 'DELETE', cache: 'no-store' })
+    if (!response.ok) throw new Error(await mensagemDeErro(response))
   },
 
   atualizarItem: async (id: string, body: Partial<ItemLancamento>) => {

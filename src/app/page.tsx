@@ -1,6 +1,6 @@
 'use client'
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
-import { api, Lancamento, ItemLancamento, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, Viagem, Role, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais, hojeISO, addDiasCorridos, addDiasUteis, parseMoeda, mascaraMoeda, moedaParaCampo, pipeIdx, isComprometido, saldoLancamento, valorPagoLancamento, SESSAO_EXPIRADA_EVENT } from '../services/api'
+import { api, Lancamento, ItemLancamento, NotaFiscal, ContaMensal, Fornecedor, Obra, Funcionario, HistoricoSalario, PagamentoFuncionario, PagamentoContaMensal, InventarioItem, ContratoMedicao, Viagem, Role, fmtR, fmtData, fmtCNPJ, mesLabel, PIPELINE, PIPELINE_LOCKED_FROM, PIPELINE_NF_FROM, filtrarFornecedoresReais, hojeISO, addDiasCorridos, addDiasUteis, parseMoeda, mascaraMoeda, moedaParaCampo, pipeIdx, isComprometido, saldoLancamento, valorPagoLancamento, SESSAO_EXPIRADA_EVENT } from '../services/api'
 import { s, ACCENT, ACCENT_LT, PIPE_COLORS } from '../lib/theme'
 import Icon from '../components/Icon'
 import Sidebar from '../components/Sidebar'
@@ -16,10 +16,20 @@ function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FRO
 function isNotaFiscal(lancamento: Lancamento) {
   return Boolean(lancamento.arquivo_url)
 }
-// A nota conta como lançada quando já tem arquivo, tipo ou itens de NF. Depois disso, só a gestora edita.
-function notaLancada(lancamento: Lancamento) {
-  return Boolean(lancamento.arquivo_url || lancamento.tipo_nf || lancamento.itens?.some(i=>i.tipo==='nf'))
+// Notas fiscais do orçamento. Um orçamento pode ter várias; editar ou excluir uma nota já lançada é só para a gestora.
+// Se a tabela de notas ainda não existir (ou o registro for antigo), a nota gravada no próprio lançamento aparece como uma só.
+function notasDoLancamento(l: Lancamento): NotaFiscal[] {
+  if (l.notas?.length) return l.notas
+  const itens=(l.itens||[]).filter(i=>i.tipo==='nf')
+  if (!l.arquivo_url && !l.tipo_nf && !itens.length) return []
+  const valor_itens=itens.reduce((t,i)=>t+(i.valor_total||0),0)
+  return [{id:'legado',lancamento_id:l.id,numero:l.nf_numero,tipo:l.tipo_nf==='servico'?'servico':'produto',arquivo_url:l.arquivo_url,valor_frete:0,valor_itens,valor_total:valor_itens}]
 }
+function itensDaNota(l: Lancamento, nota: NotaFiscal) {
+  const itens=(l.itens||[]).filter(i=>i.tipo==='nf')
+  return nota.id==='legado'?itens.filter(i=>!i.nota_id):itens.filter(i=>i.nota_id===nota.id)
+}
+const rotuloTipoNF=(tipo?:string|null)=>tipo==='servico'?'Serviço':tipo==='produto'?'Produto':'Não classificada'
 function ocultarDoUsuarioObra(lancamento: Lancamento) {
   const texto = `${lancamento.titulo || ''} ${lancamento.numero_orcamento || ''}`
     .normalize('NFD')
@@ -187,8 +197,12 @@ export default function Home() {
   const [nfNumeroTemp,setNfNumeroTemp]=useState('')
   const [rawFreteNF,setRawFreteNF]=useState('')
   const [tipoNfTemp,setTipoNfTemp]=useState<'produto'|'servico'>('produto')
-  const [nfEditando,setNfEditando]=useState(false)
-  const [nfAtualizarValores,setNfAtualizarValores]=useState(true)
+  // Nota em edição (null = lançando uma nota nova)
+  const [notaEditando,setNotaEditando]=useState<NotaFiscal|null>(null)
+  const nfEditando=notaEditando!==null
+  const [nfAtualizarValores,setNfAtualizarValores]=useState(false)
+  const [notasNF,setNotasNF]=useState<NotaFiscal[]>([])
+  const nfTrocaRef=useRef<HTMLInputElement>(null)
   const [fTipoNf,setFTipoNf]=useState('')
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
@@ -274,7 +288,7 @@ export default function Home() {
         setContasMensais([]);setCats([]);setFornecedores([]);setInventario([]);setPagamentosMensais([]);setFuncionarios([]);setPagamentosFuncionarios([]);setContratos([]);setViagens([])
         return
       }
-      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos,rViagens]=await Promise.allSettled([
+      const [rLista,rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos,rViagens,rNotas]=await Promise.allSettled([
         api.listar({status_processo:fPipe,recorrente:fRec,obra_id:fObra}),
         api.listarContasMensais(),
         api.categorias(),
@@ -286,6 +300,7 @@ export default function Home() {
         api.listarPagamentosFuncionarios(),
         api.listarContratosMedicao(),
         api.listarViagens(),
+        api.listarNotas(),
       ])
       if(rLista.status==='rejected') throw rLista.reason
       // Se uma tabela falhar, mantém o que já estava na tela em vez de apagar a lista
@@ -302,6 +317,7 @@ export default function Home() {
       aplicar(rPagamentosFuncionarios,setPagamentosFuncionarios)
       aplicar(rContratos,setContratos)
       aplicar(rViagens,setViagens)
+      aplicar(rNotas,setNotasNF)
       const falhas=[rMensais,rCategorias,rForns,rInventario,rPagMensais,rObras,rFuncionarios,rPagamentosFuncionarios,rContratos,rViagens].filter(r=>r.status==='rejected').length
       if(!silent&&falhas&&!avisoSincronia.current.falha){ avisoSincronia.current.falha=true; showToast('Parte dos dados compartilhados não carregou. Os números podem estar desatualizados; a tela tenta de novo sozinha.',false) }
       else if(!silent&&api.contasMensaisSoNesteNavegador()>0&&!avisoSincronia.current.local){ avisoSincronia.current.local=true; showToast('Há contas mensais salvas só neste computador que ainda não foram para o banco. Os outros usuários não as veem até o envio dar certo.',false) }
@@ -434,9 +450,8 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
 
   const handleAnexarNFComIA=async(file:File)=>{
     if(!detalhe) return
-    const editando=notaLancada(detalhe)
-    if(editando&&role!=='gestora') return showToast('Somente a gestora pode editar uma nota fiscal já lançada.',false)
-    setNfEditando(editando);setNfAtualizarValores(true)
+    // Anexar sempre lança uma nota nova; as que já existem continuam no orçamento.
+    setNotaEditando(null);setNfAtualizarValores(false)
     setNfFileTemp(file);setLoadingIANF(true)
     try {
       const dados=await lerDocIA(file,`Extraia os dados desta nota fiscal e retorne APENAS um JSON válido:
@@ -460,28 +475,34 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     } finally {setLoadingIANF(false)}
   }
 
-  // Abre a nota já lançada para edição (somente gestora): tipo, número, frete e itens.
-  const abrirEdicaoNF=()=>{
+  // Abre uma nota já lançada para edição (somente gestora): tipo, número, frete, itens e arquivo.
+  const abrirEdicaoNF=(nota:NotaFiscal)=>{
     if(!detalhe) return
     if(role!=='gestora') return showToast('Somente a gestora pode editar uma nota fiscal já lançada.',false)
-    const itens=(detalhe.itens||[]).filter(i=>i.tipo==='nf').map(i=>({nome:i.nome,quantidade:i.quantidade,unidade_medida:i.unidade_medida||'Un',valor_unitario:i.valor_unitario||0,valor_total:i.valor_total||0,tipo:'nf' as const}))
+    const itens=itensDaNota(detalhe,nota).map(i=>({nome:i.nome,quantidade:i.quantidade,unidade_medida:i.unidade_medida||'Un',valor_unitario:i.valor_unitario||0,valor_total:i.valor_total||0,tipo:'nf' as const}))
     setItensNFEditor(itens)
-    setNfNumeroTemp(detalhe.nf_numero||'')
-    setTipoNfTemp(detalhe.tipo_nf==='servico'?'servico':'produto')
-    setRawFreteNF(detalhe.valor_frete?fmtR(detalhe.valor_frete):'')
-    setNfFileTemp(null);setNfEditando(true);setNfAtualizarValores(true);setModalNFItens(true)
+    setNfNumeroTemp(nota.numero||'')
+    setTipoNfTemp(nota.tipo==='servico'?'servico':'produto')
+    setRawFreteNF(nota.valor_frete?fmtR(nota.valor_frete):'')
+    setNfFileTemp(null);setNotaEditando(nota);setNfAtualizarValores(true);setModalNFItens(true)
   }
 
-  // Prévia dos valores do lançamento caso a gestora leve os valores da nota para ele.
+  // Prévia dos valores do orçamento se a gestora levar para ele a soma de todas as notas.
   const previaValoresNF=()=>{
     if(!detalhe) return null
-    const produtos=itensNFEditor.reduce((t,i)=>t+(i.valor_total||0),0)
-    const frete=parseMoeda(rawFreteNF)
+    const outras=notasDoLancamento(detalhe).filter(n=>n.id!==notaEditando?.id)
+    const produtos=outras.reduce((t,n)=>t+(n.valor_itens||0),0)+itensNFEditor.reduce((t,i)=>t+(i.valor_total||0),0)
+    const frete=outras.reduce((t,n)=>t+(n.valor_frete||0),0)+parseMoeda(rawFreteNF)
     const desconto=detalhe.tem_desconto?(detalhe.valor_desconto||0):0
     const total=Math.round((produtos+frete-desconto)*100)/100
     const pago=valorPagoLancamento(detalhe)
     const saldo=Math.max(0,Math.round((total-pago)*100)/100)
-    return {produtos,frete,desconto,total,pago,saldo}
+    return {produtos,frete,desconto,total,pago,saldo,qtdNotas:outras.length+1}
+  }
+
+  const recarregarDetalhe=async(id:string)=>{
+    const d=role==='entregador'?await api.buscarAndamentoObra(id):await api.buscar(id)
+    setDetalhe(d)
   }
 
   const handleSalvarNF=async()=>{
@@ -489,29 +510,43 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
     if(!nfFileTemp&&!nfEditando) return
     if(itensNFEditor.some(i=>!i.nome?.trim()||!(i.quantidade>0))) return showToast('Preencha a descrição e a quantidade de todos os itens.',false)
     const previa=previaValoresNF()
-    const atualizar=nfEditando&&nfAtualizarValores
+    const atualizar=role==='gestora'&&nfAtualizarValores
     if(atualizar&&previa){
-      if(previa.desconto>0&&previa.desconto>=previa.produtos+previa.frete) return showToast('O desconto do lançamento é maior que o novo valor da nota. Remova o desconto antes.',false)
-      if(detalhe.pago&&previa.saldo>0&&!confirm(`Este lançamento está quitado. Com o novo valor (${fmtR(previa.total)}), ficará um saldo devedor de ${fmtR(previa.saldo)}. Deseja continuar?`)) return
+      if(previa.desconto>0&&previa.desconto>=previa.produtos+previa.frete) return showToast('O desconto do orçamento é maior que o valor das notas. Remova o desconto antes.',false)
+      if(detalhe.pago&&previa.saldo>0&&!confirm(`Este orçamento está quitado. Com o novo valor (${fmtR(previa.total)}), ficará um saldo devedor de ${fmtR(previa.saldo)}. Deseja continuar?`)) return
     }
     setLoadingAnexo(true)
     try {
       const arquivo_url=nfFileTemp?await api.uploadArquivo(nfFileTemp):undefined
-      const vFreteNF=parseMoeda(rawFreteNF)
-      const res=await api.salvarNota(detalhe.id,{
+      await api.salvarNota(detalhe.id,notaEditando?.id||null,{
         tipo_nf:tipoNfTemp,
         nf_numero:nfNumeroTemp||'',
-        // No primeiro lançamento mantém o comportamento anterior: sem frete na NF, fica o do orçamento.
-        valor_frete:nfEditando?vFreteNF:(vFreteNF||detalhe.valor_frete||0),
+        valor_frete:parseMoeda(rawFreteNF),
         arquivo_url,
         itens:itensNFEditor,
         atualizar_valores:atualizar,
       })
-      const d=await api.buscar(detalhe.id);setDetalhe(d)
-      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('');setNfEditando(false)
-      if(res?.editada){ load(); showToast(atualizar?'Nota atualizada. Os valores do lançamento foram recalculados.':'Nota atualizada!') }
-      else { setModal(false);setAba('notas-fiscais');load();showToast('NF e itens salvos!') }
+      await recarregarDetalhe(detalhe.id)
+      const editou=nfEditando
+      setModalNFItens(false);setNfFileTemp(null);setItensNFEditor([]);setNfNumeroTemp('');setRawFreteNF('');setNotaEditando(null)
+      load()
+      if(editou) showToast(atualizar?'Nota atualizada. Os valores do orçamento foram recalculados.':'Nota atualizada!')
+      else showToast(atualizar?'Nota lançada. Os valores do orçamento foram recalculados.':'Nota fiscal lançada!')
     } catch (err:any) {showToast('Erro ao salvar NF: '+(err?.message||''),false)}
+    finally {setLoadingAnexo(false)}
+  }
+
+  const handleExcluirNota=async(nota:NotaFiscal)=>{
+    if(!detalhe||role!=='gestora') return
+    if(!confirm(`Excluir a nota fiscal${nota.numero?` ${nota.numero}`:''} deste orçamento? Os itens dela também serão apagados.`)) return
+    const restantes=notasDoLancamento(detalhe).length-1
+    const atualizar=restantes>0&&confirm('Recalcular os valores do orçamento com as notas que ficaram? (Cancelar mantém os valores atuais.)')
+    setLoadingAnexo(true)
+    try {
+      await api.excluirNota(detalhe.id,nota.id,atualizar)
+      await recarregarDetalhe(detalhe.id);load()
+      showToast('Nota fiscal excluída.')
+    } catch (err:any) {showToast('Erro ao excluir NF: '+(err?.message||''),false)}
     finally {setLoadingAnexo(false)}
   }
 
@@ -1117,6 +1152,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     {toast&&<Toast msg={toast.msg} ok={toast.ok} onClose={()=>setToast(null)}/>}
   </>
 
+  // Tipos das notas de cada orçamento (um orçamento pode ter nota de produto e de serviço).
+  const tiposNFPorLanc=notasNF.reduce<Record<string,string[]>>((m,n)=>{ (m[n.lancamento_id]=m[n.lancamento_id]||[]); if(!m[n.lancamento_id].includes(n.tipo)) m[n.lancamento_id].push(n.tipo); return m },{})
+  const qtdNotasPorLanc=notasNF.reduce<Record<string,number>>((m,n)=>{ m[n.lancamento_id]=(m[n.lancamento_id]||0)+1; return m },{})
+  const tiposNFDe=(l:Lancamento)=>tiposNFPorLanc[l.id]||(l.tipo_nf?[l.tipo_nf]:[])
   const filtered=data.filter(l=>{
     if(search) {
       const q=search.toLowerCase()
@@ -1125,7 +1164,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     }
     if(fDataIni && l.data < fDataIni) return false
     if(fDataFim && l.data > fDataFim) return false
-    if(aba==='notas-fiscais' && fTipoNf && l.tipo_nf !== fTipoNf) return false
+    if(aba==='notas-fiscais' && fTipoNf && !tiposNFDe(l).includes(fTipoNf)) return false
     return true
   })
   // Mais recentes em cima: pela data do lançamento e, no mesmo dia, pelo horário em que foi criado.
@@ -1745,8 +1784,8 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                             <td className="budget-cell budget-cell-muted budget-cell-nowrap">{fmtData(l.data)}</td>
                             <td className="budget-cell budget-cell-money">{fmtR(l.valor_total)}</td>
                             <td className="budget-cell budget-cell-money">{saldo>0?fmtR(saldo):<span className="budget-empty">{isComprometido(l)?'Quitado':'Em negociação'}</span>}</td>
-                            <td className="budget-cell">{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="budget-nf-ok"><Icon name="receipt" size={14}/> {l.nf_numero?`NF ${l.nf_numero}`:'Anexada'}</a>:<span className="budget-nf-pending">Pendente anexar</span>}</td>
-                            {aba==='notas-fiscais'&&<td className="budget-cell budget-cell-muted">{l.tipo_nf==='servico'?'Serviço':l.tipo_nf==='produto'?'Produto':'Não classificada'}</td>}
+                            <td className="budget-cell">{l.arquivo_url?<a href={l.arquivo_url} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} className="budget-nf-ok"><Icon name="receipt" size={14}/> {(qtdNotasPorLanc[l.id]||0)>1?`${qtdNotasPorLanc[l.id]} notas${l.nf_numero?` (${l.nf_numero})`:''}`:l.nf_numero?`NF ${l.nf_numero}`:'Anexada'}</a>:<span className="budget-nf-pending">Pendente anexar</span>}</td>
+                            {aba==='notas-fiscais'&&<td className="budget-cell budget-cell-muted">{tiposNFDe(l).length?tiposNFDe(l).map(rotuloTipoNF).join(' + '):'Não classificada'}</td>}
                           </tr>
                         )
                       })}
@@ -1833,7 +1872,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                         {loadingIANF?(
                           <p style={{fontSize:12,color:ACCENT_LT,fontWeight:600}}>Lendo NF com IA...</p>
                         ):(
-                          <AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="receipt" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>
+                          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' as const}}>
+                            {detalhe.arquivo_url?<a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:ACCENT_LT,textDecoration:'none',fontWeight:600}}><Icon name="receipt" size={15}/> Ver última nota</a>:<span style={{fontSize:12,color:'#7D7D7D'}}>Sem nota fiscal anexada</span>}
+                            <button onClick={()=>nfDetRef.current?.click()} disabled={loadingAnexo} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingAnexo?0.6:1}}><Icon name="receipt" size={14} color="#fff"/> {loadingAnexo?'Enviando...':detalhe.arquivo_url?'Anexar outra nota':'Anexar nota fiscal'}</button>
+                          </div>
                         )}
                       </div>
                     </>
@@ -2012,22 +2054,39 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                   {canAttachNF(detalhe.status_processo)?(
                     <>
                       <input ref={nfDetRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)handleAnexarNFComIA(f)}}/>
-                      {loadingIANF?<p style={{fontSize:12,color:ACCENT_LT,fontWeight:600}}>Lendo NF com IA...</p>
-                      :notaLancada(detalhe)?(
-                        <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' as const}}>
-                          {detalhe.arquivo_url&&<a href={detalhe.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:13,color:ACCENT_LT,textDecoration:'none',fontWeight:600}}><Icon name="receipt" size={15}/> Ver nota fiscal</a>}
-                          <span style={{fontSize:12,color:'#7D7D7D'}}>{detalhe.nf_numero?`NF ${detalhe.nf_numero} · `:''}{detalhe.tipo_nf==='servico'?'Serviço':detalhe.tipo_nf==='produto'?'Produto':'Não classificada'}</span>
-                          {role==='gestora'?(
-                            <span style={{display:'inline-flex',gap:8,marginLeft:'auto'}}>
-                              <button onClick={abrirEdicaoNF} disabled={loadingAnexo} style={{...s.btnTeal,padding:'5px 12px',fontSize:12}}><Icon name="edit" size={13} color="#fff"/> Editar nota</button>
-                              <button onClick={()=>nfDetRef.current?.click()} disabled={loadingAnexo} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>{loadingAnexo?'Enviando...':'Substituir arquivo'}</button>
-                            </span>
-                          ):(
-                            <span style={{fontSize:11,color:'#969696',marginLeft:'auto'}}>Somente a gestora pode editar a nota</span>
-                          )}
-                        </div>
-                      )
-                      :<AnexoBtn url={detalhe.arquivo_url} label="nota fiscal" icon="receipt" onAnexar={()=>nfDetRef.current?.click()} onSubstituir={()=>nfDetRef.current?.click()} loading={loadingAnexo}/>}
+                      {(()=>{
+                        const notas=notasDoLancamento(detalhe)
+                        return (
+                          <>
+                            {notas.length>0&&(
+                              <div style={{border:'1px solid #E2E6E4',borderRadius:8,overflow:'hidden',marginBottom:10}}>
+                                {notas.map((nota,idx)=>(
+                                  <div key={nota.id} style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' as const,padding:'9px 12px',borderTop:idx?'1px solid #E2E6E4':'none'}}>
+                                    <div style={{minWidth:0,flex:'1 1 200px'}}>
+                                      <p style={{margin:0,fontSize:13,fontWeight:600,color:'#626262'}}>{nota.numero?`NF ${nota.numero}`:`Nota ${idx+1}`} · {rotuloTipoNF(nota.tipo)}</p>
+                                      <p style={{margin:'2px 0 0',fontSize:11,color:'#7D7D7D'}}>{itensDaNota(detalhe,nota).length} ite{itensDaNota(detalhe,nota).length===1?'m':'ns'} · {fmtR(nota.valor_total||0)}{nota.valor_frete?` (frete ${fmtR(nota.valor_frete)})`:''}{nota.criado_por?` · lançada por ${nota.criado_por}`:''}</p>
+                                    </div>
+                                    {nota.arquivo_url&&<a href={nota.arquivo_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,color:ACCENT_LT,textDecoration:'none',fontWeight:600}}><Icon name="receipt" size={14}/> Ver arquivo</a>}
+                                    {role==='gestora'&&(
+                                      <span style={{display:'inline-flex',gap:6}}>
+                                        <button onClick={()=>abrirEdicaoNF(nota)} disabled={loadingAnexo} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}><Icon name="edit" size={12}/> Editar</button>
+                                        <button onClick={()=>handleExcluirNota(nota)} disabled={loadingAnexo} style={{...s.btnRed,padding:'3px 10px',fontSize:11}}><Icon name="trash" size={12}/> Excluir</button>
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {loadingIANF?<p style={{fontSize:12,color:ACCENT_LT,fontWeight:600}}>Lendo NF com IA...</p>:(
+                              <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap' as const}}>
+                                {notas.length===0&&<span style={{fontSize:12,color:'#7D7D7D'}}>Sem nota fiscal anexada</span>}
+                                <button onClick={()=>nfDetRef.current?.click()} disabled={loadingAnexo} style={{...s.btnTeal,padding:'6px 14px',fontSize:12,opacity:loadingAnexo?0.6:1}}><Icon name={notas.length?'plus':'receipt'} size={14} color="#fff"/> {loadingAnexo?'Enviando...':notas.length?'Lançar outra nota':'Anexar nota fiscal'}</button>
+                                {notas.length>0&&role!=='gestora'&&<span style={{fontSize:11,color:'#969696',marginLeft:'auto'}}>Somente a gestora pode editar ou excluir uma nota</span>}
+                              </div>
+                            )}
+                          </>
+                        )
+                      })()}
                     </>
                   ):(
                     <p style={{fontSize:12,color:'#7D7D7D',margin:0}}>Disponível após <strong>Mercadoria recebida</strong></p>
@@ -2264,11 +2323,18 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setModalNFItens(false)}>
           <div style={{...s.modal,width:700}}>
             <div style={s.mhdr}>
-              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="receipt" size={16}/>{nfEditando?'Editar Nota Fiscal':'Itens da Nota Fiscal'}</h3>
+              <h3 style={{fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}><Icon name="receipt" size={16}/>{nfEditando?'Editar Nota Fiscal':(detalhe&&notasDoLancamento(detalhe).length?'Nova Nota Fiscal neste orçamento':'Itens da Nota Fiscal')}</h3>
               <button onClick={()=>setModalNFItens(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
             <div style={{padding:'1.25rem 1.5rem'}}>
-              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>{nfEditando&&!nfFileTemp?'Altere o tipo, o número, o frete e os itens da nota já lançada.':'Revise os itens extraídos pela IA antes de salvar. Se a IA não conseguir ler algum campo, preencha manualmente.'}</p>
+              <p style={{fontSize:12,color:'#7D7D7D',marginBottom:16}}>{nfEditando?'Altere o tipo, o número, o frete, os itens ou o arquivo desta nota.':'Revise os itens extraídos pela IA antes de salvar. Se a IA não conseguir ler algum campo, preencha manualmente.'}</p>
+              {nfEditando&&(
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap' as const,marginBottom:14,fontSize:12,color:'#7D7D7D'}}>
+                  <input ref={nfTrocaRef} type="file" accept="application/pdf,image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];if(f)setNfFileTemp(f)}}/>
+                  <span>Arquivo: {nfFileTemp?<strong>{nfFileTemp.name} (novo)</strong>:notaEditando?.arquivo_url?<a href={notaEditando.arquivo_url} target="_blank" rel="noopener noreferrer" style={{color:ACCENT_LT,fontWeight:600}}>ver atual</a>:'nenhum'}</span>
+                  <button onClick={()=>nfTrocaRef.current?.click()} style={{...s.btnOut,padding:'3px 10px',fontSize:11}}>Trocar arquivo</button>
+                </div>
+              )}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:16}}>
                 <div>
                   <label style={s.lb}>Número da NF</label>
@@ -2289,14 +2355,14 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                 </div>
               </div>
               <ItensEditor itens={itensNFEditor} onChange={setItensNFEditor}/>
-              {nfEditando&&detalhe&&(()=>{
+              {role==='gestora'&&detalhe&&(()=>{
                 const p=previaValoresNF()
                 if(!p) return null
                 return (
                   <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,padding:'12px 14px',marginTop:16,background:'#FAFBFA'}}>
                     <label style={{display:'flex',alignItems:'flex-start',gap:8,fontSize:13,color:'#626262',cursor:'pointer'}}>
                       <input type="checkbox" checked={nfAtualizarValores} onChange={e=>setNfAtualizarValores(e.target.checked)} style={{marginTop:2}}/>
-                      <span><strong>Atualizar os valores do lançamento com os desta nota</strong><br/><span style={{fontSize:11,color:'#7D7D7D'}}>Valor dos itens, frete, total e saldo devedor passam a ser os da nota. Pagamentos já feitos são mantidos.</span></span>
+                      <span><strong>{p.qtdNotas>1?`Atualizar os valores do orçamento com a soma das ${p.qtdNotas} notas`:'Atualizar os valores do orçamento com os desta nota'}</strong><br/><span style={{fontSize:11,color:'#7D7D7D'}}>Valor dos itens, frete, total e saldo devedor passam a ser os das notas. Pagamentos já feitos são mantidos.</span></span>
                     </label>
                     {nfAtualizarValores&&(
                       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:10,marginTop:12,fontSize:12}}>
@@ -2313,7 +2379,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
             </div>
             <div style={s.mfoot}>
               <button onClick={()=>setModalNFItens(false)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Cancelar</button>
-              <button onClick={handleSalvarNF} disabled={loadingAnexo} style={{...s.btnTeal,opacity:loadingAnexo?0.6:1}}>{loadingAnexo?'Salvando...':nfEditando?'Salvar alterações':'Salvar NF e itens'}</button>
+              <button onClick={handleSalvarNF} disabled={loadingAnexo} style={{...s.btnTeal,opacity:loadingAnexo?0.6:1}}>{loadingAnexo?'Salvando...':nfEditando?'Salvar alterações':'Lançar nota'}</button>
             </div>
           </div>
         </div>

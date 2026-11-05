@@ -20,6 +20,7 @@ const TABLES = new Set([
   'viagens',
   'contas_mensais',
   'pagamentos_contas_mensais',
+  'notas_fiscais',
 ])
 
 // Campos da nota fiscal só podem ser gravados pela rota /api/notas/[id], que confere se a nota
@@ -41,6 +42,7 @@ async function itemEhDeNota(path: string, url: string, key: string) {
 
 async function alteraNotaFiscal(path: string, method: string, body: ArrayBuffer | undefined, url: string, key: string) {
   const tabela = path.split('?')[0]
+  if (tabela === 'notas_fiscais') return true
   const json = body ? lerJson(body) : null
   const registros: any[] = Array.isArray(json) ? json : json ? [json] : []
   if (tabela === 'lancamentos' && (method === 'PATCH' || method === 'POST')) {
