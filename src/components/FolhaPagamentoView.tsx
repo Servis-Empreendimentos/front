@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { KPI, Badge } from './ui'
 import { api, Funcionario, PagamentoFuncionario, Obra, fmtData, fmtR } from '../services/api'
@@ -26,7 +27,18 @@ type Props = {
 
 const monthKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 const monthName = (date: Date) => date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 const shortMonthName = (date: Date) => `${date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')}/${String(date.getFullYear()).slice(2)}`
+
+const TIPO_LABEL: Record<PagamentoFuncionario['tipo'], string> = {
+  salario: 'Salário',
+  adiantamento: 'Adiantamento',
+  decimo_terceiro: '13º salário',
+  vale: 'Vale',
+  outro: 'Outro',
+}
+
+const TH = {padding:'9px 10px',fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase' as const,letterSpacing:'.08em',borderBottom:'1px solid #E2E6E4',whiteSpace:'nowrap' as const}
 
 function buildMonths() {
   return Array.from({ length: 12 }).map((_, index) => {
@@ -57,6 +69,16 @@ export default function FolhaPagamentoView({
   const mesAtual = monthKey(hoje)
   const mesAtualNome = monthName(hoje)
   const meses = buildMonths()
+  const [detalhe, setDetalhe] = useState<{ funcionario: Funcionario; key: string; label: string; date: string } | null>(null)
+  const [excluindo, setExcluindo] = useState<string | null>(null)
+  const [resumoTodos, setResumoTodos] = useState(false)
+
+  useEffect(() => {
+    if (!detalhe) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setDetalhe(null) } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [detalhe])
   const nomeObra = (obraId?: string | null) => obraId ? (obras.find(o => o.id === obraId)?.nome || '—') : 'Sem obra'
   const filtered = funcionarios.filter(f => {
     if (!searchFuncionario) return true
@@ -76,6 +98,51 @@ export default function FolhaPagamentoView({
   const totalPagoNoMes = (funcionarioId: string, key: string) => {
     const pagos = pagamentos.filter(p => p.funcionario_id === funcionarioId && p.data_pagamento.startsWith(key))
     return pagos.length ? pagos.reduce((total, p) => total + p.valor, 0) : null
+  }
+
+  type ResumoMes = { key: string; adiantamento: number; salario: number; decimo: number; outros: number; total: number; funcAdiant: Set<string>; funcSalario: Set<string> }
+  const resumoMap = new Map<string, ResumoMes>()
+  const novoResumo = (key: string): ResumoMes => ({ key, adiantamento: 0, salario: 0, decimo: 0, outros: 0, total: 0, funcAdiant: new Set(), funcSalario: new Set() })
+  meses.forEach(m => resumoMap.set(m.key, novoResumo(m.key)))
+  pagamentos.forEach(p => {
+    const key = (p.data_pagamento || '').slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(key)) return
+    const r = resumoMap.get(key) || novoResumo(key)
+    resumoMap.set(key, r)
+    if (p.tipo === 'adiantamento') { r.adiantamento += p.valor; r.funcAdiant.add(p.funcionario_id) }
+    else if (p.tipo === 'salario') { r.salario += p.valor; r.funcSalario.add(p.funcionario_id) }
+    else if (p.tipo === 'decimo_terceiro') r.decimo += p.valor
+    else r.outros += p.valor
+    r.total += p.valor
+  })
+  const resumoMeses = Array.from(resumoMap.values()).sort((a, b) => b.key.localeCompare(a.key))
+  const resumoVisivel = resumoTodos ? resumoMeses : resumoMeses.slice(0, 12)
+  const temDecimo = resumoMeses.some(r => r.decimo > 0)
+  const temOutros = resumoMeses.some(r => r.outros > 0)
+  const mesesLancados = resumoMeses.filter(r => r.total > 0).length
+  const labelMes = (key: string) => { const [y, m] = key.split('-').map(Number); return cap(monthName(new Date(y, m - 1, 1))) }
+
+  const pagamentosDetalhe = detalhe
+    ? pagamentos.filter(p => p.funcionario_id === detalhe.funcionario.id && p.data_pagamento.startsWith(detalhe.key)).sort((a, b) => a.data_pagamento.localeCompare(b.data_pagamento))
+    : []
+  const totalDetalhe = pagamentosDetalhe.reduce((total, p) => total + p.valor, 0)
+  const porTipoDetalhe = Object.entries(pagamentosDetalhe.reduce<Record<string, number>>((acc, p) => { acc[p.tipo] = (acc[p.tipo] || 0) + p.valor; return acc }, {}))
+  const ultimoAntesDetalhe = detalhe
+    ? pagamentos.filter(p => p.funcionario_id === detalhe.funcionario.id && p.data_pagamento < `${detalhe.key}-01`).reduce<PagamentoFuncionario | undefined>((ultimo, p) => !ultimo || p.data_pagamento > ultimo.data_pagamento ? p : ultimo, undefined)
+    : undefined
+
+  const excluirPagamento = async (p: PagamentoFuncionario) => {
+    if (!confirm(`Excluir o pagamento de ${fmtR(p.valor)} (${TIPO_LABEL[p.tipo] || p.tipo}) de ${fmtData(p.data_pagamento)}?`)) return
+    setExcluindo(p.id)
+    try {
+      await api.excluirPagamentoFuncionario(p.id)
+      notify('Pagamento excluído!')
+      onAtualizar()
+    } catch (err: any) {
+      notify('Erro ao excluir: ' + (err?.message || 'tente novamente'), false)
+    } finally {
+      setExcluindo(null)
+    }
   }
 
   const statusFuncionario = (f: Funcionario) => {
@@ -105,6 +172,41 @@ export default function FolhaPagamentoView({
         <KPI l="Folha mensal" v={fmtR(totalFolhaMes)} sv={mesAtualNome} c="#748F84"/>
         <KPI l="13º salário" v={fmtR(totalDecimoTerceiroMes)} sv={mesAtualNome} c="#8BA59A"/>
         <KPI l="Sem pagamento este mês" v={semPagamentoNoMes} sv="ainda pendente" c="#748F84"/>
+      </div>
+
+      <div style={{...s.card,marginBottom:'1.35rem'}}>
+        <div style={{...s.toolbar,justifyContent:'space-between'}}>
+          <div>
+            <p style={{fontSize:12,fontWeight:800,color:'#626262',margin:0}}>Resumo por mês</p>
+            <p style={{fontSize:11,color:'#969696',margin:'3px 0 0'}}>Valores somados pela data de pagamento · {mesesLancados} {mesesLancados === 1 ? 'mês lançado' : 'meses lançados'}</p>
+          </div>
+          {resumoMeses.length > 12 && <button onClick={()=>setResumoTodos(v=>!v)} style={{...s.btnOut,padding:'.4rem .75rem',fontSize:11}}>{resumoTodos ? 'Mostrar últimos 12 meses' : `Mostrar todos (${resumoMeses.length})`}</button>}
+        </div>
+        <div style={{overflowX:'auto',padding:'0 1.2rem 1.1rem'}}>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:560}}>
+            <thead><tr>
+              <th style={{...TH,textAlign:'left'}}>Mês</th>
+              <th style={{...TH,textAlign:'right'}}>Adiantamento</th>
+              <th style={{...TH,textAlign:'right'}}>Folha mensal</th>
+              {temDecimo && <th style={{...TH,textAlign:'right'}}>13º salário</th>}
+              {temOutros && <th style={{...TH,textAlign:'right'}}>Vales e outros</th>}
+              <th style={{...TH,textAlign:'right'}}>Total do mês</th>
+            </tr></thead>
+            <tbody>{resumoVisivel.map(r=>{
+              const vazio = (v: number, n?: number) => v > 0
+                ? <><span style={{fontWeight:800,color:'#626262'}}>{fmtR(v)}</span>{n !== undefined && <span style={{display:'block',fontSize:10,color:'#969696',marginTop:2}}>{n} funcionário{n !== 1 ? 's' : ''}</span>}</>
+                : <span style={{fontSize:11,color:'#C4CECA',fontWeight:700}}>Não lançado</span>
+              return <tr key={r.key} style={{borderBottom:'1px solid #EEF1EF',background:r.key===mesAtual?'#F6F8F7':undefined}}>
+                <td style={{padding:'9px 10px',fontWeight:800,color:'#626262',whiteSpace:'nowrap'}}>{labelMes(r.key)}{r.key===mesAtual && <span style={{fontSize:10,fontWeight:700,color:ACCENT_LT,textTransform:'none',marginLeft:6}}>mês atual</span>}</td>
+                <td style={{padding:'9px 10px',textAlign:'right'}}>{vazio(r.adiantamento, r.funcAdiant.size)}</td>
+                <td style={{padding:'9px 10px',textAlign:'right'}}>{vazio(r.salario, r.funcSalario.size)}</td>
+                {temDecimo && <td style={{padding:'9px 10px',textAlign:'right',color:r.decimo?'#626262':'#C4CECA',fontWeight:r.decimo?800:700}}>{r.decimo ? fmtR(r.decimo) : '—'}</td>}
+                {temOutros && <td style={{padding:'9px 10px',textAlign:'right',color:r.outros?'#626262':'#C4CECA',fontWeight:r.outros?800:700}}>{r.outros ? fmtR(r.outros) : '—'}</td>}
+                <td style={{padding:'9px 10px',textAlign:'right',fontWeight:800,color:r.total?ACCENT_LT:'#C4CECA'}}>{r.total ? fmtR(r.total) : '—'}</td>
+              </tr>
+            })}</tbody>
+          </table>
+        </div>
       </div>
 
       <div style={s.card}>
@@ -164,7 +266,7 @@ export default function FolhaPagamentoView({
           </div>
         ) : (
           <div style={{padding:'1.1rem 1.2rem 1.35rem'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,fontSize:11,color:'#7D7D7D'}}><span style={{width:9,height:9,borderRadius:3,background:'#E8F0EB'}}/> Pago <span style={{width:9,height:9,borderRadius:3,background:'#F1F4F2',marginLeft:6}}/> Pendente <span style={{marginLeft:'auto'}}>Clique em uma célula pendente para registrar</span></div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,fontSize:11,color:'#7D7D7D'}}><span style={{width:9,height:9,borderRadius:3,background:'#E8F0EB'}}/> Pago <span style={{width:9,height:9,borderRadius:3,background:'#F1F4F2',marginLeft:6}}/> Pendente <span style={{marginLeft:'auto'}}>Clique em um mês para ver os detalhes</span></div>
             {filtered.length === 0 ? <p style={{textAlign:'center',padding:'2.5rem',color:'#969696',fontSize:13}}>Nenhum funcionário encontrado.</p> : (
               <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:830}}>
@@ -178,7 +280,7 @@ export default function FolhaPagamentoView({
                       const valor = totalPagoNoMes(f.id, m.key)
                       const pago = valor !== null
                       const date = `${m.year}-${String(m.month).padStart(2,'0')}-05`
-                      return <td key={m.key} style={{padding:'5px 3px',textAlign:'center'}}><button onClick={()=>{if(!pago && f.ativo) onPagar(f,date)}} disabled={!f.ativo || pago} title={pago ? `Pago: ${fmtR(valor!)}` : f.ativo ? 'Registrar pagamento' : 'Funcionário inativo'} style={{width:'100%',minWidth:58,padding:'7px 3px',borderRadius:8,border:'none',cursor:pago||!f.ativo?'default':'pointer',background:pago?'#E8F0EB':'#F1F4F2',color:pago?ACCENT_LT:'#C4CECA',fontSize:10,fontWeight:800,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}><Icon name={pago?'check':'x'} size={11} color={pago?ACCENT_LT:'#C4CECA'}/>{pago ? fmtR(valor!).replace('R$','') : 'Pagar'}</button></td>
+                      return <td key={m.key} style={{padding:'5px 3px',textAlign:'center'}}><button onClick={()=>setDetalhe({funcionario:f,key:m.key,label:cap(monthName(new Date(m.year,m.month-1,1))),date})} title={pago ? `Pago: ${fmtR(valor!)} · clique para ver os detalhes` : f.ativo ? 'Sem pagamento · clique para ver' : 'Funcionário inativo · clique para ver'} style={{width:'100%',minWidth:58,padding:'7px 3px',borderRadius:8,border:'none',cursor:'pointer',fontFamily:'inherit',background:pago?'#E8F0EB':'#F1F4F2',color:pago?ACCENT_LT:'#C4CECA',fontSize:10,fontWeight:800,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}><Icon name={pago?'check':'x'} size={11} color={pago?ACCENT_LT:'#C4CECA'}/>{pago ? fmtR(valor!).replace('R$','') : 'Pagar'}</button></td>
                     })}
                   </tr>)}</tbody>
                 </table>
@@ -187,6 +289,69 @@ export default function FolhaPagamentoView({
           </div>
         )}
       </div>
+
+      {detalhe && (
+        <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setDetalhe(null)}>
+          <div role="dialog" aria-modal="true" aria-label={`Pagamentos de ${detalhe.funcionario.nome} em ${detalhe.label}`} style={{...s.modal,width:520}}>
+            <div style={s.mhdr}>
+              <div style={{minWidth:0}}>
+                <h3 style={{fontSize:15,fontWeight:700,margin:0}}>{detalhe.funcionario.nome}</h3>
+                <p style={{fontSize:12,color:'#7D7D7D',margin:'3px 0 0'}}>{detalhe.label} · {nomeObra(detalhe.funcionario.obra_id)}{detalhe.funcionario.cargo ? ` · ${detalhe.funcionario.cargo}` : ''}</p>
+              </div>
+              <button aria-label="Fechar" onClick={()=>setDetalhe(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginBottom:16}}>
+                <div style={{border:'1px solid #E2E6E4',borderRadius:10,padding:'10px 12px',background:pagamentosDetalhe.length?'#E8F0EB':'#F6F8F7'}}>
+                  <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Pago no mês</p>
+                  <p style={{fontSize:17,fontWeight:800,color:pagamentosDetalhe.length?ACCENT_LT:'#969696',margin:'4px 0 0'}}>{fmtR(totalDetalhe)}</p>
+                </div>
+                <div style={{border:'1px solid #E2E6E4',borderRadius:10,padding:'10px 12px'}}>
+                  <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Salário base atual</p>
+                  <p style={{fontSize:17,fontWeight:800,color:'#626262',margin:'4px 0 0'}}>{fmtR(detalhe.funcionario.salario_base)}</p>
+                </div>
+              </div>
+
+              {pagamentosDetalhe.length === 0 ? (
+                <div style={{textAlign:'center',padding:'1.4rem 0 .6rem'}}>
+                  <p style={{fontSize:13,fontWeight:700,color:'#626262',margin:0}}>Nenhum pagamento registrado neste mês.</p>
+                  <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>{ultimoAntesDetalhe ? `Pagamento anterior: ${fmtR(ultimoAntesDetalhe.valor)} (${TIPO_LABEL[ultimoAntesDetalhe.tipo] || ultimoAntesDetalhe.tipo}) em ${fmtData(ultimoAntesDetalhe.data_pagamento)}.` : 'Não há pagamentos anteriores a este mês.'}</p>
+                  {!detalhe.funcionario.ativo && <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>Funcionário inativo.</p>}
+                </div>
+              ) : (
+                <>
+                  <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
+                    {pagamentosDetalhe.map(p=>(
+                      <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
+                        <div>
+                          <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)} <span style={{fontSize:11,fontWeight:600,color:'#7D7D7D'}}>· {TIPO_LABEL[p.tipo] || p.tipo}</span></p>
+                          <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
+                        </div>
+                        <button aria-label="Excluir pagamento" title="Excluir pagamento" disabled={excluindo===p.id} onClick={()=>excluirPagamento(p)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777',opacity:excluindo===p.id?0.5:1}}>
+                          <Icon name="trash" size={15}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {porTipoDetalhe.length > 1 && (
+                    <div style={{display:'flex',flexWrap:'wrap',gap:'6px 14px',marginTop:10,fontSize:11,color:'#7D7D7D'}}>
+                      {porTipoDetalhe.map(([tipo, valor])=><span key={tipo}>{TIPO_LABEL[tipo as PagamentoFuncionario['tipo']] || tipo}: <strong style={{color:'#626262'}}>{fmtR(valor)}</strong></span>)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            <div style={s.mfoot}>
+              <button onClick={()=>{const f=detalhe.funcionario;setDetalhe(null);onHistorico(f)}} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}><Icon name="receipt" size={13}/> Histórico completo</button>
+              {detalhe.funcionario.ativo && (
+                <button onClick={()=>{const {funcionario,date}=detalhe;setDetalhe(null);onPagar(funcionario,date)}} style={s.btnGrn}>
+                  <Icon name="dollar" size={13} color="#fff"/> {pagamentosDetalhe.length ? 'Lançar outro pagamento' : 'Registrar pagamento'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
