@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Icon from './Icon'
 import { KPI, Badge } from './ui'
-import { api, Funcionario, PagamentoFuncionario, Obra, fmtData, fmtR } from '../services/api'
+import { api, Funcionario, PagamentoFuncionario, Obra, fmtData, fmtR, mascaraMoeda, parseMoeda, moedaParaCampo } from '../services/api'
 import { ACCENT, ACCENT_LT, s } from '../lib/theme'
 
 type FolhaView = 'lista' | 'grade'
@@ -69,16 +69,25 @@ export default function FolhaPagamentoView({
   const mesAtual = monthKey(hoje)
   const mesAtualNome = monthName(hoje)
   const meses = buildMonths()
-  const [detalhe, setDetalhe] = useState<{ funcionario: Funcionario; key: string; label: string; date: string } | null>(null)
+  const [detalhe, setDetalhe] = useState<{ funcionario: Funcionario | null; key: string; label: string; date: string } | null>(null)
   const [excluindo, setExcluindo] = useState<string | null>(null)
+  const [editando, setEditando] = useState<{ id: string; valor: string; tipo: PagamentoFuncionario['tipo']; data: string } | null>(null)
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false)
   const [resumoTodos, setResumoTodos] = useState(false)
 
+  useEffect(() => { setEditando(null) }, [detalhe])
   useEffect(() => {
     if (!detalhe) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setDetalhe(null) } }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      if (editando) setEditando(null)
+      else setDetalhe(null)
+    }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [detalhe])
+  }, [detalhe, editando])
+  const nomeFuncionario = (id: string) => funcionarios.find(f => f.id === id)?.nome || 'Funcionário removido'
   const nomeObra = (obraId?: string | null) => obraId ? (obras.find(o => o.id === obraId)?.nome || '—') : 'Sem obra'
   const filtered = funcionarios.filter(f => {
     if (!searchFuncionario) return true
@@ -123,13 +132,35 @@ export default function FolhaPagamentoView({
   const labelMes = (key: string) => { const [y, m] = key.split('-').map(Number); return cap(monthName(new Date(y, m - 1, 1))) }
 
   const pagamentosDetalhe = detalhe
-    ? pagamentos.filter(p => p.funcionario_id === detalhe.funcionario.id && p.data_pagamento.startsWith(detalhe.key)).sort((a, b) => a.data_pagamento.localeCompare(b.data_pagamento))
+    ? pagamentos.filter(p => (!detalhe.funcionario || p.funcionario_id === detalhe.funcionario.id) && p.data_pagamento.startsWith(detalhe.key)).sort((a, b) => a.data_pagamento.localeCompare(b.data_pagamento) || nomeFuncionario(a.funcionario_id).localeCompare(nomeFuncionario(b.funcionario_id)))
     : []
   const totalDetalhe = pagamentosDetalhe.reduce((total, p) => total + p.valor, 0)
   const porTipoDetalhe = Object.entries(pagamentosDetalhe.reduce<Record<string, number>>((acc, p) => { acc[p.tipo] = (acc[p.tipo] || 0) + p.valor; return acc }, {}))
-  const ultimoAntesDetalhe = detalhe
-    ? pagamentos.filter(p => p.funcionario_id === detalhe.funcionario.id && p.data_pagamento < `${detalhe.key}-01`).reduce<PagamentoFuncionario | undefined>((ultimo, p) => !ultimo || p.data_pagamento > ultimo.data_pagamento ? p : ultimo, undefined)
+  const funcionariosPagosDetalhe = new Set(pagamentosDetalhe.map(p => p.funcionario_id)).size
+  const ultimoAntesDetalhe = detalhe?.funcionario
+    ? pagamentos.filter(p => p.funcionario_id === detalhe.funcionario!.id && p.data_pagamento < `${detalhe.key}-01`).reduce<PagamentoFuncionario | undefined>((ultimo, p) => !ultimo || p.data_pagamento > ultimo.data_pagamento ? p : ultimo, undefined)
     : undefined
+
+  const editarPagamento = (p: PagamentoFuncionario) => setEditando({ id: p.id, valor: moedaParaCampo(p.valor), tipo: p.tipo, data: p.data_pagamento.slice(0, 10) })
+
+  const salvarEdicao = async () => {
+    if (!editando) return
+    const valor = parseMoeda(editando.valor)
+    if (valor <= 0) return notify('Informe um valor maior que zero', false)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editando.data)) return notify('Informe a data do pagamento', false)
+    setSalvandoEdicao(true)
+    try {
+      await api.atualizarPagamentoFuncionario(editando.id, { valor, tipo: editando.tipo, data_pagamento: editando.data })
+      const mudouMes = detalhe && !editando.data.startsWith(detalhe.key)
+      notify(mudouMes ? `Pagamento atualizado e movido para ${labelMes(editando.data.slice(0, 7)).toLowerCase()}` : 'Pagamento atualizado!')
+      setEditando(null)
+      onAtualizar()
+    } catch (err: any) {
+      notify('Erro ao salvar: ' + (err?.message || 'tente novamente'), false)
+    } finally {
+      setSalvandoEdicao(false)
+    }
+  }
 
   const excluirPagamento = async (p: PagamentoFuncionario) => {
     if (!confirm(`Excluir o pagamento de ${fmtR(p.valor)} (${TIPO_LABEL[p.tipo] || p.tipo}) de ${fmtData(p.data_pagamento)}?`)) return
@@ -178,7 +209,7 @@ export default function FolhaPagamentoView({
         <div style={{...s.toolbar,justifyContent:'space-between'}}>
           <div>
             <p style={{fontSize:12,fontWeight:800,color:'#626262',margin:0}}>Resumo por mês</p>
-            <p style={{fontSize:11,color:'#969696',margin:'3px 0 0'}}>Valores somados pela data de pagamento · {mesesLancados} {mesesLancados === 1 ? 'mês lançado' : 'meses lançados'}</p>
+            <p style={{fontSize:11,color:'#969696',margin:'3px 0 0'}}>Valores somados pela data de pagamento · {mesesLancados} {mesesLancados === 1 ? 'mês lançado' : 'meses lançados'} · clique num mês para editar ou excluir os pagamentos</p>
           </div>
           {resumoMeses.length > 12 && <button onClick={()=>setResumoTodos(v=>!v)} style={{...s.btnOut,padding:'.4rem .75rem',fontSize:11}}>{resumoTodos ? 'Mostrar últimos 12 meses' : `Mostrar todos (${resumoMeses.length})`}</button>}
         </div>
@@ -196,7 +227,7 @@ export default function FolhaPagamentoView({
               const vazio = (v: number, n?: number) => v > 0
                 ? <><span style={{fontWeight:800,color:'#626262'}}>{fmtR(v)}</span>{n !== undefined && <span style={{display:'block',fontSize:10,color:'#969696',marginTop:2}}>{n} funcionário{n !== 1 ? 's' : ''}</span>}</>
                 : <span style={{fontSize:11,color:'#C4CECA',fontWeight:700}}>Não lançado</span>
-              return <tr key={r.key} style={{borderBottom:'1px solid #EEF1EF',background:r.key===mesAtual?'#F6F8F7':undefined}}>
+              return <tr key={r.key} onClick={()=>setDetalhe({funcionario:null,key:r.key,label:labelMes(r.key),date:`${r.key}-05`})} title="Clique para ver, editar ou excluir os pagamentos deste mês" style={{borderBottom:'1px solid #EEF1EF',background:r.key===mesAtual?'#F6F8F7':undefined,cursor:'pointer'}} onMouseEnter={e=>(e.currentTarget.style.background='#F1F4F2')} onMouseLeave={e=>(e.currentTarget.style.background=r.key===mesAtual?'#F6F8F7':'')}>
                 <td style={{padding:'9px 10px',fontWeight:800,color:'#626262',whiteSpace:'nowrap'}}>{labelMes(r.key)}{r.key===mesAtual && <span style={{fontSize:10,fontWeight:700,color:ACCENT_LT,textTransform:'none',marginLeft:6}}>mês atual</span>}</td>
                 <td style={{padding:'9px 10px',textAlign:'right'}}>{vazio(r.adiantamento, r.funcAdiant.size)}</td>
                 <td style={{padding:'9px 10px',textAlign:'right'}}>{vazio(r.salario, r.funcSalario.size)}</td>
@@ -292,11 +323,11 @@ export default function FolhaPagamentoView({
 
       {detalhe && (
         <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&setDetalhe(null)}>
-          <div role="dialog" aria-modal="true" aria-label={`Pagamentos de ${detalhe.funcionario.nome} em ${detalhe.label}`} style={{...s.modal,width:520}}>
+          <div role="dialog" aria-modal="true" aria-label={detalhe.funcionario ? `Pagamentos de ${detalhe.funcionario.nome} em ${detalhe.label}` : `Folha de ${detalhe.label}`} style={{...s.modal,width:detalhe.funcionario?540:640}}>
             <div style={s.mhdr}>
               <div style={{minWidth:0}}>
-                <h3 style={{fontSize:15,fontWeight:700,margin:0}}>{detalhe.funcionario.nome}</h3>
-                <p style={{fontSize:12,color:'#7D7D7D',margin:'3px 0 0'}}>{detalhe.label} · {nomeObra(detalhe.funcionario.obra_id)}{detalhe.funcionario.cargo ? ` · ${detalhe.funcionario.cargo}` : ''}</p>
+                <h3 style={{fontSize:15,fontWeight:700,margin:0}}>{detalhe.funcionario ? detalhe.funcionario.nome : `Folha de ${detalhe.label.toLowerCase()}`}</h3>
+                <p style={{fontSize:12,color:'#7D7D7D',margin:'3px 0 0'}}>{detalhe.funcionario ? <>{detalhe.label} · {nomeObra(detalhe.funcionario.obra_id)}{detalhe.funcionario.cargo ? ` · ${detalhe.funcionario.cargo}` : ''}</> : 'Todos os funcionários'}</p>
               </div>
               <button aria-label="Fechar" onClick={()=>setDetalhe(null)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
@@ -306,30 +337,64 @@ export default function FolhaPagamentoView({
                   <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Pago no mês</p>
                   <p style={{fontSize:17,fontWeight:800,color:pagamentosDetalhe.length?ACCENT_LT:'#969696',margin:'4px 0 0'}}>{fmtR(totalDetalhe)}</p>
                 </div>
-                <div style={{border:'1px solid #E2E6E4',borderRadius:10,padding:'10px 12px'}}>
-                  <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Salário base atual</p>
-                  <p style={{fontSize:17,fontWeight:800,color:'#626262',margin:'4px 0 0'}}>{fmtR(detalhe.funcionario.salario_base)}</p>
-                </div>
+                {detalhe.funcionario ? (
+                  <div style={{border:'1px solid #E2E6E4',borderRadius:10,padding:'10px 12px'}}>
+                    <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Salário base atual</p>
+                    <p style={{fontSize:17,fontWeight:800,color:'#626262',margin:'4px 0 0'}}>{fmtR(detalhe.funcionario.salario_base)}</p>
+                  </div>
+                ) : (
+                  <div style={{border:'1px solid #E2E6E4',borderRadius:10,padding:'10px 12px'}}>
+                    <p style={{fontSize:10,fontWeight:800,color:'#969696',textTransform:'uppercase',letterSpacing:'.08em',margin:0}}>Funcionários pagos</p>
+                    <p style={{fontSize:17,fontWeight:800,color:'#626262',margin:'4px 0 0'}}>{funcionariosPagosDetalhe} <span style={{fontSize:11,fontWeight:600,color:'#969696'}}>· {pagamentosDetalhe.length} pagamento{pagamentosDetalhe.length !== 1 ? 's' : ''}</span></p>
+                  </div>
+                )}
               </div>
 
               {pagamentosDetalhe.length === 0 ? (
                 <div style={{textAlign:'center',padding:'1.4rem 0 .6rem'}}>
                   <p style={{fontSize:13,fontWeight:700,color:'#626262',margin:0}}>Nenhum pagamento registrado neste mês.</p>
-                  <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>{ultimoAntesDetalhe ? `Pagamento anterior: ${fmtR(ultimoAntesDetalhe.valor)} (${TIPO_LABEL[ultimoAntesDetalhe.tipo] || ultimoAntesDetalhe.tipo}) em ${fmtData(ultimoAntesDetalhe.data_pagamento)}.` : 'Não há pagamentos anteriores a este mês.'}</p>
-                  {!detalhe.funcionario.ativo && <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>Funcionário inativo.</p>}
+                  {detalhe.funcionario && <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>{ultimoAntesDetalhe ? `Pagamento anterior: ${fmtR(ultimoAntesDetalhe.valor)} (${TIPO_LABEL[ultimoAntesDetalhe.tipo] || ultimoAntesDetalhe.tipo}) em ${fmtData(ultimoAntesDetalhe.data_pagamento)}.` : 'Não há pagamentos anteriores a este mês.'}</p>}
+                  {detalhe.funcionario && !detalhe.funcionario.ativo && <p style={{fontSize:12,color:'#969696',margin:'6px 0 0'}}>Funcionário inativo.</p>}
                 </div>
               ) : (
                 <>
                   <div style={{border:'1.5px solid #E2E6E4',borderRadius:8,overflow:'hidden'}}>
-                    {pagamentosDetalhe.map(p=>(
+                    {pagamentosDetalhe.map(p=>editando?.id===p.id ? (
+                      <div key={p.id} style={{padding:'12px 14px',borderBottom:'1px solid #E2E6E4',background:'#F6F8F7'}}>
+                        {!detalhe.funcionario && <p style={{margin:'0 0 8px',fontSize:12,fontWeight:800,color:'#626262'}}>{nomeFuncionario(p.funcionario_id)}</p>}
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:8}}>
+                          <div><label style={s.lb}>Tipo</label>
+                            <select style={s.fi} value={editando.tipo} onChange={e=>setEditando({...editando,tipo:e.target.value as PagamentoFuncionario['tipo']})}>
+                              {(Object.keys(TIPO_LABEL) as PagamentoFuncionario['tipo'][]).map(tipo=><option key={tipo} value={tipo}>{TIPO_LABEL[tipo]}</option>)}
+                            </select>
+                          </div>
+                          <div><label style={s.lb}>Valor</label>
+                            <input autoFocus style={s.fi} value={editando.valor} placeholder="R$ 0,00" onChange={e=>setEditando({...editando,valor:mascaraMoeda(e.target.value)})} onKeyDown={e=>{if(e.key==='Enter') salvarEdicao()}}/>
+                          </div>
+                          <div><label style={s.lb}>Data do pagamento</label>
+                            <input type="date" style={s.fi} value={editando.data} onChange={e=>setEditando({...editando,data:e.target.value})}/>
+                          </div>
+                        </div>
+                        <div style={{display:'flex',justifyContent:'flex-end',gap:6,marginTop:10}}>
+                          <button onClick={()=>setEditando(null)} disabled={salvandoEdicao} style={{...s.btnOut,padding:'.4rem .8rem',fontSize:12}}>Cancelar</button>
+                          <button onClick={salvarEdicao} disabled={salvandoEdicao} style={{...s.btnGrn,padding:'.4rem .8rem',fontSize:12,opacity:salvandoEdicao?0.6:1}}>{salvandoEdicao ? 'Salvando...' : 'Salvar'}</button>
+                        </div>
+                      </div>
+                    ) : (
                       <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 14px',borderBottom:'1px solid #E2E6E4'}}>
-                        <div>
+                        <div style={{minWidth:0}}>
+                          {!detalhe.funcionario && <p style={{margin:'0 0 2px',fontSize:12,fontWeight:800,color:'#626262',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nomeFuncionario(p.funcionario_id)}</p>}
                           <p style={{margin:0,fontSize:14,fontWeight:700,color:'#8BA59A'}}>{fmtR(p.valor)} <span style={{fontSize:11,fontWeight:600,color:'#7D7D7D'}}>· {TIPO_LABEL[p.tipo] || p.tipo}</span></p>
                           <p style={{margin:'2px 0 0',fontSize:12,color:'#7D7D7D'}}>Pago em {fmtData(p.data_pagamento)}</p>
                         </div>
-                        <button aria-label="Excluir pagamento" title="Excluir pagamento" disabled={excluindo===p.id} onClick={()=>excluirPagamento(p)} style={{background:'none',border:'none',cursor:'pointer',color:'#777777',opacity:excluindo===p.id?0.5:1}}>
-                          <Icon name="trash" size={15}/>
-                        </button>
+                        <div style={{display:'flex',gap:4,flexShrink:0}}>
+                          <button aria-label="Editar pagamento" title="Editar pagamento" disabled={!!editando||excluindo===p.id} onClick={()=>editarPagamento(p)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer',color:'#626262',opacity:editando?0.4:1}}>
+                            <Icon name="edit" size={14}/>
+                          </button>
+                          <button aria-label="Excluir pagamento" title="Excluir pagamento" disabled={!!editando||excluindo===p.id} onClick={()=>excluirPagamento(p)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer',color:'#777777',opacity:editando||excluindo===p.id?0.4:1}}>
+                            <Icon name="trash" size={14}/>
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -342,11 +407,17 @@ export default function FolhaPagamentoView({
               )}
             </div>
             <div style={s.mfoot}>
-              <button onClick={()=>{const f=detalhe.funcionario;setDetalhe(null);onHistorico(f)}} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}><Icon name="receipt" size={13}/> Histórico completo</button>
-              {detalhe.funcionario.ativo && (
-                <button onClick={()=>{const {funcionario,date}=detalhe;setDetalhe(null);onPagar(funcionario,date)}} style={s.btnGrn}>
-                  <Icon name="dollar" size={13} color="#fff"/> {pagamentosDetalhe.length ? 'Lançar outro pagamento' : 'Registrar pagamento'}
-                </button>
+              {detalhe.funcionario ? (
+                <>
+                  <button onClick={()=>{const f=detalhe.funcionario!;setDetalhe(null);onHistorico(f)}} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}><Icon name="receipt" size={13}/> Histórico completo</button>
+                  {detalhe.funcionario.ativo && (
+                    <button onClick={()=>{const {funcionario,date}=detalhe;setDetalhe(null);onPagar(funcionario!,date)}} style={s.btnGrn}>
+                      <Icon name="dollar" size={13} color="#fff"/> {pagamentosDetalhe.length ? 'Lançar outro pagamento' : 'Registrar pagamento'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button onClick={()=>setDetalhe(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
               )}
             </div>
           </div>

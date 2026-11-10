@@ -730,6 +730,10 @@ export const api = {
     ).then((result: any) => Array.isArray(result) ? result[0] : result)
   },
 
+  atualizarPagamentoFuncionario: async (id: string, body: { valor?: number; tipo?: PagamentoFuncionario['tipo']; data_pagamento?: string }) => {
+    await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+  },
+
   excluirPagamentoFuncionario: async (id: string) => {
     await readRemote(`/api/pagamentos-funcionario/${id}`, `pagamentos_funcionario?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
