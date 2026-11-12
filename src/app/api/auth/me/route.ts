@@ -6,5 +6,5 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: NextRequest) {
   const sessao = await lerToken(request.cookies.get(SESSION_COOKIE)?.value)
   if (!sessao) return NextResponse.json({ detail: 'Sem sessão' }, { status: 401 })
-  return NextResponse.json({ nome: sessao.nome, role: sessao.role })
+  return NextResponse.json({ nome: sessao.nome, role: sessao.role, permissoes: sessao.permissoes || [] })
 }

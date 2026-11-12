@@ -6,7 +6,7 @@ export async function POST(request: Request) {
   const usuario = autenticar(String(body?.login || ''), String(body?.senha || ''))
   if (!usuario) return NextResponse.json({ detail: 'Usuário ou senha incorretos.' }, { status: 401 })
 
-  const response = NextResponse.json({ nome: usuario.nome, role: usuario.role })
+  const response = NextResponse.json({ nome: usuario.nome, role: usuario.role, permissoes: usuario.permissoes || [] })
   response.cookies.set(SESSION_COOKIE, await criarToken(usuario), {
     httpOnly: true,
     sameSite: 'lax',
