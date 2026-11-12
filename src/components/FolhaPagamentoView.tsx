@@ -19,6 +19,7 @@ type Props = {
   onNovoFuncionario: () => void
   onEditarFuncionario: (funcionario: Funcionario) => void
   onImportarHolerite: () => void
+  onExportar?: () => void
   onPagar: (funcionario: Funcionario, dataSugerida?: string) => void
   onHistorico: (funcionario: Funcionario) => void
   onAtualizar: () => void
@@ -60,6 +61,7 @@ export default function FolhaPagamentoView({
   onNovoFuncionario,
   onEditarFuncionario,
   onImportarHolerite,
+  onExportar,
   onPagar,
   onHistorico,
   onAtualizar,
@@ -191,6 +193,7 @@ export default function FolhaPagamentoView({
           <p style={s.p}>Importe adiantamentos e folhas mensais separadamente — cada pagamento fica vinculado ao colaborador e à competência correta.</p>
         </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {onExportar&&<button onClick={onExportar} style={s.btnOut} title="Baixar funcionários e pagamentos em Excel"><Icon name="download" size={14}/> Exportar Excel</button>}
           <button onClick={onImportarHolerite} style={s.btnOut}><Icon name="upload" size={14}/> Importar holerite</button>
           <button onClick={onNovoFuncionario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar funcionário</button>
         </div>

@@ -25,19 +25,19 @@ function NavItem({icon,label,active,onClick,sub}:{icon:string;label:string;activ
   )
 }
 
-function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;open:boolean;onToggle:()=>void;children:ReactNode}) {
+function NavGroup({icon,label,open,active,onToggle,children}:{icon:string;label:string;open:boolean;active?:boolean;onToggle:()=>void;children:ReactNode}) {
   return (
     <div>
-      <button onClick={onToggle} style={{
+      <button onClick={onToggle} aria-expanded={open} style={{
         display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',
         padding:'.72rem .85rem',borderRadius:10,border:'1px solid transparent',cursor:'pointer',
-        background:'transparent',color:'#626262',fontSize:13,fontWeight:600,fontFamily:'inherit',marginBottom:4,
+        background:active&&!open?'#E8F0EC':'transparent',color:'#626262',fontSize:13,fontWeight:active?700:600,fontFamily:'inherit',marginBottom:4,
         transition:'background .15s',
       }}
       onMouseEnter={e=>(e.currentTarget.style.background=SIDEBAR_BG2)}
-      onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
+      onMouseLeave={e=>(e.currentTarget.style.background=active&&!open?'#E8F0EC':'transparent')}
       >
-        <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#F1F5F3',flex:'0 0 auto'}}>
+        <span style={{width:28,height:28,borderRadius:8,display:'inline-flex',alignItems:'center',justifyContent:'center',background:active?'#D8E6DF':'#F1F5F3',flex:'0 0 auto'}}>
           <Icon name={icon} size={16} color="#626262"/>
         </span>
         {label}
@@ -45,15 +45,18 @@ function NavGroup({icon,label,open,onToggle,children}:{icon:string;label:string;
           <Icon name="chevronRight" size={13} color="#969696"/>
         </span>
       </button>
-      {open&&<div style={{marginBottom:2}}>{children}</div>}
+      {open&&<div style={{margin:'0 0 6px 1.45rem',paddingLeft:'.4rem',borderLeft:'1px solid #E2EAE6'}}>{children}</div>}
     </div>
   )
 }
 
 export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'
 
-const FINANCEIRO_ABAS: Aba[] = ['pagar','folha','mensais','contratos']
+// Grupos do menu (organização inspirada na Roesel Transportes): ao abrir um grupo,
+// o sistema já vai para a primeira tela dele.
 const ORCAMENTOS_ABAS: Aba[] = ['lancamentos','notas-fiscais']
+const FINANCEIRO_ABAS: Aba[] = ['pagar','mensais','folha','contratos']
+const CADASTROS_ABAS: Aba[] = ['fornecedores','inventario']
 
 export default function Sidebar({
   user, role, aba, setAba, onNovoOrcamento, onSair,
@@ -67,11 +70,18 @@ export default function Sidebar({
 }) {
   const [financeiroAberto,setFinanceiroAberto]=useState<boolean>(FINANCEIRO_ABAS.includes(aba))
   const [orcamentosAberto,setOrcamentosAberto]=useState<boolean>(ORCAMENTOS_ABAS.includes(aba))
+  const [cadastrosAberto,setCadastrosAberto]=useState<boolean>(CADASTROS_ABAS.includes(aba))
+  const alternarGrupo=(abas:Aba[],aberto:boolean,setAberto:(v:boolean)=>void)=>{
+    if(aberto){ setAberto(false); return }
+    setAberto(true)
+    if(!abas.includes(aba)) setAba(abas[0])
+  }
   const roleLabel = role==='gestora'?'Gestora':role==='entregador'?'Usuário da obra':'Lançadora'
 
   useEffect(()=>{
     if(ORCAMENTOS_ABAS.includes(aba)) setOrcamentosAberto(true)
     if(FINANCEIRO_ABAS.includes(aba)) setFinanceiroAberto(true)
+    if(CADASTROS_ABAS.includes(aba)) setCadastrosAberto(true)
   },[aba])
   return (
     <aside className="sidebar-shell" style={s.sidebar}>
@@ -100,30 +110,34 @@ export default function Sidebar({
       <div style={{height:1,background:'#E2EAE6',margin:'.7rem 1.15rem 1rem'}}/>
 
       <div style={{padding:'0 .85rem',flex:1,overflowY:'auto'}}>
-        <p style={{fontSize:9,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Workspace</p>
+        <p style={{fontSize:9,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.14em',margin:'.5rem 0 .7rem .5rem'}}>Navegação</p>
 
         {role==='entregador'?(
           <NavItem icon="fileText" label="Andamento dos orçamentos" active={true} onClick={()=>setAba('lancamentos')}/>
         ):(
           <>
             <NavItem icon="dashboard" label="Visão geral" active={aba==='visao'} onClick={()=>setAba('visao')}/>
-            <NavItem icon="package" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
-            <NavItem icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
+            <NavItem icon="building" label="Obras" active={aba==='obras'} onClick={()=>setAba('obras')}/>
 
-            <NavGroup icon="fileText" label="Orçamentos" open={orcamentosAberto} onToggle={()=>{setAba('lancamentos');setOrcamentosAberto(v=>!v)}}>
-              <NavItem sub icon="receipt" label="Notas Fiscais" active={aba==='notas-fiscais'} onClick={()=>setAba('notas-fiscais')}/>
+            <NavGroup icon="fileText" label="Orçamentos" open={orcamentosAberto} active={ORCAMENTOS_ABAS.includes(aba)} onToggle={()=>alternarGrupo(ORCAMENTOS_ABAS,orcamentosAberto,setOrcamentosAberto)}>
+              <NavItem sub icon="plus" label="Novo orçamento" active={false} onClick={onNovoOrcamento}/>
+              <NavItem sub icon="clipboard" label="Em andamento" active={aba==='lancamentos'} onClick={()=>setAba('lancamentos')}/>
+              <NavItem sub icon="receipt" label="Notas fiscais" active={aba==='notas-fiscais'} onClick={()=>setAba('notas-fiscais')}/>
             </NavGroup>
 
-            <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} onToggle={()=>setFinanceiroAberto(v=>!v)}>
-              <NavItem sub icon="fileText" label="Contas a Pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
-              <NavItem sub icon="users" label="Folha de Pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
-              <NavItem sub icon="fileText" label="Contratos por medição" active={aba==='contratos'} onClick={()=>setAba('contratos')}/>
-              <NavItem sub icon="refresh" label="Contas Mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
+            <NavGroup icon="dollar" label="Financeiro" open={financeiroAberto} active={FINANCEIRO_ABAS.includes(aba)} onToggle={()=>alternarGrupo(FINANCEIRO_ABAS,financeiroAberto,setFinanceiroAberto)}>
+              <NavItem sub icon="fileText" label="Contas a pagar" active={aba==='pagar'} onClick={()=>setAba('pagar')}/>
+              <NavItem sub icon="refresh" label="Contas mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
+              <NavItem sub icon="users" label="Folha de pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
+              <NavItem sub icon="clipboard" label="Contratos por medição" active={aba==='contratos'} onClick={()=>setAba('contratos')}/>
             </NavGroup>
 
-            <NavItem icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
-            <NavItem icon="package" label="Inventário" active={aba==='inventario'} onClick={()=>setAba('inventario')}/>
-            <NavItem icon="calendar" label="Viagens" active={aba==='viagens'} onClick={()=>setAba('viagens')}/>
+            <NavGroup icon="folder" label="Cadastros" open={cadastrosAberto} active={CADASTROS_ABAS.includes(aba)} onToggle={()=>alternarGrupo(CADASTROS_ABAS,cadastrosAberto,setCadastrosAberto)}>
+              <NavItem sub icon="building" label="Fornecedores" active={aba==='fornecedores'} onClick={()=>setAba('fornecedores')}/>
+              <NavItem sub icon="package" label="Inventário" active={aba==='inventario'} onClick={()=>setAba('inventario')}/>
+            </NavGroup>
+
+            <NavItem icon="truck" label="Viagens" active={aba==='viagens'} onClick={()=>setAba('viagens')}/>
           </>
         )}
       </div>

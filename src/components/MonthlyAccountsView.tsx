@@ -15,6 +15,7 @@ type Props = {
   viewMensal: MonthlyView
   setViewMensal: (value: MonthlyView) => void
   onNovaConta: () => void
+  onExportar?: () => void
   onPagar: (conta: ContaMensal, dataSugerida?: string) => void
   onHistorico: (conta: ContaMensal) => void
   // Só vem preenchido para quem pode excluir contas mensais.
@@ -49,6 +50,7 @@ export default function MonthlyAccountsView({
   viewMensal,
   setViewMensal,
   onNovaConta,
+  onExportar,
   onPagar,
   onHistorico,
   onExcluir,
@@ -91,7 +93,10 @@ export default function MonthlyAccountsView({
           <h1 style={s.h1}>Contas mensais</h1>
           <p style={s.p}>Uma visão simples do que já foi pago e do que precisa de atenção em {mesAtualNome}.</p>
         </div>
-        <button onClick={onNovaConta} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar conta</button>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {onExportar&&<button onClick={onExportar} style={s.btnOut} title="Baixar contas e pagamentos em Excel"><Icon name="download" size={14}/> Exportar Excel</button>}
+          <button onClick={onNovaConta} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Cadastrar conta</button>
+        </div>
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>

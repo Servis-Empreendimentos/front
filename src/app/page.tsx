@@ -10,6 +10,9 @@ import MonthlyAccountsView from '../components/MonthlyAccountsView'
 import FolhaPagamentoView from '../components/FolhaPagamentoView'
 import ContratosMedicaoView from '../components/ContratosMedicaoView'
 import ViagensView from '../components/ViagensView'
+import AvisoNovidades from '../components/AvisoNovidades'
+import { useEstadoLembrado, limparLembrados, salvarRascunho, lerRascunho, limparRascunho } from '../lib/persistencia'
+import { exportarExcel, dataExcel, valorExcel } from '../lib/exportarExcel'
 
 function isLocked(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_LOCKED_FROM) }
 function canAttachNF(st: string) { return pipeIdx(st) >= pipeIdx(PIPELINE_NF_FROM) }
@@ -123,7 +126,8 @@ export default function Home() {
   const [verificandoSessao,setVerificandoSessao]=useState(true)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<Role>('lancadora')
-  const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('visao')
+  const [permissoes,setPermissoes]=useState<string[]>([])
+  const [aba,setAba]=useEstadoLembrado<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('aba','visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -136,21 +140,21 @@ export default function Home() {
   const [contratos,setContratos]=useState<ContratoMedicao[]>([])
   const [viagens,setViagens]=useState<Viagem[]>([])
   const [loading,setLoading]=useState(true)
-  const [fPipe,setFPipe]=useState('')
-  const [fRec,setFRec]=useState('')
-  const [fDataIni,setFDataIni]=useState('')
-  const [fDataFim,setFDataFim]=useState('')
-  const [search,setSearch]=useState('')
-  const [searchForn,setSearchForn]=useState('')
-  const [searchMensal,setSearchMensal]=useState('')
-  const [fObra,setFObra]=useState('')
-  const [visaoAno,setVisaoAno]=useState('')
-  const [visaoMes,setVisaoMes]=useState('')
+  const [fPipe,setFPipe]=useEstadoLembrado('filtro:fPipe','')
+  const [fRec,setFRec]=useEstadoLembrado('filtro:fRec','')
+  const [fDataIni,setFDataIni]=useEstadoLembrado('filtro:fDataIni','')
+  const [fDataFim,setFDataFim]=useEstadoLembrado('filtro:fDataFim','')
+  const [search,setSearch]=useEstadoLembrado('filtro:search','')
+  const [searchForn,setSearchForn]=useEstadoLembrado('filtro:searchForn','')
+  const [searchMensal,setSearchMensal]=useEstadoLembrado('filtro:searchMensal','')
+  const [fObra,setFObra]=useEstadoLembrado('filtro:fObra','')
+  const [visaoAno,setVisaoAno]=useEstadoLembrado('filtro:visaoAno','')
+  const [visaoMes,setVisaoMes]=useEstadoLembrado('filtro:visaoMes','')
   const [modalObra,setModalObra]=useState(false)
   const [obraEdit,setObraEdit]=useState<Obra|null>(null)
   const [formObra,setFormObra]=useState<{nome:string;endereco:string}>({nome:'',endereco:''})
-  const [searchFuncionario,setSearchFuncionario]=useState('')
-  const [viewFolha,setViewFolha]=useState<'lista'|'grade'>('lista')
+  const [searchFuncionario,setSearchFuncionario]=useEstadoLembrado('filtro:searchFuncionario','')
+  const [viewFolha,setViewFolha]=useEstadoLembrado<'lista'|'grade'>('filtro:viewFolha','lista')
   const [modalFuncionario,setModalFuncionario]=useState(false)
   const [funcionarioEdit,setFuncionarioEdit]=useState<Funcionario|null>(null)
   const [formFuncionario,setFormFuncionario]=useState<{nome:string;cargo:string;salarioBase:string;adiantamento:string;descontos:string;vigenciaInicio:string;obraId:string}>({nome:'',cargo:'',salarioBase:'',adiantamento:'',descontos:'',vigenciaInicio:'',obraId:''})
@@ -168,7 +172,7 @@ export default function Home() {
   const [holeriteFile,setHoleriteFile]=useState<File|null>(null)
   const [holeriteImport,setHoleriteImport]=useState<ImportacaoHolerite|null>(null)
   const [tipoImportacaoHolerite,setTipoImportacaoHolerite]=useState<'adiantamento'|'salario'|'decimo_terceiro'>('salario')
-  const [viewMensal,setViewMensal]=useState<'lista'|'grade'>('lista')
+  const [viewMensal,setViewMensal]=useEstadoLembrado<'lista'|'grade'>('filtro:viewMensal','lista')
   const [modal,setModal]=useState(false)
   const [detalhe,setDetalhe]=useState<Lancamento|null>(null)
   const [saving,setSaving]=useState(false)
@@ -205,7 +209,7 @@ export default function Home() {
   const [nfAtualizarValores,setNfAtualizarValores]=useState(false)
   const [notasNF,setNotasNF]=useState<NotaFiscal[]>([])
   const nfTrocaRef=useRef<HTMLInputElement>(null)
-  const [fTipoNf,setFTipoNf]=useState('')
+  const [fTipoNf,setFTipoNf]=useEstadoLembrado('filtro:fTipoNf','')
   const [modalMensal,setModalMensal]=useState(false)
   const [formMensal,setFormMensal]=useState<any>({})
   const [modalPagParcial,setModalPagParcial]=useState(false)
@@ -226,7 +230,7 @@ export default function Home() {
   const [salvandoSegmento,setSalvandoSegmento]=useState<string|null>(null)
   const [modalInventario,setModalInventario]=useState(false)
   const [inventarioEdit,setInventarioEdit]=useState<InventarioItem|null>(null)
-  const [searchInventario,setSearchInventario]=useState('')
+  const [searchInventario,setSearchInventario]=useEstadoLembrado('filtro:searchInventario','')
   const [formInventario,setFormInventario]=useState({nome:'',tipo:'Equipamento',categoria:'',patrimonio:'',marcaModelo:'',numeroSerie:'',status:'Disponível',obraId:'',unidade:'Un',quantidade:'1',estoqueMinimo:'0',localizacao:'',observacoes:''})
   const [modalPagarConta,setModalPagarConta]=useState<ContaMensal|null>(null)
   const [valorPagarConta,setValorPagarConta]=useState('')
@@ -250,12 +254,12 @@ export default function Home() {
 
   useEffect(()=>{ api.limparCacheLocal() },[])
 
-  const entrar=(nome:string,r:Role)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
+  const entrar=(nome:string,r:Role,p?:string[])=>{setUser(nome);setRole(r);setPermissoes(Array.isArray(p)?p:[]);setLogado(true);if(r==='entregador') setAba('lancamentos')}
 
   // Mantém a sessão ao recarregar a página.
   useEffect(()=>{
     fetch('/api/auth/me',{cache:'no-store'})
-      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role) } })
+      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role,d.permissoes) } })
       .catch(()=>{})
       .finally(()=>setVerificandoSessao(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,6 +268,7 @@ export default function Home() {
   const sair=async(aviso?:string)=>{
     await fetch('/api/auth/logout',{method:'POST'}).catch(()=>{})
     setLogado(false);setModal(false);setDetalhe(null);setData([])
+    limparLembrados();setAba('visao')
     if(aviso) showToast(aviso,false)
   }
 
@@ -346,10 +351,31 @@ export default function Home() {
     return ()=>{ clearInterval(interval); document.removeEventListener('visibilitychange',aoVoltar); window.removeEventListener('focus',aoVoltar) }
   },[logado,load])
 
+  // Rascunho automático do novo orçamento (como os formulários da Roesel Transportes):
+  // o que for preenchido fica guardado neste computador até salvar ou descartar.
+  const chaveRascunhoOrc=`orcamento:${user.toLowerCase()}`
+  const [rascunhoRecuperadoEm,setRascunhoRecuperadoEm]=useState<string|null>(null)
+  const formNovoOrcamento=()=>({data:hojeISO(),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
   const openNovo=()=>{
-    setForm({data:hojeISO(),pago:false,recorrente:false,status_processo:'orcamento_aprovado',tipo_pagamento:'avista',titulo:'',numero_orcamento:'',cnpj:'',obra_id:'',proposta_url:null})
-    setItensOrcamento([]);setRawFrete('');setRawDesconto('');setDetalhe(null);setModal(true)
+    const rascunho=lerRascunho<{form:any;itens:ItemLancamento[];frete:string}>(chaveRascunhoOrc)
+    if(rascunho?.valor?.form){
+      setForm(rascunho.valor.form);setItensOrcamento(rascunho.valor.itens||[]);setRawFrete(rascunho.valor.frete||'')
+      setRascunhoRecuperadoEm(rascunho.salvoEm)
+    } else {
+      setForm(formNovoOrcamento());setItensOrcamento([]);setRawFrete('');setRascunhoRecuperadoEm(null)
+    }
+    setRawDesconto('');setDetalhe(null);setModal(true)
   }
+  const descartarRascunhoOrcamento=()=>{
+    limparRascunho(chaveRascunhoOrc)
+    setForm(formNovoOrcamento());setItensOrcamento([]);setRawFrete('');setRascunhoRecuperadoEm(null)
+  }
+  useEffect(()=>{
+    if(!modal||detalhe||!user) return
+    const temConteudo=Boolean(form?.titulo||form?.numero_orcamento||form?.cnpj||form?.proposta_url||itensOrcamento.length||rawFrete)
+    if(temConteudo) salvarRascunho(chaveRascunhoOrc,{form,itens:itensOrcamento,frete:rawFrete})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[modal,detalhe,form,itensOrcamento,rawFrete,user])
 
   const openDetalhe=async(id:string)=>{
     try {
@@ -421,6 +447,7 @@ Para cada item, extraia quantidade, unidade de medida, valor unitário E valor t
           avisoFornecedor = ' O fornecedor não foi atualizado, mas o orçamento foi salvo.'
         }
       }
+      limparRascunho(chaveRascunhoOrc);setRascunhoRecuperadoEm(null)
       setModal(false);showToast(`Orçamento salvo no banco compartilhado!${avisoFornecedor}`);load()
     } catch (err:any) {
       showToast('Erro ao salvar: '+(err?.message||'desconhecido'),false)
@@ -1109,6 +1136,20 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     catch (err:any) { showToast('Erro ao carregar histórico: '+(err?.message||''),false) }
   }
 
+  // Excluir conta mensal: gestora ou quem recebeu a permissão "excluir_contas_mensais".
+  const podeExcluirContaMensal=role==='gestora'||(role!=='entregador'&&permissoes.includes('excluir_contas_mensais'))
+  const handleExcluirContaMensal=async(c:ContaMensal)=>{
+    if(!podeExcluirContaMensal) return showToast('Seu usuário não tem permissão para excluir contas mensais.',false)
+    const qtd=pagamentosMensais.filter(p=>p.conta_mensal_id===c.id).length
+    const aviso=qtd?`\n\nOs ${qtd} pagamento${qtd!==1?'s':''} registrado${qtd!==1?'s':''} desta conta também ser${qtd!==1?'ão':'á'} excluído${qtd!==1?'s':''}.`:''
+    if(!confirm(`Excluir a conta mensal "${c.titulo}"?${aviso}\n\nEssa ação não pode ser desfeita. Se quiser só parar de cobrar, use "Pausar conta".`)) return
+    try {
+      await api.excluirContaMensal(c.id)
+      if(modalHistoricoConta?.id===c.id) setModalHistoricoConta(null)
+      showToast('Conta mensal excluída!');load(true)
+    } catch (err:any) { showToast('Erro ao excluir: '+(err?.message||''),false) }
+  }
+
   const handleExcluirPagamentoConta=async(id:string)=>{
     if(!confirm('Excluir este pagamento?')) return
     try {
@@ -1298,6 +1339,49 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const totalFolhaAPagar=itensFolha.filter(item=>item.subtipo==='salario').reduce((s,item)=>s+item.valor,0)
   const totalDecimoTerceiroAPagar=itensFolha.filter(item=>item.subtipo==='decimo_terceiro').reduce((s,item)=>s+item.valor,0)
 
+  // Exportar para Excel (como nas telas da Roesel Transportes). Sempre exporta o que está filtrado na tela.
+  const nomeObra=(id?:string|null)=>obras.find(o=>o.id===id)?.nome||''
+  const exportar=async(arquivo:string,abas:Parameters<typeof exportarExcel>[1])=>{
+    try { await exportarExcel(arquivo,abas); showToast('Planilha gerada. Confira a pasta de downloads.') }
+    catch(err:any){ showToast('Não foi possível gerar a planilha: '+(err?.message||'tente novamente'),false) }
+  }
+  const exportarOrcamentos=()=>exportar(aba==='notas-fiscais'?'notas_fiscais':'orcamentos',[{nome:aba==='notas-fiscais'?'Notas fiscais':'Orçamentos',linhas:listaOrcamentos.map(l=>({
+    'Empresa':l.titulo,'CNPJ':l.cnpj?fmtCNPJ(l.cnpj):'','Obra':nomeObra(l.obra_id)||'Sem obra','Nº orçamento':l.numero_orcamento||'',
+    'Etapa':PIPELINE.find(p=>p.id===l.status_processo)?.label||l.status_processo||'','Data':dataExcel(l.data),
+    'Valor total':valorExcel(l.valor_total),'Saldo devedor':valorExcel(saldoLancamento(l)),'Pago':l.pago?'Sim':'Não',
+    'Nota fiscal':l.nf_numero||(l.arquivo_url?'Anexada':'Pendente'),
+    ...(aba==='notas-fiscais'?{'Tipo de NF':tiposNFDe(l).map(rotuloTipoNF).join(' + ')||'Não classificada'}:{}),
+    'Lançado por':(l as any).criado_por||'',
+  }))}])
+  const exportarContasAPagar=()=>exportar('contas_a_pagar',[
+    {nome:'Em aberto',linhas:emAberto.map(i=>({'Descrição':i.nome,'Detalhe':i.detalhe,'Vencimento':dataExcel(i.vencimento),'Valor':i.valor===null?'Valor a definir':valorExcel(i.valor)}))},
+    {nome:'Histórico de pagamentos',linhas:contasAPagar.map(i=>({'Descrição':i.nome,'Tipo':i.tipo==='nf'?'Nota fiscal':i.tipo==='folha'?(i.subtipo==='adiantamento'?'Adiantamento salarial':i.subtipo==='decimo_terceiro'?'13º salário':'Folha mensal'):i.tipo==='medicao'?'Medição de contrato':'Contas mensais','Data':dataExcel(i.data),'Valor pago':valorExcel(i.valor)}))},
+  ])
+  const exportarFornecedores=()=>exportar('fornecedores',[{nome:'Fornecedores',linhas:fornecedorRows.map(({fornecedor:f})=>({
+    'Nome':f.nome,'Razão social':f.razao_social||'','CNPJ':f.cnpj?fmtCNPJ(f.cnpj):'','Segmento':f.segmento||'','Contato':f.contato||'',
+    'Telefone':f.telefone||'','Celular':f.celular||'','E-mail':f.email||'','Site':f.site||'',
+    'Endereço':[f.endereco,f.numero,f.complemento,f.bairro].filter(Boolean).join(', '),'CEP':f.cep||'','Estado':f.estado||'',
+  }))}])
+  const exportarInventario=()=>exportar('inventario',[{nome:'Inventário',linhas:inventarioFiltrado.map(i=>({
+    'Tipo':i.tipo||'Equipamento','Nome':i.nome,'Categoria':i.categoria||'','Patrimônio':i.patrimonio||'','Marca / modelo':i.marca_modelo||'',
+    'Nº de série':i.numero_serie||'','Status':i.status||'Disponível','Obra':nomeObra(i.obra_id),'Localização':i.localizacao||'',
+    'Quantidade':i.quantidade,'Unidade':i.unidade,'Observações':i.observacoes||'',
+  }))}])
+  const exportarObras=()=>exportar('obras',[{nome:'Obras',linhas:obras.map(o=>{
+    const lancs=data.filter(l=>l.obra_id===o.id)
+    return {'Obra':o.nome,'Endereço':o.endereco||'','Lançamentos':lancs.length,'Total fechado':valorExcel(lancs.filter(isComprometido).reduce((s,l)=>s+l.valor_total,0)),'Status':o.ativa?'Ativa':'Pausada'}
+  })}])
+  const rotuloTipoPagFunc=(tipo:string)=>tipo==='adiantamento'?'Adiantamento':tipo==='decimo_terceiro'?'13º salário':tipo==='vale'?'Vale':tipo==='outro'?'Outro':'Salário'
+  const exportarFolha=()=>exportar('folha_de_pagamento',[
+    {nome:'Funcionários',linhas:funcionarios.map(f=>({'Nome':f.nome,'Cargo':f.cargo||'','Obra':nomeObra(f.obra_id),'Salário base':valorExcel(f.salario_base),'Adiantamento padrão':valorExcel(f.adiantamento_padrao),'Descontos padrão':valorExcel(f.descontos_padrao),'Situação':f.ativo?'Ativo':'Inativo'}))},
+    {nome:'Pagamentos',linhas:[...pagamentosFuncionarios].sort((a,b)=>(b.data_pagamento||'').localeCompare(a.data_pagamento||'')).map(p=>({'Funcionário':funcionarios.find(f=>f.id===p.funcionario_id)?.nome||'','Tipo':rotuloTipoPagFunc(p.tipo),'Data do pagamento':dataExcel(p.data_pagamento),'Valor':valorExcel(p.valor)}))},
+  ])
+  const exportarContasMensais=()=>exportar('contas_mensais',[
+    {nome:'Contas',linhas:contasMensais.map(c=>({'Conta':c.titulo,'Categoria':c.categoria_nome||'','Pago por':c.pago_por||'','Dia do vencimento':c.dia_vencimento,'Situação':c.ativo?'Ativa':'Inativa'}))},
+    {nome:'Pagamentos',linhas:[...pagamentosMensais].sort((a,b)=>(b.data_pagamento||'').localeCompare(a.data_pagamento||'')).map(p=>({'Conta':contasMensais.find(c=>c.id===p.conta_mensal_id)?.titulo||'','Data do pagamento':dataExcel(p.data_pagamento),'Valor':valorExcel(p.valor)}))},
+  ])
+  const btnExportar=(onClick:()=>void)=><button onClick={onClick} style={s.btnOut} title="Baixar esta lista em Excel"><Icon name="download" size={14}/> Exportar Excel</button>
+
   const th=(label:string)=><th style={{padding:'8px 11px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',whiteSpace:'nowrap'}}>{label}</th>
 
   return (
@@ -1311,6 +1395,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         onNovoOrcamento={openNovo}
         onSair={()=>sair()}
       />
+      {role!=='entregador'&&<AvisoNovidades usuario={user}/>}
 
       <div style={s.content}>
         <main style={s.main}>
@@ -1502,7 +1587,9 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='pagar'&&(
             <div>
-              <PageHeader eyebrow="Financeiro" title="Contas a pagar" description="O que ainda está em aberto e o histórico de tudo que já foi pago."/>
+              <PageHeader eyebrow="Financeiro" title="Contas a pagar" description="O que ainda está em aberto e o histórico de tudo que já foi pago.">
+                {btnExportar(exportarContasAPagar)}
+              </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Em aberto" v={fmtR(totalEmAberto)} sv={`${emAberto.length} pendência${emAberto.length!==1?'s':''}`} c="#C99A4B"/>
                 <KPI l="Total pago" v={fmtR(totalContasAPagar)} sv="soma do histórico" c={ACCENT_LT}/>
@@ -1590,7 +1677,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           {role!=='entregador'&&aba==='obras'&&(
             <div>
               <PageHeader eyebrow="Operação" title="Obras" description="Cadastre as obras e veja quanto já foi lançado em cada uma.">
-                <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  {btnExportar(exportarObras)}
+                  <button onClick={openNovaObra} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Nova obra</button>
+                </div>
               </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de obras" v={obras.length} sv="cadastradas" c={ACCENT_LT}/>
@@ -1643,6 +1733,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                 <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
                   <button onClick={handleRevisarSegmentos} disabled={loadingSegmentos} style={{...s.btnOut,opacity:loadingSegmentos?0.65:1}}><Icon name="sparkles" size={14}/> {loadingSegmentos?'Revisando...':'Revisar segmentos com IA'}</button>
                   <button onClick={handleAnalisarConcorrentes} disabled={loadingConcorrentes} style={{...s.btnOut,opacity:loadingConcorrentes?0.65:1}}><Icon name="search" size={14}/> {loadingConcorrentes?'Analisando...':'Analisar concorrentes com IA'}</button>
+                  {btnExportar(exportarFornecedores)}
                   <button onClick={openNovoFornecedor} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo fornecedor</button>
                 </div>
               </PageHeader>
@@ -1687,8 +1778,11 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='inventario'&&(
             <div>
-              <PageHeader eyebrow="Operação" title="Inventário" description="Máquinas e equipamentos, com status e localização.">
-                <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo ativo</button>
+              <PageHeader eyebrow="Cadastros" title="Inventário" description="Máquinas e equipamentos, com status e localização.">
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  {btnExportar(exportarInventario)}
+                  <button onClick={openNovoInventario} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo ativo</button>
+                </div>
               </PageHeader>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Total de ativos" v={inventario.length} sv="máquinas e equipamentos" c={ACCENT_LT}/>
@@ -1750,8 +1844,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               viewMensal={viewMensal}
               setViewMensal={setViewMensal}
               onNovaConta={()=>setModalMensal(true)}
+              onExportar={exportarContasMensais}
               onPagar={abrirPagarConta}
               onHistorico={abrirHistoricoConta}
+              onExcluir={podeExcluirContaMensal?handleExcluirContaMensal:undefined}
               onAtualizar={()=>load(true)}
               notify={showToast}
             />
@@ -1769,6 +1865,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               onNovoFuncionario={openNovoFuncionario}
               onEditarFuncionario={openEditarFuncionario}
               onImportarHolerite={abrirImportacaoHolerite}
+              onExportar={exportarFolha}
               onPagar={abrirPagarFuncionario}
               onHistorico={abrirHistoricoFuncionario}
               onAtualizar={()=>load(true)}
@@ -1787,7 +1884,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           {role!=='entregador'&&(aba==='lancamentos'||aba==='notas-fiscais')&&(
             <div>
               <PageHeader eyebrow="Orçamentos" title={aba==='notas-fiscais'?'Notas fiscais':'Orçamentos'} description={aba==='notas-fiscais'?'Orçamentos que já têm nota fiscal anexada.':'Orçamentos em andamento que ainda não têm nota fiscal.'}>
-                {aba==='lancamentos'&&<button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>}
+                <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+                  {btnExportar(exportarOrcamentos)}
+                  {aba==='lancamentos'&&<button onClick={openNovo} style={s.btnTeal}><Icon name="plus" size={14} color="#fff"/> Novo orçamento</button>}
+                </div>
               </PageHeader>
               <div style={s.card} className="budget-card">
                 <div className="budget-toolbar">
@@ -2214,6 +2314,13 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <h3 style={{fontSize:15,fontWeight:700}}>Novo Orçamento</h3>
               <button onClick={()=>setModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#7D7D7D'}}><Icon name="x" size={20}/></button>
             </div>
+            {rascunhoRecuperadoEm&&(
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',margin:'1rem 1.5rem 0',padding:'.65rem .85rem',borderRadius:10,background:'#F4F8F6',border:'1px solid #DDE9E3',fontSize:12,color:'#626262'}}>
+                <Icon name="edit" size={14} color={ACCENT_LT}/>
+                <span style={{flex:1,minWidth:200}}>Rascunho recuperado de {new Date(rascunhoRecuperadoEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}. Continue de onde parou.</span>
+                <button onClick={descartarRascunhoOrcamento} style={{...s.btnOut,padding:'.35rem .7rem',fontSize:11}}>Descartar e começar do zero</button>
+              </div>
+            )}
             <div style={s.fg}>
               <div style={{gridColumn:'1/-1',padding:'14px 16px',background:'linear-gradient(135deg,#E8EFEC,#F0F4F1)',borderRadius:10,border:'1.5px dashed '+ACCENT_LT}}>
                 <p style={{fontSize:11,fontWeight:700,color:ACCENT_LT,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Icon name="sparkles" size={14} color={ACCENT_LT}/>Importar orçamento com IA</p>
@@ -2804,6 +2911,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <button onClick={()=>{const c=modalHistoricoConta;setModalHistoricoConta(null);abrirPagarConta(c)}} style={s.btnGrn}>
                 <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
               </button>
+              {podeExcluirContaMensal&&<button onClick={()=>handleExcluirContaMensal(modalHistoricoConta)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}><Icon name="trash" size={13}/> Excluir conta</button>}
               <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
@@ -2855,30 +2963,19 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     <input type="date" style={{...s.fi,width:180}} value={holeriteImport.dataPagamento} onChange={e=>setHoleriteImport({...holeriteImport,dataPagamento:e.target.value})}/>
                     <span style={{fontSize:10,color:'#8A6A25'}}>A competência continua sendo a do holerite; esta é a data usada em Contas a Pagar.</span>
                   </div>
-                  {(()=>{
-                    const jaLancados=pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes))
-                    if(!jaLancados.length) return null
-                    const datas=Array.from(new Set(jaLancados.map(item=>item.data_pagamento))).sort()
-                    const total=jaLancados.reduce((soma,item)=>soma+item.valor,0)
-                    const tipoNome=holeriteImport.tipo==='adiantamento'?'Adiantamento':holeriteImport.tipo==='decimo_terceiro'?'13º salário':'Folha mensal'
-                    return <div style={{marginBottom:14,padding:'10px 12px',background:'#FBF6EA',border:'1px solid #EEE3B8',borderRadius:9,fontSize:12,color:'#626262',lineHeight:1.5}}>
-                      <strong style={{color:'#8A6A25'}}>{tipoNome} de {mesLabel(holeriteImport.competenciaMes)} já está no sistema:</strong> {jaLancados.length} pagamento{jaLancados.length!==1?'s':''} · {fmtR(total)}, com data de pagamento {datas.map(d=>fmtData(d)).join(', ')}. Para ver, abra Folha de pagamento › Resumo mensal › {mesLabel(holeriteImport.competenciaMes)}, ou Contas a Pagar › “{tipoNome} de {mesLabel(holeriteImport.competenciaMes)}”. Esses colaboradores não serão lançados de novo.
-                    </div>
-                  })()}
                   <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
                     <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>
                       <span>Colaborador</span><span>Cargo</span><span>Salário base</span><span>Valor líquido</span><span>Situação</span>
                     </div>
                     {holeriteImport.colaboradores.map(colaborador=>{
                       const existente=funcionarios.find(item=>normalizarNomePessoa(item.nome)===normalizarNomePessoa(colaborador.nome))
-                      const lancamentosExistentes=existente?pagamentosFuncionarios.filter(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)):[]
-                      const jaLancado=lancamentosExistentes.length>0
+                      const jaLancado=Boolean(existente&&pagamentosFuncionarios.some(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)))
                       return <div key={`${colaborador.cpf||colaborador.nome}-${holeriteImport.competenciaMes}`} style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,alignItems:'center',padding:'11px 12px',borderBottom:'1px solid #E2E6E4',fontSize:12}}>
                         <div><strong style={{color:'#4B5563'}}>{colaborador.nome}</strong><small style={{display:'block',color:'#969696',marginTop:3}}>{colaborador.cpf?`CPF ${colaborador.cpf}`:colaborador.matricula?`Matrícula ${colaborador.matricula}`:''}</small></div>
                         <span style={{color:'#7D7D7D'}}>{colaborador.cargo||'—'}</span>
                         <span style={{color:'#626262'}}>{fmtR(colaborador.salario_base)}</span>
                         <strong style={{color:ACCENT_LT}}>{fmtR(colaborador.valor_liquido)}</strong>
-                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}{jaLancado&&<small style={{display:'block',fontWeight:600,color:'#969696',marginTop:3}}>{lancamentosExistentes.map(item=>`${fmtData(item.data_pagamento)} · ${fmtR(item.valor)}`).join(' / ')}{existente&&!existente.ativo?' · inativo':''}</small>}</span>
+                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}</span>
                       </div>
                     })}
                   </div>
