@@ -123,6 +123,7 @@ export default function Home() {
   const [verificandoSessao,setVerificandoSessao]=useState(true)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<Role>('lancadora')
+  const [permissoes,setPermissoes]=useState<string[]>([])
   const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
@@ -250,12 +251,12 @@ export default function Home() {
 
   useEffect(()=>{ api.limparCacheLocal() },[])
 
-  const entrar=(nome:string,r:Role)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
+  const entrar=(nome:string,r:Role,p?:string[])=>{setUser(nome);setRole(r);setPermissoes(Array.isArray(p)?p:[]);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
 
   // Mantém a sessão ao recarregar a página.
   useEffect(()=>{
     fetch('/api/auth/me',{cache:'no-store'})
-      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role) } })
+      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role,d.permissoes) } })
       .catch(()=>{})
       .finally(()=>setVerificandoSessao(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1109,6 +1110,20 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     catch (err:any) { showToast('Erro ao carregar histórico: '+(err?.message||''),false) }
   }
 
+  // Excluir conta mensal: gestora ou quem recebeu a permissão "excluir_contas_mensais".
+  const podeExcluirContaMensal=role==='gestora'||(role!=='entregador'&&permissoes.includes('excluir_contas_mensais'))
+  const handleExcluirContaMensal=async(c:ContaMensal)=>{
+    if(!podeExcluirContaMensal) return showToast('Seu usuário não tem permissão para excluir contas mensais.',false)
+    const qtd=pagamentosMensais.filter(p=>p.conta_mensal_id===c.id).length
+    const aviso=qtd?`\n\nOs ${qtd} pagamento${qtd!==1?'s':''} registrado${qtd!==1?'s':''} desta conta também ser${qtd!==1?'ão':'á'} excluído${qtd!==1?'s':''}.`:''
+    if(!confirm(`Excluir a conta mensal "${c.titulo}"?${aviso}\n\nEssa ação não pode ser desfeita. Se quiser só parar de cobrar, use "Pausar conta".`)) return
+    try {
+      await api.excluirContaMensal(c.id)
+      if(modalHistoricoConta?.id===c.id) setModalHistoricoConta(null)
+      showToast('Conta mensal excluída!');load(true)
+    } catch (err:any) { showToast('Erro ao excluir: '+(err?.message||''),false) }
+  }
+
   const handleExcluirPagamentoConta=async(id:string)=>{
     if(!confirm('Excluir este pagamento?')) return
     try {
@@ -1752,6 +1767,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               onNovaConta={()=>setModalMensal(true)}
               onPagar={abrirPagarConta}
               onHistorico={abrirHistoricoConta}
+              onExcluir={podeExcluirContaMensal?handleExcluirContaMensal:undefined}
               onAtualizar={()=>load(true)}
               notify={showToast}
             />
@@ -2804,6 +2820,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <button onClick={()=>{const c=modalHistoricoConta;setModalHistoricoConta(null);abrirPagarConta(c)}} style={s.btnGrn}>
                 <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
               </button>
+              {podeExcluirContaMensal&&<button onClick={()=>handleExcluirContaMensal(modalHistoricoConta)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}><Icon name="trash" size={13}/> Excluir conta</button>}
               <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>

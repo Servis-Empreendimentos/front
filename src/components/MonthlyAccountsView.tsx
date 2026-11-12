@@ -17,6 +17,8 @@ type Props = {
   onNovaConta: () => void
   onPagar: (conta: ContaMensal, dataSugerida?: string) => void
   onHistorico: (conta: ContaMensal) => void
+  // Só vem preenchido para quem pode excluir contas mensais.
+  onExcluir?: (conta: ContaMensal) => void
   onAtualizar: () => void
   notify: (msg: string, ok?: boolean) => void
 }
@@ -49,6 +51,7 @@ export default function MonthlyAccountsView({
   onNovaConta,
   onPagar,
   onHistorico,
+  onExcluir,
   onAtualizar,
   notify,
 }: Props) {
@@ -148,6 +151,7 @@ export default function MonthlyAccountsView({
                     {conta.ativo && <button onClick={()=>onPagar(conta)} style={{...s.btnGrn,padding:'.45rem .7rem',fontSize:11}}><Icon name="dollar" size={12} color="#fff"/> Registrar pagamento</button>}
                     <button onClick={()=>onHistorico(conta)} style={{...s.btnOut,padding:'.45rem .65rem',fontSize:11}}><Icon name="receipt" size={12}/> Histórico</button>
                     <button title={conta.ativo?'Pausar conta':'Reativar conta'} onClick={()=>api.toggleContaMensal(conta.id,!conta.ativo).then(()=>{onAtualizar();notify(conta.ativo?'Conta pausada':'Conta reativada')}).catch((err:any)=>notify('Erro: '+(err?.message||'tente novamente'),false))} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name={conta.ativo?'x':'check'} size={14} color={conta.ativo?'#777777':ACCENT_LT}/></button>
+                    {onExcluir && <button title="Excluir conta e pagamentos" onClick={()=>onExcluir(conta)} style={{width:30,height:30,display:'inline-flex',alignItems:'center',justifyContent:'center',background:'#fff',border:'1px solid #E2E6E4',borderRadius:8,cursor:'pointer'}}><Icon name="trash" size={14} color="#777777"/></button>}
                   </div>
                 </div>
               )

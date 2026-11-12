@@ -817,6 +817,18 @@ export const api = {
     return result[0]
   },
 
+  // Exclui a conta mensal e todos os pagamentos dela. Só para a gestora ou para quem tem a
+  // permissão "excluir_contas_mensais" (conferido também no servidor).
+  excluirContaMensal: async (id: string) => {
+    if (isLocalId(id)) {
+      writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.conta_mensal_id !== id))
+      writeLocal(LOCAL_ACCOUNTS_KEY, localAccounts().filter(conta => conta.id !== id))
+      return
+    }
+    await supabaseRequest(`pagamentos_contas_mensais?conta_mensal_id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await supabaseRequest(`contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+
   excluirPagamentoMensal: async (id: string) => {
     if (isLocalId(id)) return writeLocal(LOCAL_PAYMENTS_KEY, localPayments().filter(item => item.id !== id))
     await supabaseRequest(`pagamentos_contas_mensais?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })

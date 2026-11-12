@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { Role } from '../services/api'
 
-export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role: Role) => void }) {
+export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role: Role, permissoes?: string[]) => void }) {
   const [login, setLogin] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
@@ -24,7 +24,7 @@ export default function LoginScreen({ onLogin }: { onLogin: (nome: string, role:
         setSenha('')
         return
       }
-      onLogin(data.nome, data.role)
+      onLogin(data.nome, data.role, data.permissoes)
     } catch {
       setErro('Não foi possível conectar. Verifique sua internet e tente novamente.')
     } finally {

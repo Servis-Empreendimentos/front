@@ -11,8 +11,8 @@ export async function middleware(request: NextRequest) {
 
   if (pathname === '/api/data') {
     const path = (request.nextUrl.searchParams.get('path') || '').replace(/^\/+/, '')
-    const tabela = path.split('?')[0]
-    if (!podeAcessarTabela(sessao.role, tabela, request.method)) {
+    const [tabela, query = ''] = path.split('?')
+    if (!podeAcessarTabela(sessao, tabela, request.method, query)) {
       return NextResponse.json({ detail: 'Seu perfil não tem permissão para esta ação.' }, { status: 403 })
     }
   } else if (sessao.role === 'entregador' && pathname.startsWith('/api/fornecedores')) {
