@@ -123,7 +123,6 @@ export default function Home() {
   const [verificandoSessao,setVerificandoSessao]=useState(true)
   const [user,setUser]=useState('')
   const [role,setRole]=useState<Role>('lancadora')
-  const [permissoes,setPermissoes]=useState<string[]>([])
   const [aba,setAba]=useState<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
@@ -251,12 +250,12 @@ export default function Home() {
 
   useEffect(()=>{ api.limparCacheLocal() },[])
 
-  const entrar=(nome:string,r:Role,p?:string[])=>{setUser(nome);setRole(r);setPermissoes(Array.isArray(p)?p:[]);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
+  const entrar=(nome:string,r:Role)=>{setUser(nome);setRole(r);setLogado(true);setAba(r==='entregador'?'lancamentos':'visao')}
 
   // Mantém a sessão ao recarregar a página.
   useEffect(()=>{
     fetch('/api/auth/me',{cache:'no-store'})
-      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role,d.permissoes) } })
+      .then(async response=>{ if(response.ok){ const d=await response.json(); entrar(d.nome,d.role) } })
       .catch(()=>{})
       .finally(()=>setVerificandoSessao(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1110,20 +1109,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     catch (err:any) { showToast('Erro ao carregar histórico: '+(err?.message||''),false) }
   }
 
-  // Excluir conta mensal: gestora ou quem recebeu a permissão "excluir_contas_mensais".
-  const podeExcluirContaMensal=role==='gestora'||(role!=='entregador'&&permissoes.includes('excluir_contas_mensais'))
-  const handleExcluirContaMensal=async(c:ContaMensal)=>{
-    if(!podeExcluirContaMensal) return showToast('Seu usuário não tem permissão para excluir contas mensais.',false)
-    const qtd=pagamentosMensais.filter(p=>p.conta_mensal_id===c.id).length
-    const aviso=qtd?`\n\nOs ${qtd} pagamento${qtd!==1?'s':''} registrado${qtd!==1?'s':''} desta conta também ser${qtd!==1?'ão':'á'} excluído${qtd!==1?'s':''}.`:''
-    if(!confirm(`Excluir a conta mensal "${c.titulo}"?${aviso}\n\nEssa ação não pode ser desfeita. Se quiser só parar de cobrar, use "Pausar conta".`)) return
-    try {
-      await api.excluirContaMensal(c.id)
-      if(modalHistoricoConta?.id===c.id) setModalHistoricoConta(null)
-      showToast('Conta mensal excluída!');load(true)
-    } catch (err:any) { showToast('Erro ao excluir: '+(err?.message||''),false) }
-  }
-
   const handleExcluirPagamentoConta=async(id:string)=>{
     if(!confirm('Excluir este pagamento?')) return
     try {
@@ -1767,7 +1752,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               onNovaConta={()=>setModalMensal(true)}
               onPagar={abrirPagarConta}
               onHistorico={abrirHistoricoConta}
-              onExcluir={podeExcluirContaMensal?handleExcluirContaMensal:undefined}
               onAtualizar={()=>load(true)}
               notify={showToast}
             />
@@ -2820,7 +2804,6 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
               <button onClick={()=>{const c=modalHistoricoConta;setModalHistoricoConta(null);abrirPagarConta(c)}} style={s.btnGrn}>
                 <Icon name="dollar" size={13} color="#fff"/> Registrar novo pagamento
               </button>
-              {podeExcluirContaMensal&&<button onClick={()=>handleExcluirContaMensal(modalHistoricoConta)} style={{...s.btnRed,padding:'.5rem 1rem',fontSize:13}}><Icon name="trash" size={13}/> Excluir conta</button>}
               <button onClick={()=>setModalHistoricoConta(null)} style={{...s.btnOut,padding:'.5rem 1rem',fontSize:13}}>Fechar</button>
             </div>
           </div>
@@ -2872,19 +2855,30 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     <input type="date" style={{...s.fi,width:180}} value={holeriteImport.dataPagamento} onChange={e=>setHoleriteImport({...holeriteImport,dataPagamento:e.target.value})}/>
                     <span style={{fontSize:10,color:'#8A6A25'}}>A competência continua sendo a do holerite; esta é a data usada em Contas a Pagar.</span>
                   </div>
+                  {(()=>{
+                    const jaLancados=pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes))
+                    if(!jaLancados.length) return null
+                    const datas=Array.from(new Set(jaLancados.map(item=>item.data_pagamento))).sort()
+                    const total=jaLancados.reduce((soma,item)=>soma+item.valor,0)
+                    const tipoNome=holeriteImport.tipo==='adiantamento'?'Adiantamento':holeriteImport.tipo==='decimo_terceiro'?'13º salário':'Folha mensal'
+                    return <div style={{marginBottom:14,padding:'10px 12px',background:'#FBF6EA',border:'1px solid #EEE3B8',borderRadius:9,fontSize:12,color:'#626262',lineHeight:1.5}}>
+                      <strong style={{color:'#8A6A25'}}>{tipoNome} de {mesLabel(holeriteImport.competenciaMes)} já está no sistema:</strong> {jaLancados.length} pagamento{jaLancados.length!==1?'s':''} · {fmtR(total)}, com data de pagamento {datas.map(d=>fmtData(d)).join(', ')}. Para ver, abra Folha de pagamento › Resumo mensal › {mesLabel(holeriteImport.competenciaMes)}, ou Contas a Pagar › “{tipoNome} de {mesLabel(holeriteImport.competenciaMes)}”. Esses colaboradores não serão lançados de novo.
+                    </div>
+                  })()}
                   <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
                     <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>
                       <span>Colaborador</span><span>Cargo</span><span>Salário base</span><span>Valor líquido</span><span>Situação</span>
                     </div>
                     {holeriteImport.colaboradores.map(colaborador=>{
                       const existente=funcionarios.find(item=>normalizarNomePessoa(item.nome)===normalizarNomePessoa(colaborador.nome))
-                      const jaLancado=Boolean(existente&&pagamentosFuncionarios.some(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)))
+                      const lancamentosExistentes=existente?pagamentosFuncionarios.filter(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)):[]
+                      const jaLancado=lancamentosExistentes.length>0
                       return <div key={`${colaborador.cpf||colaborador.nome}-${holeriteImport.competenciaMes}`} style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,alignItems:'center',padding:'11px 12px',borderBottom:'1px solid #E2E6E4',fontSize:12}}>
                         <div><strong style={{color:'#4B5563'}}>{colaborador.nome}</strong><small style={{display:'block',color:'#969696',marginTop:3}}>{colaborador.cpf?`CPF ${colaborador.cpf}`:colaborador.matricula?`Matrícula ${colaborador.matricula}`:''}</small></div>
                         <span style={{color:'#7D7D7D'}}>{colaborador.cargo||'—'}</span>
                         <span style={{color:'#626262'}}>{fmtR(colaborador.salario_base)}</span>
                         <strong style={{color:ACCENT_LT}}>{fmtR(colaborador.valor_liquido)}</strong>
-                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}</span>
+                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}{jaLancado&&<small style={{display:'block',fontWeight:600,color:'#969696',marginTop:3}}>{lancamentosExistentes.map(item=>`${fmtData(item.data_pagamento)} · ${fmtR(item.valor)}`).join(' / ')}{existente&&!existente.ativo?' · inativo':''}</small>}</span>
                       </div>
                     })}
                   </div>
