@@ -144,6 +144,8 @@ export default function Home() {
   const [searchForn,setSearchForn]=useState('')
   const [searchMensal,setSearchMensal]=useState('')
   const [fObra,setFObra]=useState('')
+  const [visaoAno,setVisaoAno]=useState('')
+  const [visaoMes,setVisaoMes]=useState('')
   const [modalObra,setModalObra]=useState(false)
   const [obraEdit,setObraEdit]=useState<Obra|null>(null)
   const [formObra,setFormObra]=useState<{nome:string;endereco:string}>({nome:'',endereco:''})
@@ -1220,6 +1222,36 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
   const maxTotalObra=Math.max(...porObra.map(item=>item.total),1)
   const tratativas=data.filter(l=>l.status_processo==='em_tratativa').sort(maisRecentePrimeiro).slice(0,8)
 
+  // Totais por tópico (Visão geral). Período: ano e mês opcionais, pela data de cada registro.
+  const periodoVisao=visaoAno?(visaoMes?`${visaoAno}-${visaoMes}`:visaoAno):''
+  const noPeriodo=(d?:string|null)=>!periodoVisao||(d||'').startsWith(periodoVisao)
+  const anosVisao=Array.from(new Set([
+    ...data.map(l=>l.data),...pagamentosFuncionarios.map(p=>p.data_pagamento),...pagamentosMensais.map(p=>p.data_pagamento),
+    ...contratos.flatMap(c=>(c.medicoes||[]).map(m=>m.data_medicao)),hojeISO(),
+  ].map(d=>(d||'').slice(0,4)).filter(a=>/^\d{4}$/.test(a)))).sort().reverse()
+  type TotalTopico={id:string;nome:string;detalhe:string;qtd:number;total:number;pago:number;aberto:number;aba:typeof aba;tipoFolha?:string}
+  const orcPeriodo=comprometidos.filter(l=>noPeriodo(l.data))
+  const pagFuncPeriodo=pagamentosFuncionarios.filter(p=>noPeriodo(p.data_pagamento))
+  const somaFolha=(tipos:string[])=>{const ps=pagFuncPeriodo.filter(p=>tipos.includes(p.tipo));const v=ps.reduce((s,p)=>s+(Number(p.valor)||0),0);return {qtd:ps.length,total:v,pago:v,aberto:0}}
+  const pagMensPeriodo=pagamentosMensais.filter(p=>noPeriodo(p.data_pagamento))
+  const totalMensais=pagMensPeriodo.reduce((s,p)=>s+(Number(p.valor)||0),0)
+  const medPeriodo=contratos.flatMap(c=>c.medicoes||[]).filter(m=>noPeriodo(m.data_medicao))
+  const totalMed=medPeriodo.reduce((s,m)=>s+(Number(m.valor)||0),0)
+  const pagoMed=medPeriodo.filter(m=>m.pago).reduce((s,m)=>s+(Number(m.valor)||0),0)
+  const totaisTopicos:TotalTopico[]=[
+    {id:'orcamentos',nome:'Orçamentos / fornecedores',detalhe:'Orçamentos fechados',aba:'lancamentos',qtd:orcPeriodo.length,
+      total:orcPeriodo.reduce((s,l)=>s+(Number(l.valor_total)||0),0),pago:orcPeriodo.reduce((s,l)=>s+valorPagoLancamento(l),0),aberto:orcPeriodo.reduce((s,l)=>s+saldoLancamento(l),0)},
+    {id:'salarios',nome:'Folha de pagamento',detalhe:'Salários pagos',aba:'folha',...somaFolha(['salario'])},
+    {id:'adiantamentos',nome:'Adiantamentos',detalhe:'Adiantamentos pagos',aba:'folha',...somaFolha(['adiantamento'])},
+    {id:'decimo',nome:'13º salário',detalhe:'13º pago',aba:'folha',...somaFolha(['decimo_terceiro'])},
+    {id:'vales',nome:'Vales e outros',detalhe:'Vales e outros pagamentos a funcionários',aba:'folha',...somaFolha(['vale','outro'])},
+    {id:'mensais',nome:'Contas mensais',detalhe:'Pagamentos de contas mensais',aba:'mensais',qtd:pagMensPeriodo.length,total:totalMensais,pago:totalMensais,aberto:0},
+    {id:'contratos',nome:'Contratos e medições',detalhe:'Medições lançadas',aba:'contratos',qtd:medPeriodo.length,total:totalMed,pago:pagoMed,aberto:totalMed-pagoMed},
+  ]
+  const totalGeralTopicos=totaisTopicos.reduce((acc,t)=>({qtd:acc.qtd+t.qtd,total:acc.total+t.total,pago:acc.pago+t.pago,aberto:acc.aberto+t.aberto}),{qtd:0,total:0,pago:0,aberto:0})
+  const MESES_VISAO=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+  const periodoVisaoLabel=!visaoAno?'Todo o período':visaoMes?`${MESES_VISAO[Number(visaoMes)-1]} de ${visaoAno}`:`Ano de ${visaoAno}`
+
   type ItemPagar = {id:string;tipo:'nf'|'folha'|'mensais'|'medicao';subtipo?:'adiantamento'|'salario'|'decimo_terceiro';nome:string;valor:number;data:string;lancamentoId?:string;contratoId?:string}
   const itensNF:ItemPagar[]=data.filter(l=>l.pago).map(l=>({id:'nf-'+l.id,tipo:'nf',nome:l.titulo,valor:l.valor_total,data:l.data_pagamento||l.data,lancamentoId:l.id}))
   const gruposFolha:Record<string,{valor:number;data:string;tipo:'adiantamento'|'salario'|'decimo_terceiro'}>={}
@@ -1312,12 +1344,58 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='visao'&&(
             <div>
-              <PageHeader eyebrow="Servis Empreendimentos" title="Visão geral" description="Resumo financeiro dos orçamentos fechados, por obra."/>
+              <PageHeader eyebrow="Servis Empreendimentos" title="Visão geral" description="Total de cada tópico, total geral e resumo dos orçamentos por obra."/>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:'1.35rem'}}>
                 <KPI l="Valor fechado" v={fmtR(totalValor)} sv={`${comprometidos.length} orçamento${comprometidos.length!==1?'s':''} fechado${comprometidos.length!==1?'s':''}`} c="#7D7D7D"/>
                 <KPI l="Valor pago" v={fmtR(totalPago)} sv="valor já quitado" c="#8BA59A"/>
                 <KPI l="Saldo devedor" v={fmtR(totalSaldo)} sv="fechado e ainda não pago" c="#777777"/>
                 <KPI l="Em tratativa" v={totalTratativa} sv="orçamentos em negociação" c="#748F84"/>
+              </div>
+              <div style={s.card}>
+                <div style={s.toolbar}>
+                  <div style={{display:'grid',gap:3,flex:1,minWidth:200}}>
+                    <span style={{fontSize:10,fontWeight:700,color:'#7D7D7D',textTransform:'uppercase',letterSpacing:'.1em'}}>Total por tópico</span>
+                    <span style={{fontSize:11,color:'#969696'}}>{periodoVisaoLabel} · clique numa linha para abrir o tópico</span>
+                  </div>
+                  <select aria-label="Ano" value={visaoAno} onChange={e=>{setVisaoAno(e.target.value);if(!e.target.value)setVisaoMes('')}} style={s.inp}>
+                    <option value="">Todo o período</option>
+                    {anosVisao.map(a=><option key={a} value={a}>{a}</option>)}
+                  </select>
+                  <select aria-label="Mês" value={visaoMes} disabled={!visaoAno} onChange={e=>setVisaoMes(e.target.value)} style={{...s.inp,opacity:visaoAno?1:.55}}>
+                    <option value="">Ano inteiro</option>
+                    {MESES_VISAO.map((m,i)=><option key={m} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="overview-table-wrap">
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{background:'#FAFBFA',borderBottom:'2px solid #E2E6E4'}}>
+                        {th('Tópico')}{th('Registros')}{th('Total')}{th('Pago')}{th('Em aberto')}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totaisTopicos.map(t=>(
+                        <tr key={t.id} style={{borderBottom:'1px solid #E2E6E4',cursor:'pointer'}} onClick={()=>setAba(t.aba)}
+                          onMouseEnter={e=>(e.currentTarget.style.background='#F5F7F6')} onMouseLeave={e=>(e.currentTarget.style.background='')}>
+                          <td style={{padding:'11px'}}><div style={{fontWeight:700}}>{t.nome}</div><div style={{fontSize:10,color:'#969696',marginTop:2}}>{t.detalhe}</div></td>
+                          <td style={{padding:'11px',color:'#7D7D7D'}}>{t.qtd}</td>
+                          <td style={{padding:'11px',fontWeight:700}}>{fmtR(t.total)}</td>
+                          <td style={{padding:'11px',fontWeight:700,color:ACCENT_LT}}>{fmtR(t.pago)}</td>
+                          <td style={{padding:'11px',fontWeight:700,color:t.aberto>0?'#777777':'#A6B0AA'}}>{t.aberto>0?fmtR(t.aberto):'—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:'#E8F0EC',borderTop:'2px solid #D8E6DF'}}>
+                        <td style={{padding:'12px 11px',fontWeight:800,color:'#4D4D4D',textTransform:'uppercase',fontSize:11,letterSpacing:'.06em'}}>Total geral</td>
+                        <td style={{padding:'12px 11px',fontWeight:700,color:'#626262'}}>{totalGeralTopicos.qtd}</td>
+                        <td style={{padding:'12px 11px',fontWeight:800,color:'#4D4D4D',fontSize:13}}>{fmtR(totalGeralTopicos.total)}</td>
+                        <td style={{padding:'12px 11px',fontWeight:800,color:'#748F84',fontSize:13}}>{fmtR(totalGeralTopicos.pago)}</td>
+                        <td style={{padding:'12px 11px',fontWeight:800,color:'#626262',fontSize:13}}>{totalGeralTopicos.aberto>0?fmtR(totalGeralTopicos.aberto):'—'}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
               <div className="overview-grid overview-grid-chart-focus">
                 <div style={s.card}>
