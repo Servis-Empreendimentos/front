@@ -93,8 +93,9 @@ async function proxy(request: NextRequest) {
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const sessao = await lerToken(request.cookies.get(SESSION_COOKIE)?.value)
-    if (sessao?.role !== 'gestora' && request.method === 'DELETE' && path.split('?')[0] === 'anexos_contrato') {
-      return NextResponse.json({ detail: 'Somente a gestora pode excluir um anexo de contrato.' }, { status: 403 })
+    const tabelaAlvo = path.split('?')[0]
+    if (sessao?.role !== 'gestora' && request.method === 'DELETE' && (tabelaAlvo === 'anexos_contrato' || tabelaAlvo === 'medicoes_contrato')) {
+      return NextResponse.json({ detail: tabelaAlvo === 'medicoes_contrato' ? 'Somente a gestora pode excluir uma medição.' : 'Somente a gestora pode excluir um anexo de contrato.' }, { status: 403 })
     }
     if (sessao?.role !== 'gestora' && await alteraNotaFiscal(path, request.method, corpo, url, key)) {
       return NextResponse.json({ detail: 'Somente a gestora pode editar uma nota fiscal já lançada.' }, { status: 403 })

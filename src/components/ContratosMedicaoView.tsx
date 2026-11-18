@@ -47,6 +47,7 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
   const [medicao, setMedicao] = useState({ valor: '', data_medicao: hojeISO(), nf_numero: '', observacoes: '' })
   const [arquivoContrato, setArquivoContrato] = useState<File[]>([])
   const [arquivoNFMedicao, setArquivoNFMedicao] = useState<File[]>([])
+  const [editandoMedicao, setEditandoMedicao] = useState<MedicaoContrato | null>(null)
   const [anexarNF, setAnexarNF] = useState<AnexarNF | null>(null)
   const [enviando, setEnviando] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -96,8 +97,26 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
     if (!medicaoContrato) return
     if (money(medicao.valor) <= 0) return notify('Informe o valor da medição', false)
     if (!medicao.data_medicao) return notify('Informe a data do pagamento', false)
-    const acumulado = (medicaoContrato.medicoes || []).reduce((sum, item) => sum + item.valor, 0)
+    // Na edição, o valor antigo desta medição não conta no acumulado.
+    const acumulado = (medicaoContrato.medicoes || []).filter(item => item.id !== editandoMedicao?.id).reduce((sum, item) => sum + item.valor, 0)
     if (acumulado + money(medicao.valor) > medicaoContrato.valor_total + 0.009) return notify(`O valor passa do saldo do contrato (${fmtR(medicaoContrato.valor_total - acumulado)})`, false)
+    if (editandoMedicao) {
+      setSaving(true)
+      try {
+        await api.atualizarMedicaoContrato(editandoMedicao.id, { valor: money(medicao.valor), data_medicao: medicao.data_medicao, nf_numero: medicao.nf_numero.trim() || null, observacoes: medicao.observacoes.trim() || null })
+        let aviso = ''
+        if (arquivoNFMedicao.length) {
+          const { erro } = await enviarArquivos(arquivoNFMedicao, { contrato_id: medicaoContrato.id, tipo: 'nota_fiscal', medicao_id: editandoMedicao.id, nf_numero: medicao.nf_numero.trim() || null })
+          if (erro) aviso = ` Mas a nota fiscal não foi anexada: ${erro}`
+        }
+        const numero = editandoMedicao.numero
+        setMedicaoContrato(null); setEditandoMedicao(null); setMedicao({ valor: '', data_medicao: hojeISO(), nf_numero: '', observacoes: '' }); setArquivoNFMedicao([]); onAtualizar()
+        notify(`Medição ${numero} atualizada!` + aviso, !aviso)
+      } catch (err: any) {
+        notify('Erro ao atualizar medição: ' + (err?.message || 'tente novamente'), false)
+      } finally { setSaving(false) }
+      return
+    }
     const proximoNumero = Math.max(0, ...(medicaoContrato.medicoes || []).map(item => item.numero || 0)) + 1
     setSaving(true)
     try {
@@ -136,6 +155,19 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
     notify(erro ? (ok ? `${ok} nota(s) anexada(s). Erro no restante: ${erro}` : erro) : ok > 1 ? `${ok} notas fiscais anexadas!` : 'Nota fiscal anexada!', !erro)
   }
 
+  const editarMedicao = (contrato: ContratoMedicao, item: MedicaoContrato) => {
+    setEditandoMedicao(item); setMedicaoContrato(contrato); setArquivoNFMedicao([])
+    setMedicao({ valor: moneyText(item.valor), data_medicao: item.data_medicao || hojeISO(), nf_numero: item.nf_numero || '', observacoes: item.observacoes || '' })
+  }
+
+  const excluirMedicao = async (contrato: ContratoMedicao, item: MedicaoContrato) => {
+    const nfs = (contrato.anexos || []).filter(a => a.medicao_id === item.id).length
+    const aviso = nfs ? `\n\nA nota fiscal anexada continua guardada no quadro "Notas fiscais", sem medição.` : ''
+    if (!window.confirm(`Excluir a Medição ${item.numero} de ${fmtR(item.valor)} (${fmtData(item.data_medicao)})?\nO valor volta para o saldo do contrato.${aviso}`)) return
+    try { await api.excluirMedicaoContrato(item.id); onAtualizar(); notify(`Medição ${item.numero} excluída`) }
+    catch (err: any) { notify('Erro ao excluir medição: ' + (err?.message || 'tente novamente'), false) }
+  }
+
   const excluirAnexo = async (anexo: AnexoContrato) => {
     if (!window.confirm(`Excluir o anexo "${anexo.nome}"?`)) return
     try { await api.excluirAnexoContrato(anexo.id); onAtualizar(); notify('Anexo excluído') }
@@ -143,7 +175,7 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
   }
 
   const abrirAnexarNF = (contrato: ContratoMedicao, item?: MedicaoContrato) => setAnexarNF({ contrato, medicao_id: item?.id || '', nf_numero: item?.nf_numero || '', arquivos: [] })
-  const fecharModal = () => { if (saving) return; setNovo(false); setMedicaoContrato(null); setAnexarNF(null); setArquivoContrato([]); setArquivoNFMedicao([]) }
+  const fecharModal = () => { if (saving) return; setNovo(false); setMedicaoContrato(null); setEditandoMedicao(null); setAnexarNF(null); setMedicao({ valor: '', data_medicao: hojeISO(), nf_numero: '', observacoes: '' }); setArquivoContrato([]); setArquivoNFMedicao([]) }
 
   const tituloSecao = { fontSize: 10, fontWeight: 800, color: '#7D7D7D', textTransform: 'uppercase' as const, letterSpacing: '.06em' }
   const btnPequeno = { ...s.btnOut, padding: '.3rem .55rem', fontSize: 11 }
@@ -181,12 +213,14 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
           {(contrato.medicoes || []).length > 0 && <div style={{ marginTop: 12, borderTop: '1px solid #EDF0EE', paddingTop: 9 }}>{(contrato.medicoes || []).map(item => {
             const nfs = notas.filter(a => a.medicao_id === item.id)
             return <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '6px 0', fontSize: 11, color: '#626262', flexWrap: 'wrap' }}>
-              <span><strong>Medição {item.numero}</strong> · {fmtData(item.data_medicao)}{item.nf_numero ? ` · NF ${item.nf_numero}` : ''}</span>
+              <span><strong>Medição {item.numero}</strong> · {fmtData(item.data_medicao)}{item.nf_numero ? ` · NF ${item.nf_numero}` : ''}{item.observacoes ? <span style={{ display: 'block', color: '#969696', marginTop: 2 }}>{item.observacoes}</span> : null}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 {nfs.length > 0
                   ? nfs.map(a => <a key={a.id} href={a.arquivo_url} target="_blank" rel="noreferrer" title={a.nome} style={{ display: 'flex', alignItems: 'center', gap: 4, color: ACCENT_LT, fontWeight: 700, textDecoration: 'none' }}><Icon name="fileText" size={13} color={ACCENT_LT}/> Ver NF</a>)
                   : <button onClick={() => abrirAnexarNF(contrato, item)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#969696', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}><Icon name="upload" size={12}/> Anexar NF</button>}
                 <strong style={{ color: ACCENT_LT }}>{fmtR(item.valor)}</strong>
+                <button onClick={() => editarMedicao(contrato, item)} title="Editar medição" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7D7D7D', padding: 3 }}><Icon name="edit" size={14}/></button>
+                {ehGestora && <button onClick={() => excluirMedicao(contrato, item)} title="Excluir medição" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#969696', padding: 3 }}><Icon name="trash" size={14}/></button>}
               </span>
             </div>
           })}</div>}
@@ -210,7 +244,7 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
       })}
     </div>
 
-    {(novo || medicaoContrato) && <div style={s.overlay} onClick={e => e.target === e.currentTarget && fecharModal()}><div style={{ ...s.modal, width: 520 }}><div style={s.mhdr}><h3 style={{ fontSize: 15, fontWeight: 700 }}>{novo ? 'Novo contrato por medição' : `Nova medição — ${medicaoContrato?.titulo}`}</h3><button onClick={fecharModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7D7D7D' }}><Icon name="x" size={20}/></button></div><div style={s.fg}>{novo ? <>
+    {(novo || medicaoContrato) && <div style={s.overlay} onClick={e => e.target === e.currentTarget && fecharModal()}><div style={{ ...s.modal, width: 520 }}><div style={s.mhdr}><h3 style={{ fontSize: 15, fontWeight: 700 }}>{novo ? 'Novo contrato por medição' : editandoMedicao ? `Editar medição ${editandoMedicao.numero} — ${medicaoContrato?.titulo}` : `Nova medição — ${medicaoContrato?.titulo}`}</h3><button onClick={fecharModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7D7D7D' }}><Icon name="x" size={20}/></button></div><div style={s.fg}>{novo ? <>
       <div style={{ gridColumn: '1/-1' }}><label style={s.lb}>Nome do contrato *</label><input style={s.fi} value={form.titulo} onChange={e => setForm({ ...form, titulo: e.target.value })} placeholder="Ex: Estrutura metálica da obra"/></div>
       <div><label style={s.lb}>Fornecedor</label><input style={s.fi} value={form.fornecedor} onChange={e => setForm({ ...form, fornecedor: e.target.value })}/></div>
       <div><label style={s.lb}>Valor total *</label><input style={s.fi} value={form.valor_total} onChange={e => setForm({ ...form, valor_total: moneyText(money(e.target.value)) })} placeholder="R$ 100.000,00"/></div>
@@ -221,10 +255,10 @@ export default function ContratosMedicaoView({ contratos, obras, onAtualizar, no
       <div><label style={s.lb}>Valor da medição *</label><input style={s.fi} value={medicao.valor} onChange={e => setMedicao({ ...medicao, valor: moneyText(money(e.target.value)) })} placeholder="R$ 0,00"/></div>
       <div><label style={s.lb}>Data do pagamento *</label><input type="date" style={s.fi} value={medicao.data_medicao} onChange={e => setMedicao({ ...medicao, data_medicao: e.target.value })}/></div>
       <div><label style={s.lb}>Número da NF</label><input style={s.fi} value={medicao.nf_numero} onChange={e => setMedicao({ ...medicao, nf_numero: e.target.value })}/></div>
-      <div><label style={s.lb}>Arquivo da nota fiscal</label><CampoArquivos arquivos={arquivoNFMedicao} onChange={setArquivoNFMedicao} texto="Escolher PDF ou foto"/></div>
+      <div><label style={s.lb}>{editandoMedicao ? 'Anexar outra nota fiscal' : 'Arquivo da nota fiscal'}</label><CampoArquivos arquivos={arquivoNFMedicao} onChange={setArquivoNFMedicao} texto="Escolher PDF ou foto"/></div>
       <div style={{ gridColumn: '1/-1' }}><label style={s.lb}>Observações</label><textarea style={{ ...s.fi, minHeight: 70 }} value={medicao.observacoes} onChange={e => setMedicao({ ...medicao, observacoes: e.target.value })} placeholder="Ex: Medição aprovada conforme NF recebida"/></div>
-      <p style={{ gridColumn: '1/-1', margin: 0, fontSize: 11, color: '#7D7D7D' }}>Saldo disponível: <strong>{fmtR((medicaoContrato?.valor_total || 0) - (medicaoContrato?.medicoes || []).reduce((sum, item) => sum + item.valor, 0))}</strong></p>
-    </>}</div><div style={s.mfoot}><button onClick={fecharModal} style={{ ...s.btnOut, padding: '.5rem 1rem', fontSize: 13 }}>Cancelar</button><button onClick={novo ? salvarContrato : salvarMedicao} disabled={saving} style={{ ...s.btnTeal, opacity: saving ? .6 : 1 }}>{saving ? 'Salvando...' : novo ? 'Cadastrar contrato' : 'Salvar medição'}</button></div></div></div>}
+      <p style={{ gridColumn: '1/-1', margin: 0, fontSize: 11, color: '#7D7D7D' }}>Saldo disponível{editandoMedicao ? ' (contando o valor desta medição)' : ''}: <strong>{fmtR((medicaoContrato?.valor_total || 0) - (medicaoContrato?.medicoes || []).filter(item => item.id !== editandoMedicao?.id).reduce((sum, item) => sum + item.valor, 0))}</strong></p>
+    </>}</div><div style={s.mfoot}><button onClick={fecharModal} style={{ ...s.btnOut, padding: '.5rem 1rem', fontSize: 13 }}>Cancelar</button><button onClick={novo ? salvarContrato : salvarMedicao} disabled={saving} style={{ ...s.btnTeal, opacity: saving ? .6 : 1 }}>{saving ? 'Salvando...' : novo ? 'Cadastrar contrato' : editandoMedicao ? 'Salvar alterações' : 'Salvar medição'}</button></div></div></div>}
 
     {anexarNF && <div style={s.overlay} onClick={e => e.target === e.currentTarget && fecharModal()}><div style={{ ...s.modal, width: 480 }}>
       <div style={s.mhdr}><h3 style={{ fontSize: 15, fontWeight: 700 }}>Anexar nota fiscal — {anexarNF.contrato.titulo}</h3><button onClick={fecharModal} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7D7D7D' }}><Icon name="x" size={20}/></button></div>

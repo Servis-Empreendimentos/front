@@ -810,6 +810,10 @@ export const api = {
     await supabaseRequest(`anexos_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
+  atualizarMedicaoContrato: async (id: string, body: Partial<Pick<MedicaoContrato, 'valor' | 'data_medicao' | 'nf_numero' | 'observacoes'>>) => {
+    await supabaseRequest(`medicoes_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+  },
+
   excluirMedicaoContrato: async (id: string) => {
     await supabaseRequest(`medicoes_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
