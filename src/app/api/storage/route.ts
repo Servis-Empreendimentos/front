@@ -18,7 +18,9 @@ export async function POST(request: NextRequest) {
   if (file.size > 20 * 1024 * 1024) return NextResponse.json({ detail: 'O arquivo deve ter no máximo 20 MB' }, { status: 413 })
 
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'documento.pdf'
-  const objectName = `${Date.now()}-${safeName}`
+  // Pasta opcional dentro do bucket (ex.: "contratos" para os anexos dos contratos por medição).
+  const pasta = String(form.get('pasta') || '').replace(/[^a-z0-9_-]/gi, '')
+  const objectName = `${pasta ? pasta + '/' : ''}${Date.now()}-${safeName}`
   try {
     const response = await fetch(`${url}/storage/v1/object/notas-fiscais/${objectName}`, {
       method: 'POST',

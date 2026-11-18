@@ -243,7 +243,25 @@ export type ContratoMedicao = {
   ativo: boolean
   criado_em?: string
   medicoes?: MedicaoContrato[]
+  anexos?: AnexoContrato[]
 }
+
+// Arquivos ligados a um contrato por medição: o contrato assinado e as notas fiscais
+// (cada NF pode ficar ligada a uma medição). Tabela anexos_contrato (anexos-contrato.sql).
+export type AnexoContrato = {
+  id: string
+  contrato_id: string
+  medicao_id?: string | null
+  tipo: 'contrato' | 'nota_fiscal' | 'outro'
+  nome: string
+  arquivo_url: string
+  nf_numero?: string | null
+  enviado_por?: string | null
+  criado_em?: string
+}
+
+export const ANEXOS_SEM_TABELA = 'Falta rodar o SQL anexos-contrato.sql no Supabase para guardar os anexos.'
+const semTabelaAnexos = (err: any) => /anexos_contrato|PGRST205|does not exist|schema cache/i.test(String(err?.message || ''))
 
 export type MedicaoContrato = {
   id: string
@@ -257,12 +275,18 @@ export type MedicaoContrato = {
   criado_em?: string
 }
 
+// Viagens: hoje só se lança a compra da passagem (valor, data da compra e empresa).
+// Os campos antigos (colaborador, período, destino...) continuam no banco para não
+// perder os registros já feitos, mas não são mais pedidos na tela.
 export type Viagem = {
   id: string
-  funcionario_id: string
-  data_inicio: string
-  data_fim: string
-  destino: string
+  valor?: number | null
+  data_compra?: string | null
+  empresa?: string | null
+  funcionario_id?: string | null
+  data_inicio?: string | null
+  data_fim?: string | null
+  destino?: string | null
   finalidade?: string | null
   observacoes?: string | null
   criado_em?: string
@@ -528,9 +552,10 @@ export const api = {
     await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  uploadArquivo: async (file: File): Promise<string> => {
+  uploadArquivo: async (file: File, pasta?: string): Promise<string> => {
     const form = new FormData()
     form.append('file', file, file.name)
+    if (pasta) form.append('pasta', pasta)
     const response = await fetch('/api/storage', { method: 'POST', body: form })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error('Falha ao enviar arquivo para o armazenamento')
@@ -739,11 +764,17 @@ export const api = {
   },
 
   listarContratosMedicao: async (): Promise<ContratoMedicao[]> => {
-    const [contratos, medicoes] = await Promise.all([
+    const [contratos, medicoes, anexos] = await Promise.all([
       supabaseRequest<ContratoMedicao[]>('contratos_medicao?order=criado_em.desc'),
       supabaseRequest<MedicaoContrato[]>('medicoes_contrato?order=data_medicao.asc,numero.asc'),
+      // Se a tabela de anexos ainda não existir, a tela continua funcionando sem os anexos.
+      supabaseRequest<AnexoContrato[]>('anexos_contrato?order=criado_em.asc').catch(() => [] as AnexoContrato[]),
     ])
-    return (contratos || []).map(contrato => ({ ...contrato, medicoes: (medicoes || []).filter(medicao => medicao.contrato_id === contrato.id) }))
+    return (contratos || []).map(contrato => ({
+      ...contrato,
+      medicoes: (medicoes || []).filter(medicao => medicao.contrato_id === contrato.id),
+      anexos: (anexos || []).filter(anexo => anexo.contrato_id === contrato.id),
+    }))
   },
 
   criarContratoMedicao: async (payload: Omit<ContratoMedicao, 'id' | 'criado_em' | 'medicoes'>) => {
@@ -760,15 +791,38 @@ export const api = {
     return Array.isArray(result) ? result[0] : result
   },
 
+  anexarArquivoContrato: async (file: File, dados: Pick<AnexoContrato, 'contrato_id' | 'tipo'> & Partial<Pick<AnexoContrato, 'medicao_id' | 'nf_numero' | 'enviado_por'>>) => {
+    if (file.size > 20 * 1024 * 1024) throw new Error(`"${file.name}" passa de 20 MB`)
+    const arquivo_url = await api.uploadArquivo(file, 'contratos')
+    try {
+      const result = await supabaseRequest<AnexoContrato[]>('anexos_contrato', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ ...dados, nome: file.name, arquivo_url }) })
+      return result?.[0]
+    } catch (err: any) {
+      throw new Error(semTabelaAnexos(err) ? ANEXOS_SEM_TABELA : err?.message || 'Falha ao salvar o anexo')
+    }
+  },
+
+  atualizarAnexoContrato: async (id: string, body: Partial<Pick<AnexoContrato, 'tipo' | 'medicao_id' | 'nf_numero'>>) => {
+    await supabaseRequest(`anexos_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(body) })
+  },
+
+  excluirAnexoContrato: async (id: string) => {
+    await supabaseRequest(`anexos_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
+  },
+
   excluirMedicaoContrato: async (id: string) => {
     await supabaseRequest(`medicoes_contrato?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  listarViagens: async (): Promise<Viagem[]> => supabaseRequest<Viagem[]>('viagens?order=data_inicio.asc,data_fim.asc,criado_em.asc'),
+  listarViagens: async (): Promise<Viagem[]> => supabaseRequest<Viagem[]>('viagens?order=criado_em.desc'),
 
-  criarViagem: async (payload: Omit<Viagem, 'id' | 'criado_em'>) => {
+  criarViagem: async (payload: { valor: number; data_compra: string; empresa: string }) => {
     const result = await supabaseRequest<Viagem[]>('viagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(payload) })
     return Array.isArray(result) ? result[0] : result
+  },
+
+  atualizarViagem: async (id: string, payload: { valor: number; data_compra: string; empresa: string }) => {
+    await supabaseRequest(`viagens?id=eq.${encodeURIComponent(id)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(payload) })
   },
 
   excluirViagem: async (id: string) => {

@@ -21,6 +21,7 @@ const TABLES = new Set([
   'contas_mensais',
   'pagamentos_contas_mensais',
   'notas_fiscais',
+  'anexos_contrato',
 ])
 
 // Campos da nota fiscal só podem ser gravados pela rota /api/notas/[id], que confere se a nota
@@ -92,6 +93,9 @@ async function proxy(request: NextRequest) {
 
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     const sessao = await lerToken(request.cookies.get(SESSION_COOKIE)?.value)
+    if (sessao?.role !== 'gestora' && request.method === 'DELETE' && path.split('?')[0] === 'anexos_contrato') {
+      return NextResponse.json({ detail: 'Somente a gestora pode excluir um anexo de contrato.' }, { status: 403 })
+    }
     if (sessao?.role !== 'gestora' && await alteraNotaFiscal(path, request.method, corpo, url, key)) {
       return NextResponse.json({ detail: 'Somente a gestora pode editar uma nota fiscal já lançada.' }, { status: 403 })
     }
