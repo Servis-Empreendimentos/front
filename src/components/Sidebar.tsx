@@ -50,12 +50,12 @@ function NavGroup({icon,label,open,active,onToggle,children}:{icon:string;label:
   )
 }
 
-export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'
+export type Aba = 'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'|'comparar'
 
 // Grupos do menu (organização inspirada na Roesel Transportes): ao abrir um grupo,
 // o sistema já vai para a primeira tela dele.
 const ORCAMENTOS_ABAS: Aba[] = ['lancamentos','notas-fiscais']
-const FINANCEIRO_ABAS: Aba[] = ['pagar','mensais','folha','contratos']
+const FINANCEIRO_ABAS: Aba[] = ['pagar','mensais','folha','contratos','comparar']
 const CADASTROS_ABAS: Aba[] = ['fornecedores','inventario']
 
 export default function Sidebar({
@@ -130,6 +130,7 @@ export default function Sidebar({
               <NavItem sub icon="refresh" label="Contas mensais" active={aba==='mensais'} onClick={()=>setAba('mensais')}/>
               <NavItem sub icon="users" label="Folha de pagamento" active={aba==='folha'} onClick={()=>setAba('folha')}/>
               <NavItem sub icon="clipboard" label="Contratos por medição" active={aba==='contratos'} onClick={()=>setAba('contratos')}/>
+              <NavItem sub icon="upload" label="Comparar com a planilha" active={aba==='comparar'} onClick={()=>setAba('comparar')}/>
             </NavGroup>
 
             <NavGroup icon="folder" label="Cadastros" open={cadastrosAberto} active={CADASTROS_ABAS.includes(aba)} onToggle={()=>alternarGrupo(CADASTROS_ABAS,cadastrosAberto,setCadastrosAberto)}>

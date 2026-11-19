@@ -10,6 +10,7 @@ import MonthlyAccountsView from '../components/MonthlyAccountsView'
 import FolhaPagamentoView from '../components/FolhaPagamentoView'
 import ContratosMedicaoView from '../components/ContratosMedicaoView'
 import ViagensView from '../components/ViagensView'
+import CompararPlanilhaView from '../components/CompararPlanilhaView'
 import AvisoNovidades from '../components/AvisoNovidades'
 import { useEstadoLembrado, limparLembrados, salvarRascunho, lerRascunho, limparRascunho } from '../lib/persistencia'
 import { exportarExcel, dataExcel, valorExcel } from '../lib/exportarExcel'
@@ -127,7 +128,7 @@ export default function Home() {
   const [user,setUser]=useState('')
   const [role,setRole]=useState<Role>('lancadora')
   const [permissoes,setPermissoes]=useState<string[]>([])
-  const [aba,setAba]=useEstadoLembrado<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'>('aba','visao')
+  const [aba,setAba]=useEstadoLembrado<'visao'|'lancamentos'|'notas-fiscais'|'mensais'|'fornecedores'|'inventario'|'obras'|'folha'|'pagar'|'contratos'|'viagens'|'comparar'>('aba','visao')
   const [data,setData]=useState<Lancamento[]>([])
   const [cats,setCats]=useState<any[]>([])
   const [contasMensais,setContasMensais]=useState<ContaMensal[]>([])
@@ -1035,8 +1036,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
         competenciaMes,
         competenciaInicio:inicio,
         competenciaFim:competenciaFim,
-        // Sem data no PDF: folha mensal é paga no dia 5 do mês seguinte; os demais tipos ficam no fim da competência.
-        dataPagamento:dataIsoDoDocumento(dados?.data_pagamento)||(tipoDetectado==='salario'&&/^\d{4}-\d{2}/.test(competenciaFim)?(()=>{const [a,m]=competenciaFim.slice(0,7).split('-').map(Number);return m===12?`${a+1}-01-05`:`${a}-${String(m+1).padStart(2,'0')}-05`})():competenciaFim),
+        dataPagamento:dataIsoDoDocumento(dados?.data_pagamento)||competenciaFim,
         colaboradores,
         totalVencimentos,
         totalDescontos,
@@ -1054,11 +1054,7 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
     setSalvandoHolerite(true)
     try {
       const porNome=new Map(funcionarios.map(item=>[normalizarNomePessoa(item.nome),item]))
-      // "Já lançado" = mesmo colaborador e mesmo tipo com pagamento no mês da DATA REAL do pagamento.
-      // (Antes comparava com o mês da competência; como a folha de um mês é paga no mês seguinte,
-      // a folha anterior caía nesse mês e bloqueava a nova como se já estivesse lançada.)
-      const mesPagamentoHolerite=(holeriteImport.dataPagamento||holeriteImport.competenciaFim).slice(0,7)
-      const pagamentosExistentes=new Set(pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(mesPagamentoHolerite)).map(item=>item.funcionario_id))
+      const pagamentosExistentes=new Set(pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)).map(item=>item.funcionario_id))
       let novos=0
       let atualizados=0
       let pagamentosNovos=0
@@ -1880,6 +1876,10 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
 
           {role!=='entregador'&&aba==='contratos'&&(
             <ContratosMedicaoView contratos={contratos} obras={obras} onAtualizar={()=>load(true)} notify={showToast}/>
+          )}
+
+          {role!=='entregador'&&aba==='comparar'&&(
+            <CompararPlanilhaView notify={showToast}/>
           )}
 
           {role!=='entregador'&&aba==='viagens'&&(
@@ -2968,32 +2968,19 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
                     <input type="date" style={{...s.fi,width:180}} value={holeriteImport.dataPagamento} onChange={e=>setHoleriteImport({...holeriteImport,dataPagamento:e.target.value})}/>
                     <span style={{fontSize:10,color:'#8A6A25'}}>A competência continua sendo a do holerite; esta é a data usada em Contas a Pagar.</span>
                   </div>
-                  {(()=>{
-                    const mesPag=(holeriteImport.dataPagamento||holeriteImport.competenciaFim).slice(0,7)
-                    const jaLancados=pagamentosFuncionarios.filter(item=>item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(mesPag))
-                    if(!jaLancados.length) return null
-                    const datas=Array.from(new Set(jaLancados.map(item=>item.data_pagamento))).sort()
-                    const total=jaLancados.reduce((soma,item)=>soma+item.valor,0)
-                    const tipoNome=holeriteImport.tipo==='adiantamento'?'Adiantamento':holeriteImport.tipo==='decimo_terceiro'?'13º salário':'Folha mensal'
-                    return <div style={{marginBottom:14,padding:'10px 12px',background:'#FBF6EA',border:'1px solid #EEE3B8',borderRadius:9,fontSize:12,color:'#626262',lineHeight:1.5}}>
-                      <strong style={{color:'#8A6A25'}}>Já existe {tipoNome.toLowerCase()} paga em {mesLabel(mesPag)}:</strong> {jaLancados.length} pagamento{jaLancados.length!==1?'s':''} · {fmtR(total)}, com data {datas.map(d=>fmtData(d)).join(', ')}. Para ver, abra Folha › Resumo mensal › {mesLabel(mesPag)}. Os colaboradores marcados como “Já lançado” não serão lançados de novo; se a data acima estiver errada, corrija a data real do pagamento.
-                    </div>
-                  })()}
                   <div style={{border:'1px solid #E2E6E4',borderRadius:10,overflow:'hidden'}}>
                     <div style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,padding:'10px 12px',background:'#FAFBFA',borderBottom:'2px solid #E2E6E4',fontSize:10,fontWeight:800,color:'#7D7D7D',textTransform:'uppercase'}}>
                       <span>Colaborador</span><span>Cargo</span><span>Salário base</span><span>Valor líquido</span><span>Situação</span>
                     </div>
                     {holeriteImport.colaboradores.map(colaborador=>{
                       const existente=funcionarios.find(item=>normalizarNomePessoa(item.nome)===normalizarNomePessoa(colaborador.nome))
-                      const mesPag=(holeriteImport.dataPagamento||holeriteImport.competenciaFim).slice(0,7)
-                      const lancamentosExistentes=existente?pagamentosFuncionarios.filter(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(mesPag)):[]
-                      const jaLancado=lancamentosExistentes.length>0
+                      const jaLancado=Boolean(existente&&pagamentosFuncionarios.some(item=>item.funcionario_id===existente.id&&item.tipo===holeriteImport.tipo&&item.data_pagamento.startsWith(holeriteImport.competenciaMes)))
                       return <div key={`${colaborador.cpf||colaborador.nome}-${holeriteImport.competenciaMes}`} style={{display:'grid',gridTemplateColumns:'minmax(180px,1.5fr) minmax(110px,.8fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(110px,.8fr)',gap:10,alignItems:'center',padding:'11px 12px',borderBottom:'1px solid #E2E6E4',fontSize:12}}>
                         <div><strong style={{color:'#4B5563'}}>{colaborador.nome}</strong><small style={{display:'block',color:'#969696',marginTop:3}}>{colaborador.cpf?`CPF ${colaborador.cpf}`:colaborador.matricula?`Matrícula ${colaborador.matricula}`:''}</small></div>
                         <span style={{color:'#7D7D7D'}}>{colaborador.cargo||'—'}</span>
                         <span style={{color:'#626262'}}>{fmtR(colaborador.salario_base)}</span>
                         <strong style={{color:ACCENT_LT}}>{fmtR(colaborador.valor_liquido)}</strong>
-                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}{jaLancado&&<small style={{display:'block',fontWeight:600,color:'#969696',marginTop:3}}>{lancamentosExistentes.map(item=>`${fmtData(item.data_pagamento)} · ${fmtR(item.valor)}`).join(' / ')}</small>}</span>
+                        <span style={{fontSize:10,fontWeight:800,color:jaLancado?'#8A6A25':existente?ACCENT_LT:'#7D7D7D'}}>{jaLancado?'Já lançado':existente?'Colaborador encontrado':'Será cadastrado'}</span>
                       </div>
                     })}
                   </div>
