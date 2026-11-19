@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, fmtR } from '../services/api'
 import { ACCENT, ACCENT_LT, s } from '../lib/theme'
 import { comparar, lerPlanilha, type ItemDiferenca, type ResultadoComparacao, type TipoDiferenca } from '../lib/compararPlanilha'
@@ -8,7 +8,20 @@ import { exportarExcel, dataExcel, valorExcel } from '../lib/exportarExcel'
 import { KPI, PageHeader } from './ui'
 import Icon from './Icon'
 
-type Props = { notify: (msg: string, ok?: boolean) => void }
+export type AbaDestino = 'folha' | 'contratos' | 'mensais'
+type Props = {
+  notify: (msg: string, ok?: boolean) => void
+  onAbrirLancamento: (id: string) => void
+  onNovoLancamento: (dados: { titulo: string; data: string | null; valor: number }) => void
+  onIrPara: (aba: AbaDestino) => void
+}
+
+// Guarda a última comparação enquanto o sistema está aberto, para não perder
+// o resultado ao ir corrigir um lançamento em outra tela e voltar.
+type Memoria = { res: ResultadoComparacao | null; arquivo: string; file: File | null; medida: Medida; fMes: string; fTipo: string; busca: string }
+let memoria: Memoria = { res: null, arquivo: '', file: null, medida: 'pago', fMes: '', fTipo: '', busca: '' }
+
+type Acao = { rotulo: string; fazer: () => void } | null
 type Medida = 'pago' | 'total'
 
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
@@ -26,15 +39,26 @@ const EXPLICA: Record<TipoDiferenca, string> = {
   'Contrato por medição': 'Linhas do fornecedor na planilha comparadas com as medições lançadas no contrato.',
 }
 
-export default function CompararPlanilhaView({ notify }: Props) {
+export default function CompararPlanilhaView({ notify, onAbrirLancamento, onNovoLancamento, onIrPara }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [arquivo, setArquivo] = useState('')
+  const [arquivo, setArquivo] = useState(memoria.arquivo)
   const [carregando, setCarregando] = useState(false)
-  const [res, setRes] = useState<ResultadoComparacao | null>(null)
-  const [medida, setMedida] = useState<Medida>('pago')
-  const [fMes, setFMes] = useState('')
-  const [fTipo, setFTipo] = useState('')
-  const [busca, setBusca] = useState('')
+  const [res, setRes] = useState<ResultadoComparacao | null>(memoria.res)
+  const [medida, setMedida] = useState<Medida>(memoria.medida)
+  const [fMes, setFMes] = useState(memoria.fMes)
+  const [fTipo, setFTipo] = useState(memoria.fTipo)
+  const [busca, setBusca] = useState(memoria.busca)
+  useEffect(() => { memoria = { ...memoria, res, arquivo, medida, fMes, fTipo, busca } }, [res, arquivo, medida, fMes, fTipo, busca])
+
+  const acaoDo = (i: ItemDiferenca): Acao => {
+    if (i.lancamentoId) return { rotulo: 'Abrir no sistema', fazer: () => onAbrirLancamento(i.lancamentoId!) }
+    if (i.tipo === 'Falta no sistema' || i.tipo === 'Falta no sistema (aluguel)')
+      return { rotulo: 'Lançar no sistema', fazer: () => onNovoLancamento({ titulo: [i.fornecedor, i.descricao].filter(Boolean).join(' - '), data: i.data, valor: i.planilhaTotal || i.planilhaPago }) }
+    if (i.tipo === 'Folha do mês') return { rotulo: 'Abrir a Folha', fazer: () => onIrPara('folha') }
+    if (i.tipo === 'Contrato por medição') return { rotulo: 'Abrir contratos', fazer: () => onIrPara('contratos') }
+    if (i.noSistema === 'Contas mensais') return { rotulo: 'Abrir contas mensais', fazer: () => onIrPara('mensais') }
+    return null
+  }
 
   const processar = async (file: File) => {
     setCarregando(true); setRes(null); setFMes(''); setFTipo('')
@@ -53,6 +77,7 @@ export default function CompararPlanilhaView({ notify }: Props) {
       await new Promise(r => setTimeout(r, 30))
       setRes(comparar(linhas, comNotas, folha, mensais, contratos))
       setArquivo(file.name)
+      memoria.file = file
     } catch (e: any) {
       notify(e?.message || 'Não consegui ler a planilha.', false)
     } finally {
@@ -91,7 +116,7 @@ export default function CompararPlanilhaView({ notify }: Props) {
       {
         nome: 'O que está diferente',
         linhas: res.itens.map(i => ({
-          'Mês': rotuloMes(i.mes), 'Data': dataExcel(i.data), 'Linha da planilha': i.linhaPlanilha ?? '',
+          'Mês': rotuloMes(i.mes), 'Data': dataExcel(i.data), 'Linha da planilha': i.linhas.join(', '),
           'Fornecedor': i.fornecedor, 'Descrição': i.descricao, 'No sistema': i.noSistema,
           'Planilha (pago)': valorExcel(i.planilhaPago), 'Sistema (pago)': valorExcel(i.sistemaPago), 'Diferença (pago)': valorExcel(i.planilhaPago - i.sistemaPago),
           'Planilha (total)': valorExcel(i.planilhaTotal), 'Sistema (total)': valorExcel(i.sistemaTotal), 'Diferença (total)': valorExcel(i.planilhaTotal - i.sistemaTotal),
@@ -111,6 +136,7 @@ export default function CompararPlanilhaView({ notify }: Props) {
       <PageHeader eyebrow="Financeiro" title="Comparar com a planilha" description="Escolha a planilha de controle da obra. O sistema lê a aba Pagamentos e mostra, mês a mês, o que está diferente dos lançamentos daqui.">
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {res && <button onClick={exportar} style={s.btnOut}><Icon name="download" size={14} color="#626262" /> Exportar Excel</button>}
+          {res && memoria.file && <button onClick={() => memoria.file && processar(memoria.file)} disabled={carregando} style={s.btnOut} title="Compara a mesma planilha de novo, já com o que você corrigiu no sistema"><Icon name="refresh" size={14} color="#626262" /> Comparar de novo</button>}
           <button onClick={() => inputRef.current?.click()} disabled={carregando} style={{ ...s.btnTeal, opacity: carregando ? 0.7 : 1 }}>
             <Icon name="upload" size={14} color="#fff" /> {carregando ? 'Comparando…' : res ? 'Escolher outra planilha' : 'Escolher planilha'}
           </button>
@@ -186,11 +212,11 @@ export default function CompararPlanilhaView({ notify }: Props) {
               <div style={{ overflowX: 'auto', maxHeight: '68vh', overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                   <thead style={{ position: 'sticky', top: 0 }}><tr>
-                    <th style={th}>Data</th><th style={th}>Fornecedor</th><th style={{ ...th, textAlign: 'right' }}>Planilha</th><th style={{ ...th, textAlign: 'right' }}>Sistema</th><th style={{ ...th, textAlign: 'right' }}>Diferença</th><th style={th}>O que é</th>
+                    <th style={th}>Data</th><th style={th}>Fornecedor</th><th style={{ ...th, textAlign: 'right' }}>Planilha</th><th style={{ ...th, textAlign: 'right' }}>Sistema</th><th style={{ ...th, textAlign: 'right' }}>Diferença</th><th style={th}>O que é</th><th style={th}></th>
                   </tr></thead>
                   <tbody>
-                    {itensFiltrados.map((i, k) => <Linha key={k} i={i} pl={pl(i)} si={si(i)} td={td} num={num} cor={corDif(pl(i) - si(i))} />)}
-                    {!itensFiltrados.length && <tr><td colSpan={6} style={{ ...td, textAlign: 'center', padding: '1.6rem', color: '#7D7D7D' }}>Nada diferente com esses filtros.</td></tr>}
+                    {itensFiltrados.map((i, k) => <Linha key={k} i={i} pl={pl(i)} si={si(i)} td={td} num={num} cor={corDif(pl(i) - si(i))} acao={acaoDo(i)} />)}
+                    {!itensFiltrados.length && <tr><td colSpan={7} style={{ ...td, textAlign: 'center', padding: '1.6rem', color: '#7D7D7D' }}>Nada diferente com esses filtros.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -207,10 +233,13 @@ export default function CompararPlanilhaView({ notify }: Props) {
   )
 }
 
-function Linha({ i, pl, si, td, num, cor }: { i: ItemDiferenca; pl: number; si: number; td: React.CSSProperties; num: React.CSSProperties; cor: string }) {
+function Linha({ i, pl, si, td, num, cor, acao }: { i: ItemDiferenca; pl: number; si: number; td: React.CSSProperties; num: React.CSSProperties; cor: string; acao: Acao }) {
+  const [sobre, setSobre] = useState(false)
   return (
-    <tr>
-      <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.data ? dataBR(i.data) : rotuloMes(i.mes)}{i.linhaPlanilha ? <div style={{ fontSize: 10.5, color: '#969696' }}>linha {i.linhaPlanilha}</div> : null}</td>
+    <tr onClick={acao?.fazer} onMouseEnter={() => setSobre(true)} onMouseLeave={() => setSobre(false)}
+      style={{ cursor: acao ? 'pointer' : 'default', background: acao && sobre ? '#F4F8F6' : undefined }}
+      title={acao ? `${acao.rotulo} · ${EXPLICA[i.tipo]}` : EXPLICA[i.tipo]}>
+      <td style={{ ...td, whiteSpace: 'nowrap' }}>{i.data ? dataBR(i.data) : rotuloMes(i.mes)}{i.linhas.length ? <div style={{ fontSize: 10.5, color: '#969696' }}>{i.linhas.length > 1 ? 'linhas' : 'linha'} {i.linhas.join(', ')}</div> : null}</td>
       <td style={td}>
         <div style={{ fontWeight: 600 }}>{i.fornecedor}</div>
         {i.descricao && <div style={{ fontSize: 11, color: '#969696' }}>{i.descricao}</div>}
@@ -219,7 +248,12 @@ function Linha({ i, pl, si, td, num, cor }: { i: ItemDiferenca; pl: number; si: 
       <td style={num}>{fmtR(pl)}</td>
       <td style={num}>{fmtR(si)}</td>
       <td style={{ ...num, fontWeight: 700, color: cor }}>{fmtR(pl - si)}</td>
-      <td style={td} title={EXPLICA[i.tipo]}><span style={{ ...s.badge, background: '#F1F5F3', color: '#626262' }}>{i.tipo}</span></td>
+      <td style={td}><span style={{ ...s.badge, background: '#F1F5F3', color: '#626262' }}>{i.tipo}</span></td>
+      <td style={{ ...td, whiteSpace: 'nowrap' }}>
+        {acao
+          ? <button onClick={e => { e.stopPropagation(); acao.fazer() }} style={{ ...s.btnOut, padding: '.34rem .65rem', fontSize: 11.5 }}>{acao.rotulo} <Icon name="chevronRight" size={12} color="#626262" /></button>
+          : i.tipo === 'Repetido na planilha' ? <span style={{ fontSize: 11, color: '#969696' }}>corrigir na planilha</span> : null}
+      </td>
     </tr>
   )
 }

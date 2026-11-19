@@ -39,6 +39,8 @@ export type ItemDiferenca = {
   mes: string               // AAAA-MM
   data: string | null
   linhaPlanilha: number | null
+  linhas: number[]          // todas as linhas da planilha deste item (parcelas do mesmo lançamento)
+  lancamentoId: string | null
   fornecedor: string
   descricao: string
   noSistema: string
@@ -192,6 +194,7 @@ function calcularSemelhanca(planilha: string, sistema: string) {
 const digitosNF = (v: unknown) => { const d = String(v ?? '').replace(/\D/g, '').replace(/^0+/, ''); return d.length >= 2 ? d : '' }
 const centavos = (v: number) => Math.round(v * 100)
 const dias = (a: string, b: string) => Math.abs((Date.parse(a) - Date.parse(b)) / 86400000)
+const TOLERANCIA = 1
 const mesDe = (d: string | null | undefined) => (d ? d.slice(0, 7) : 'sem data')
 
 const ehFolha = (l: LinhaPlanilha) => /FUNCION|SALARIO|FOLHA|ADIANTAMENTO/.test(semAcento(l.prestador))
@@ -251,6 +254,61 @@ export function comparar(
     if (parDaLinha.has(c.i) || linhasDoLanc.has(c.j)) return
     parDaLinha.set(c.i, c.j); linhasDoLanc.set(c.j, [c.i])
   })
+  const distancia = (p: LinhaPlanilha, x: typeof lancs[number]) => {
+    let d = 999
+    datasLinha(p).forEach(a => x.datas.forEach(b => { d = Math.min(d, dias(a, b)) }))
+    return d
+  }
+  const livre = (i: number) => !parDaLinha.has(i) && !contratoDaLinha.has(planilha[i].linha)
+
+  // 2b) mesmo valor e data bem próxima, mesmo com nome escrito diferente
+  //     (ex.: "BLOJAF" na planilha e "GERABLOCOS" no sistema)
+  planilha.forEach((p, i) => {
+    if (!livre(i) || ehFolha(p)) return
+    const sv = [p.total, p.pago].filter(v => v >= 50).map(centavos)
+    if (!sv.length) return
+    let melhor = -1, md = 99
+    lancs.forEach((x, j) => {
+      if (linhasDoLanc.has(j) || !sv.some(v => x.vals.has(v))) return
+      const d = distancia(p, x)
+      if (d <= 5 && d < md) { md = d; melhor = j }
+    })
+    if (melhor >= 0) { parDaLinha.set(i, melhor); linhasDoLanc.set(melhor, [i]) }
+  })
+  // 2c) mesmo fornecedor e data bem próxima, com valor diferente: vira "valor diferente"
+  //     em vez de aparecer duas vezes ("falta no sistema" + "só no sistema")
+  planilha.forEach((p, i) => {
+    if (!livre(i) || ehFolha(p)) return
+    let melhor = -1, md = 99
+    lancs.forEach((x, j) => {
+      if (linhasDoLanc.has(j) || semelhanca(p.prestador, x.l.titulo) < 0.85) return
+      const d = distancia(p, x)
+      if (d <= 7 && d < md) { md = d; melhor = j }
+    })
+    if (melhor >= 0) { parDaLinha.set(i, melhor); linhasDoLanc.set(melhor, [i]) }
+  })
+  // 2d) parcelas: várias linhas da planilha (entrada, final, 2ª parcela...) para um lançamento só
+  const PARCELA = /ENTRADA|FINAL|PARCELA|QUITACAO|SALDO|MEDICAO|50|\d+ ?\/ ?\d+/
+  planilha.forEach((p, i) => {
+    if (!livre(i) || ehFolha(p)) return
+    const snf = digitosNF(p.nf)
+    const ehParcela = PARCELA.test(semAcento(`${p.parcela} ${p.descricao}`))
+    let melhor = -1, ms = 0
+    lancs.forEach((x, j) => {
+      const nm = semelhanca(p.prestador, x.l.titulo)
+      if (nm < 0.7) return
+      const nf = !!snf && x.nfs.has(snf)
+      const d = distancia(p, x)
+      const ok = (nf && d <= 365) || (ehParcela && nm >= 0.85 && d <= 120 && (p.total || p.pago) <= (x.l.valor_total || 0) + 0.005)
+      if (!ok) return
+      // mesma linha repetida (mesmo valor de uma linha já casada) fica como "Repetido na planilha"
+      const v = p.total || p.pago
+      if ((linhasDoLanc.get(j) || []).some(k => Math.abs((planilha[k].total || planilha[k].pago) - v) < 0.005)) return
+      const sc = nm + (nf ? 2 : 0) - d / 365
+      if (sc > ms) { ms = sc; melhor = j }
+    })
+    if (melhor >= 0) { parDaLinha.set(i, melhor); linhasDoLanc.set(melhor, [...(linhasDoLanc.get(melhor) || []), i]) }
+  })
 
   // 3) linhas sem par: repetidas na própria planilha?
   const repetida = new Map<number, number>()
@@ -286,13 +344,20 @@ export function comparar(
       atual.t += p.total; atual.p += p.pago; contratoPlanilha.set(k, atual); return
     }
     const j = parDaLinha.get(i)
-    const base = { mes, data: p.data, linhaPlanilha: p.linha, fornecedor: p.prestador, descricao: p.descricao, planilhaTotal: p.total, planilhaPago: p.pago }
+    const base = { mes, data: p.data, linhaPlanilha: p.linha, linhas: [p.linha], lancamentoId: null as string | null, fornecedor: p.prestador, descricao: p.descricao, planilhaTotal: p.total, planilhaPago: p.pago }
     if (j != null) {
+      const grupo = linhasDoLanc.get(j) || [i]
+      if (grupo[0] !== i) return // as outras parcelas entram junto com a primeira linha
       const l = lancamentos[j]
-      if (!fechado(l)) { itens.push({ ...base, noSistema: `${l.titulo} (ainda não fechado)`, sistemaTotal: 0, sistemaPago: 0, tipo: 'No sistema, mas não fechado' }); return }
+      const rows = grupo.map(k => planilha[k])
+      const pt = rows.reduce((t, r) => t + r.total, 0), pp = rows.reduce((t, r) => t + r.pago, 0)
+      const g = { ...base, linhas: rows.map(r => r.linha), lancamentoId: l.id, planilhaTotal: pt, planilhaPago: pp,
+        descricao: rows.length > 1 ? `${rows.length} linhas da planilha (parcelas) para este lançamento` : p.descricao }
+      if (!fechado(l)) { itens.push({ ...g, noSistema: `${l.titulo} (ainda não fechado)`, sistemaTotal: 0, sistemaPago: 0, tipo: 'No sistema, mas não fechado' }); return }
       const st = l.valor_total || 0, sp = valorPagoLancamento(l)
-      if (Math.abs(p.total - st) > 0.005 || Math.abs(p.pago - sp) > 0.005) itens.push({ ...base, noSistema: l.titulo, sistemaTotal: st, sistemaPago: sp, tipo: 'Valor diferente' })
-      else iguais.push({ mes, pt: p.total, st, pp: p.pago, sp })
+      // diferença de até R$ 1,00 é arredondamento: conta como igual
+      if (Math.abs(pt - st) > TOLERANCIA || Math.abs(pp - sp) > TOLERANCIA) itens.push({ ...g, noSistema: l.titulo, sistemaTotal: st, sistemaPago: sp, tipo: 'Valor diferente' })
+      else iguais.push({ mes, pt, st, pp, sp })
       return
     }
     if (repetida.has(i)) { itens.push({ ...base, noSistema: `igual à linha ${planilha[repetida.get(i)!].linha} da planilha`, sistemaTotal: 0, sistemaPago: 0, tipo: 'Repetido na planilha' }); return }
@@ -301,14 +366,14 @@ export function comparar(
   })
   lancamentos.forEach((l, j) => {
     if (linhasDoLanc.has(j) || !fechado(l)) return
-    itens.push({ mes: mesDe(l.data), data: l.data, linhaPlanilha: null, fornecedor: l.titulo, descricao: '', noSistema: l.titulo, planilhaTotal: 0, sistemaTotal: l.valor_total || 0, planilhaPago: 0, sistemaPago: valorPagoLancamento(l), tipo: 'Só no sistema' })
+    itens.push({ mes: mesDe(l.data), data: l.data, linhaPlanilha: null, linhas: [], lancamentoId: l.id, fornecedor: l.titulo, descricao: '', noSistema: l.titulo, planilhaTotal: 0, sistemaTotal: l.valor_total || 0, planilhaPago: 0, sistemaPago: valorPagoLancamento(l), tipo: 'Só no sistema' })
   })
   // folha por mês
   const folhaSistema = new Map<string, number>()
   pagamentosFolha.forEach(p => folhaSistema.set(mesDe(p.data_pagamento), (folhaSistema.get(mesDe(p.data_pagamento)) || 0) + (Number(p.valor) || 0)))
   new Set([...Array.from(folhaPlanilha.keys()), ...Array.from(folhaSistema.keys())]).forEach(mes => {
     const pl = folhaPlanilha.get(mes) || { t: 0, p: 0 }, si = folhaSistema.get(mes) || 0
-    itens.push({ mes, data: null, linhaPlanilha: null, fornecedor: 'Folha + adiantamento + 13º + FGTS do mês', descricao: '', noSistema: 'Folha de pagamento', planilhaTotal: pl.t, sistemaTotal: si, planilhaPago: pl.p, sistemaPago: si, tipo: 'Folha do mês' })
+    itens.push({ mes, data: null, linhaPlanilha: null, linhas: [], lancamentoId: null, fornecedor: 'Folha + adiantamento + 13º + FGTS do mês', descricao: '', noSistema: 'Folha de pagamento', planilhaTotal: pl.t, sistemaTotal: si, planilhaPago: pl.p, sistemaPago: si, tipo: 'Folha do mês' })
   })
   // contratos por medição, por mês
   const contratoSistema = new Map<string, { v: number; nome: string }>()
@@ -318,10 +383,10 @@ export function comparar(
   }))
   new Set([...Array.from(contratoPlanilha.keys()), ...Array.from(contratoSistema.keys())]).forEach(k => {
     const pl = contratoPlanilha.get(k), si = contratoSistema.get(k)
-    itens.push({ mes: k.split('|')[1], data: null, linhaPlanilha: null, fornecedor: `${(pl || si)!.nome} (contrato x medições)`, descricao: '', noSistema: 'Contratos por medição', planilhaTotal: pl?.t || 0, sistemaTotal: si?.v || 0, planilhaPago: pl?.p || 0, sistemaPago: si?.v || 0, tipo: 'Contrato por medição' })
+    itens.push({ mes: k.split('|')[1], data: null, linhaPlanilha: null, linhas: [], lancamentoId: null, fornecedor: `${(pl || si)!.nome} (contrato x medições)`, descricao: '', noSistema: 'Contratos por medição', planilhaTotal: pl?.t || 0, sistemaTotal: si?.v || 0, planilhaPago: pl?.p || 0, sistemaPago: si?.v || 0, tipo: 'Contrato por medição' })
   })
   // contas mensais pagas (entram no total geral do sistema)
-  pagamentosMensais.forEach(p => itens.push({ mes: mesDe(p.data_pagamento), data: p.data_pagamento, linhaPlanilha: null, fornecedor: 'Pagamento de conta mensal', descricao: '', noSistema: 'Contas mensais', planilhaTotal: 0, sistemaTotal: Number(p.valor) || 0, planilhaPago: 0, sistemaPago: Number(p.valor) || 0, tipo: 'Só no sistema' }))
+  pagamentosMensais.forEach(p => itens.push({ mes: mesDe(p.data_pagamento), data: p.data_pagamento, linhaPlanilha: null, linhas: [], lancamentoId: null, fornecedor: 'Pagamento de conta mensal', descricao: '', noSistema: 'Contas mensais', planilhaTotal: 0, sistemaTotal: Number(p.valor) || 0, planilhaPago: 0, sistemaPago: Number(p.valor) || 0, tipo: 'Só no sistema' }))
 
   // 5) resumo por mês (os pares iguais entram só no resumo)
   const meses = new Map<string, ResumoMes>()
@@ -333,7 +398,7 @@ export function comparar(
   itens.forEach(x => soma(x.mes, x.planilhaTotal, x.sistemaTotal, x.planilhaPago, x.sistemaPago))
   const lista = Array.from(meses.values()).sort((a, b) => a.mes.localeCompare(b.mes))
   const totais = lista.reduce((t, m) => ({ mes: 'TOTAL', planilhaTotal: t.planilhaTotal + m.planilhaTotal, sistemaTotal: t.sistemaTotal + m.sistemaTotal, planilhaPago: t.planilhaPago + m.planilhaPago, sistemaPago: t.sistemaPago + m.sistemaPago }), { mes: 'TOTAL', planilhaTotal: 0, sistemaTotal: 0, planilhaPago: 0, sistemaPago: 0 })
-  const diferente = (x: ItemDiferenca) => Math.abs(x.planilhaTotal - x.sistemaTotal) > 0.005 || Math.abs(x.planilhaPago - x.sistemaPago) > 0.005
+  const diferente = (x: ItemDiferenca) => Math.abs(x.planilhaTotal - x.sistemaTotal) > TOLERANCIA || Math.abs(x.planilhaPago - x.sistemaPago) > TOLERANCIA
   return {
     linhasLidas: planilha.length,
     meses: lista,

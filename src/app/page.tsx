@@ -1879,7 +1879,16 @@ Regras: extraia todos os colaboradores de todas as páginas; use os totais do de
           )}
 
           {role!=='entregador'&&aba==='comparar'&&(
-            <CompararPlanilhaView notify={showToast}/>
+            <CompararPlanilhaView
+              notify={showToast}
+              onAbrirLancamento={openDetalhe}
+              onNovoLancamento={({titulo,data:dataPlanilha,valor})=>{
+                setForm({...formNovoOrcamento(),titulo,data:dataPlanilha||hojeISO()})
+                setItensOrcamento([]);setRawFrete('');setRascunhoRecuperadoEm(null);setRawDesconto('');setDetalhe(null);setModal(true)
+                showToast(`Valor na planilha: ${fmtR(valor)}. Confira e complete o orçamento.`)
+              }}
+              onIrPara={destino=>setAba(destino)}
+            />
           )}
 
           {role!=='entregador'&&aba==='viagens'&&(
