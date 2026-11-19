@@ -494,6 +494,28 @@ async function migrarContasLocais() {
   if (typeof window !== 'undefined' && !localAccounts().length) window.localStorage.removeItem(LOCAL_PAYMENTS_KEY)
 }
 
+// O Vercel recusa corpos acima de ~4,5 MB.
+const LIMITE_VERCEL = 4 * 1024 * 1024
+
+// Fotos tiradas no celular costumam ter de 3 a 10 MB. Antes de enviar, a foto é reduzida
+// (lado maior até 2000 px, JPEG) — fica legível e com poucas centenas de KB. PDF não é alterado.
+async function reduzirFoto(file: File): Promise<File> {
+  if (typeof window === 'undefined' || !/^image\/(jpeg|png|webp)$/i.test(file.type) || file.size < 1.5 * 1024 * 1024) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const escala = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * escala); canvas.height = Math.round(bitmap.height * escala)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return file
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    if (!blob || blob.size >= file.size) return file
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+  } catch { return file }
+}
+
 export const api = {
   limparCacheLocal: () => {
     if (typeof window !== 'undefined') SHARED_LOCAL_KEYS.forEach(key => window.localStorage.removeItem(key))
@@ -552,18 +574,39 @@ export const api = {
     await readRemote(`/api/lancamentos/${id}`, `lancamentos?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })
   },
 
-  uploadArquivo: async (file: File, pasta?: string): Promise<string> => {
+  uploadArquivo: async (original: File, pasta?: string): Promise<string> => {
+    const file = await reduzirFoto(original)
+    if (file.size > 20 * 1024 * 1024) throw new Error(`"${original.name}" passa de 20 MB`)
+    // 1) Envio direto para o Supabase com link assinado (não tem o limite de 4,5 MB do Vercel).
+    let motivo = ''
+    try {
+      const link = await fetch('/api/storage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ nome: file.name, pasta }) })
+      const dados = await link.json().catch(() => ({}))
+      if (link.status === 401) throw new Error(await mensagemDeErro(link))
+      if (link.ok && dados.upload_url && dados.url) {
+        const envio = await fetch(dados.upload_url, { method: 'PUT', headers: { 'content-type': file.type || 'application/octet-stream', 'x-upsert': 'true' }, body: file })
+        if (envio.ok) return dados.url
+        motivo = `armazenamento respondeu ${envio.status}`
+      } else motivo = dados.detail || `erro ${link.status}`
+    } catch (err: any) {
+      if (/Sessão expirada/i.test(err?.message || '')) throw err
+      motivo = err?.message || 'sem conexão'
+    }
+    // 2) Reserva: envio pelo servidor do sistema (só funciona até ~4,5 MB).
+    if (file.size > LIMITE_VERCEL) throw new Error(`Não foi possível enviar "${original.name}" (${(file.size / 1024 / 1024).toFixed(1)} MB): ${motivo}`)
     const form = new FormData()
     form.append('file', file, file.name)
     if (pasta) form.append('pasta', pasta)
     const response = await fetch('/api/storage', { method: 'POST', body: form })
     const data = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error('Falha ao enviar arquivo para o armazenamento')
+    if (!response.ok) throw new Error(data.detail || `Falha ao enviar arquivo para o armazenamento (${response.status})`)
     if (!data.url) throw new Error(data.detail || 'Armazenamento de arquivos não configurado')
     return data.url
   },
 
-  lerDocumento: async (file: File, prompt: string) => {
+  lerDocumento: async (original: File, prompt: string) => {
+    const file = await reduzirFoto(original)
+    if (file.size > LIMITE_VERCEL) throw new Error('Arquivo grande demais para a leitura automática. Preencha os dados à mão.')
     const body = new FormData()
     body.append('file', file, file.name)
     body.append('prompt', prompt)
